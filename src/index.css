@@ -1,0 +1,189 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  /* Default Dark Mode */
+  html.dark body {
+    background-color: #0B132B;
+    color: #F8FAFC;
+  }
+
+  /* Clean White / Light Mode */
+  html.light body {
+    background-color: #F1F5F9;
+    color: #0F172A;
+  }
+}
+
+/* ==========================================================================
+   CLEAN LIGHT THEME ADAPTER (Pure White Theme)
+   ========================================================================== */
+
+html.light .min-h-screen {
+  background-color: #F1F5F9 !important;
+  color: #0F172A !important;
+}
+
+html.light header {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-color: #E2E8F0 !important;
+}
+
+html.light nav {
+  background-color: rgba(255, 255, 255, 0.96) !important;
+  border-color: #E2E8F0 !important;
+}
+
+html.light .glass-header-dark {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-color: #E2E8F0 !important;
+}
+
+html.light footer {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+  color: #64748B !important;
+}
+
+/* Card & Container Backgrounds in Light Mode */
+html.light .bg-\[\#1C2541\],
+html.light .bg-\[\#1E293B\],
+html.light .bg-\[\#1C2541\]\/70,
+html.light .bg-\[\#1C2541\]\/80,
+html.light .bg-\[\#1C2541\]\/90,
+html.light .bg-\[\#1E293B\]\/80 {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+}
+
+html.light .bg-\[\#0B132B\] {
+  background-color: #F8FAFC !important;
+  border-color: #E2E8F0 !important;
+}
+
+html.light .bg-\[\#1C2541\]\/30,
+html.light .bg-\[\#1C2541\]\/40 {
+  background-color: #F8FAFC !important;
+  border-color: #E2E8F0 !important;
+}
+
+/* Input Fields in Light Mode */
+html.light input,
+html.light textarea {
+  background-color: #F8FAFC !important;
+  border-color: #CBD5E1 !important;
+  color: #0F172A !important;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder {
+  color: #94A3B8 !important;
+}
+
+/* Borders in Light Mode */
+html.light .border-\[\#334155\],
+html.light .border-\[\#334155\]\/40,
+html.light .border-\[\#334155\]\/50,
+html.light .border-\[\#334155\]\/60,
+html.light .border-\[\#334155\]\/80 {
+  border-color: #E2E8F0 !important;
+}
+
+/* Text Colors in Light Mode */
+html.light .text-white {
+  color: #0F172A !important;
+}
+
+html.light .text-slate-100,
+html.light .text-slate-200,
+html.light .text-slate-300 {
+  color: #334155 !important;
+}
+
+html.light .text-slate-400 {
+  color: #64748B !important;
+}
+
+html.light .text-slate-500 {
+  color: #94A3B8 !important;
+}
+
+/* Hover States in Light Mode */
+html.light .hover\:bg-\[\#1E293B\]:hover,
+html.light .hover\:bg-\[\#2A3756\]:hover,
+html.light .hover\:bg-\[\#1C2541\]:hover {
+  background-color: #F1F5F9 !important;
+}
+
+/* Custom Sleek Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+html.dark ::-webkit-scrollbar-track {
+  background: #0B132B;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 9999px;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #3B82F6;
+}
+
+html.light ::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #2563EB;
+}
+
+/* Micro-interaction & animations */
+@keyframes voteBounce {
+  0% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-3px) scale(1.15); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+.animate-vote-pop {
+  animation: voteBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.view-transition {
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
