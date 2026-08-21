@@ -131,7 +131,7 @@ export function App() {
     // Periodic sync from central server to pull new users & posts across all devices
     const pollInterval = setInterval(() => {
       syncWithServer();
-    }, 3500);
+    }, 2000);
 
     const handleSync = () => {
       syncStateFromStorage();

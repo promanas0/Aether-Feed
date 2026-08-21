@@ -70,6 +70,47 @@ function databaseApiPlugin(): Plugin {
           return;
         }
 
+        // Endpoint: GET /api/posts
+        if (pathname === '/api/posts' && req.method === 'GET') {
+          const db = readDb();
+          res.setHeader('Content-Type', 'application/json');
+          res.statusCode = 200;
+          res.end(JSON.stringify({ success: true, posts: db.posts || [] }));
+          return;
+        }
+
+        // Endpoint: POST /api/posts (Create new post)
+        if (pathname === '/api/posts' && req.method === 'POST') {
+          let body = '';
+          req.on('data', (chunk) => (body += chunk));
+          req.on('end', () => {
+            try {
+              const incoming = JSON.parse(body || '{}');
+              const post = incoming.post || incoming;
+              const db = readDb();
+
+              if (post && post.id) {
+                const existingIdx = (db.posts || []).findIndex((p: any) => p.id === post.id);
+                if (existingIdx !== -1) {
+                  db.posts[existingIdx] = { ...db.posts[existingIdx], ...post };
+                } else {
+                  db.posts = [post, ...(db.posts || [])];
+                }
+                writeDb(db);
+              }
+
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, post }));
+            } catch (e: any) {
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 400;
+              res.end(JSON.stringify({ success: false, message: e.message }));
+            }
+          });
+          return;
+        }
+
         // Endpoint: POST /api/auth/login
         if (pathname === '/api/auth/login' && req.method === 'POST') {
           let body = '';

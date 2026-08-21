@@ -67,12 +67,30 @@ export const syncWithServer = async (): Promise<boolean> => {
         const result = await response.json();
         if (result.success && result.data) {
           const { users, posts, votes, notifications, pending_otps } = result.data;
+          
+          const oldPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+          const oldPostIds = new Set(oldPosts.map(p => p.id));
+          const currentUserId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);
+
           if (Array.isArray(users)) {
             const cleanUsers = users.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
             localStorage.setItem(STORAGE_KEYS.REAL_USERS, JSON.stringify(cleanUsers));
           }
           if (Array.isArray(posts)) {
+            // Detect newly published posts from another device/user
+            const newForeignPosts = posts.filter(p => !oldPostIds.has(p.id) && p.user_id !== currentUserId);
+            
             localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(posts));
+
+            if (newForeignPosts.length > 0) {
+              const latestNew = newForeignPosts[0];
+              const author = Array.isArray(users) ? users.find((u: any) => u.id === latestNew.user_id) : undefined;
+              window.dispatchEvent(
+                new CustomEvent('aether_post_broadcast', {
+                  detail: { post: { ...latestNew, user: author }, authorId: latestNew.user_id }
+                })
+              );
+            }
           }
           if (Array.isArray(votes)) {
             localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(votes));
@@ -476,6 +494,15 @@ export const createRealPost = (data: {
       }
     });
   }
+
+  // Direct Server Dispatch
+  try {
+    fetch('/api/posts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ post: newPost }),
+    }).catch(() => {});
+  } catch {}
 
   window.dispatchEvent(
     new CustomEvent('aether_post_broadcast', {
