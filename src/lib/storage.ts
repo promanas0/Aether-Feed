@@ -445,10 +445,20 @@ export const updateProfileData = (userId: string, updates: Partial<Profile>): Pr
     ...updates,
     display_name: updates.first_name && updates.last_name 
       ? `${updates.first_name} ${updates.last_name}` 
-      : users[idx].display_name
+      : (updates.display_name || users[idx].display_name)
   };
 
   setItem(STORAGE_KEYS.REAL_USERS, users);
+
+  // Push updated profile to Supabase Cloud directly
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('profiles').upsert(users[idx]).then(
+      () => {},
+      (err: any) => console.warn('[Aether Supabase] Profile update error:', err)
+    );
+  }
+
   syncWithServer();
   return users[idx];
 };
