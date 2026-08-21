@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Trophy, X, Search, ChevronRight, Image as ImageIcon, ArrowUpCircle } from 'lucide-react';
 import { Profile } from '../../types';
+import { VerifiedBadge } from '../ui/VerifiedBadge';
 
 interface LeaderboardItem extends Profile {
   rank: number;
@@ -140,6 +141,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                         <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-blue-300 transition-colors">
                           {creator.display_name}
                         </h4>
+                        <VerifiedBadge user={creator} showAdminLabel={true} />
                         <span className="text-[11px] font-mono text-blue-400 truncate">
                           @{creator.username}
                         </span>

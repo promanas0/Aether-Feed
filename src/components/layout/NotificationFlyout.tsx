@@ -11,6 +11,7 @@ import {
   ExternalLink 
 } from 'lucide-react';
 import type { NotificationItem } from '../../types';
+import { DEFAULT_DLICOM_AVATAR } from '../../lib/storage';
 
 interface NotificationFlyoutProps {
   notifications: NotificationItem[];
@@ -98,7 +99,7 @@ export const NotificationFlyout: React.FC<NotificationFlyoutProps> = ({
                   {/* Actor Avatar with vector sub-badge */}
                   <div className="relative shrink-0">
                     <img
-                      src={n.actor?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
+                      src={n.actor?.avatar_url || DEFAULT_DLICOM_AVATAR}
                       alt={n.actor?.display_name || 'User'}
                       className="w-8 h-8 rounded-full object-cover border border-[#334155]"
                     />

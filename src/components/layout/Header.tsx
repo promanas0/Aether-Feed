@@ -20,6 +20,7 @@ import {
 import type { Profile, NotificationItem, ThemeMode, Post } from '../../types';
 import { isUserAdmin } from '../../lib/storage';
 import { NotificationFlyout } from './NotificationFlyout';
+import { VerifiedBadge } from '../ui/VerifiedBadge';
 
 interface HeaderProps {
   currentUser: Profile;
@@ -187,7 +188,7 @@ export const Header: React.FC<HeaderProps> = ({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1">
                             <p className="text-xs font-bold text-white truncate">{user.display_name}</p>
-                            {user.is_verified && <ShieldCheck className="w-3 h-3 text-blue-400 shrink-0" />}
+                            <VerifiedBadge user={user} size="xs" />
                           </div>
                           <p className="text-[10px] text-slate-400 font-mono truncate">@{user.username}</p>
                         </div>
@@ -337,7 +338,10 @@ export const Header: React.FC<HeaderProps> = ({
                     }}
                     className="p-2.5 bg-[#1E293B] rounded-xl hover:bg-[#2A3756] cursor-pointer mb-2"
                   >
-                    <p className="text-xs font-bold text-white truncate">{currentUser.display_name}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-bold text-white truncate">{currentUser.display_name}</p>
+                      <VerifiedBadge user={currentUser} size="xs" showAdminLabel={true} />
+                    </div>
                     <p className="text-[11px] text-blue-400 font-mono">@{currentUser.username}</p>
                   </div>
 

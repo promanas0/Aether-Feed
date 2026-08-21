@@ -15,6 +15,9 @@ import {
 } from 'lucide-react';
 import type { Post, Profile } from '../../types';
 
+import { VerifiedBadge } from '../ui/VerifiedBadge';
+import { DEFAULT_DLICOM_AVATAR } from '../../lib/storage';
+
 interface PostCardProps {
   post: Post;
   userVote: 'up' | 'down' | null;
@@ -94,7 +97,7 @@ export const PostCard: React.FC<PostCardProps> = ({
           className="flex items-center gap-3 text-left group/author focus:outline-none cursor-pointer"
         >
           <img
-            src={author.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
+            src={author.avatar_url || DEFAULT_DLICOM_AVATAR}
             alt={author.display_name}
             className="w-10 h-10 rounded-xl object-cover border border-[#334155] group-hover/author:border-blue-500 transition-colors"
           />
@@ -103,9 +106,7 @@ export const PostCard: React.FC<PostCardProps> = ({
               <h4 className="text-xs font-bold text-white group-hover/author:text-blue-300 transition-colors">
                 {author.display_name}
               </h4>
-              {author.is_verified && (
-                <ShieldCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-              )}
+              <VerifiedBadge user={author} showAdminLabel={true} />
             </div>
             <p className="text-[11px] text-slate-400 font-mono">
               @{author.username}

@@ -1,6 +1,6 @@
-import React from 'react';
 import { Trophy, Hash, UserPlus, UserCheck, ShieldCheck, ArrowRight } from 'lucide-react';
 import type { Profile } from '../../types';
+import { VerifiedBadge } from '../ui/VerifiedBadge';
 
 interface RightSidebarProps {
   leaderboard: Array<Profile & { rank: number; posts_count: number }>;
@@ -63,9 +63,12 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                   className="w-8 h-8 rounded-lg object-cover border border-[#334155]"
                 />
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-white truncate group-hover:text-blue-300 transition-colors">
-                    {item.display_name}
-                  </p>
+                  <div className="flex items-center gap-1">
+                    <p className="text-xs font-bold text-white truncate group-hover:text-blue-300 transition-colors">
+                      {item.display_name}
+                    </p>
+                    <VerifiedBadge user={item} size="xs" />
+                  </div>
                   <p className="text-[10px] text-slate-400 font-mono truncate">
                     @{item.username}
                   </p>
@@ -123,9 +126,12 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                     className="w-8 h-8 rounded-lg object-cover border border-[#334155]"
                   />
                   <div className="min-w-0">
-                    <p className="text-xs font-bold text-white truncate group-hover:text-blue-300">
-                      {user.display_name}
-                    </p>
+                    <div className="flex items-center gap-1">
+                      <p className="text-xs font-bold text-white truncate group-hover:text-blue-300">
+                        {user.display_name}
+                      </p>
+                      <VerifiedBadge user={user} size="xs" />
+                    </div>
                     <p className="text-[10px] text-slate-400 font-mono truncate">
                       @{user.username}
                     </p>

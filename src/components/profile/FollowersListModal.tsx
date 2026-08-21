@@ -9,6 +9,8 @@ import {
   ArrowRight
 } from 'lucide-react';
 import type { Profile } from '../../types';
+import { VerifiedBadge } from '../ui/VerifiedBadge';
+import { DEFAULT_DLICOM_AVATAR } from '../../lib/storage';
 
 interface FollowersListModalProps {
   isOpen: boolean;
@@ -115,7 +117,7 @@ export const FollowersListModal: React.FC<FollowersListModalProps> = ({
                     className="flex items-center gap-3 min-w-0 cursor-pointer flex-1 group"
                   >
                     <img
-                      src={user.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
+                      src={user.avatar_url || DEFAULT_DLICOM_AVATAR}
                       alt={user.display_name}
                       className="w-10 h-10 rounded-xl object-cover border border-[#334155] shrink-0"
                     />
@@ -125,9 +127,7 @@ export const FollowersListModal: React.FC<FollowersListModalProps> = ({
                         <h4 className="text-xs font-bold text-white truncate group-hover:text-blue-300 transition-colors">
                           {user.display_name}
                         </h4>
-                        {user.is_verified && (
-                          <ShieldCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                        )}
+                        <VerifiedBadge user={user} showAdminLabel={true} />
                         {isSelf && (
                           <span className="px-1.5 py-0.2 bg-blue-600/30 text-blue-300 text-[9px] font-mono rounded">
                             You

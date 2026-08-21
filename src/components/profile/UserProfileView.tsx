@@ -14,6 +14,7 @@ import {
 import type { Profile, Post } from '../../types';
 import { PostCard } from '../feed/PostCard';
 import { FollowersListModal } from './FollowersListModal';
+import { VerifiedBadge } from '../ui/VerifiedBadge';
 
 interface UserProfileViewProps {
   profile: Profile;
@@ -115,9 +116,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   <h1 className="text-lg sm:text-2xl font-bold text-white tracking-tight">
                     {profile.display_name}
                   </h1>
-                  {profile.is_verified && (
-                    <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400 shrink-0" />
-                  )}
+                  <VerifiedBadge user={profile} size="md" showAdminLabel={true} />
                 </div>
                 <p className="text-xs text-blue-400 font-mono">
                   @{profile.username}

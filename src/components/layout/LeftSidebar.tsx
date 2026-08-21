@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { Profile, ActiveView } from '../../types';
 import { isUserAdmin } from '../../lib/storage';
+import { VerifiedBadge } from '../ui/VerifiedBadge';
 
 interface LeftSidebarProps {
   currentUser: Profile;
@@ -61,9 +62,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
               <h3 className="text-xs font-bold text-white truncate group-hover:text-blue-300 transition-colors">
                 {currentUser.display_name}
               </h3>
-              {currentUser.is_verified && (
-                <ShieldCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-              )}
+              <VerifiedBadge user={currentUser} showAdminLabel={true} />
             </div>
             <p className="text-[11px] text-slate-400 font-mono truncate">
               @{currentUser.username}

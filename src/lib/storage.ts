@@ -36,6 +36,14 @@ const setItem = <T>(key: string, value: T): void => {
 
 const FAKE_MOCK_IDS = ['usr_manas_01', 'usr_elena_02', 'usr_marcus_03'];
 
+export const DLICOM_DEFAULT_AVATARS = [
+  '/avatars/dlicom_default_1.jpg',
+  '/avatars/dlicom_default_2.jpg',
+  '/avatars/dlicom_default_3.jpg',
+];
+
+export const DEFAULT_DLICOM_AVATAR = '/avatars/dlicom_default_1.jpg';
+
 export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
   return {
     id: p.id,
@@ -44,7 +52,7 @@ export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
     last_name: p.last_name || '',
     display_name: p.display_name || '',
     username: p.username || '',
-    avatar_url: p.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+    avatar_url: p.avatar_url || DEFAULT_DLICOM_AVATAR,
     banner_url: p.banner_url || '',
     bio: p.bio || '',
     dlicom_address: p.dlicom_address || '',
@@ -559,7 +567,7 @@ export const verifyAndCreateUser = async (
     last_name: found.last_name,
     display_name: `${found.first_name} ${found.last_name}`,
     username,
-    avatar_url: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150`,
+    avatar_url: DEFAULT_DLICOM_AVATAR,
     bio: `Hey, I just joined Aether Feed!`,
     dlicom_address: '',
     location: '',
@@ -917,7 +925,7 @@ export const getRealPosts = (): Post[] => {
         last_name: '',
         display_name: 'Aether Member',
         username: 'member',
-        avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+        avatar_url: DEFAULT_DLICOM_AVATAR,
         bio: '',
         dlicom_address: '',
         is_verified: true,

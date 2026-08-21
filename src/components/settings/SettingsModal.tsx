@@ -30,6 +30,7 @@ import {
 } from '../../lib/storage';
 import { sendRealVerificationEmail } from '../../lib/emailService';
 import { compressAvatar, compressBanner } from '../../lib/imageUtils';
+import { AvatarCropModal } from '../profile/AvatarCropModal';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -68,6 +69,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [website, setWebsite] = useState(currentUser.website || '');
   const [avatarUrl, setAvatarUrl] = useState(currentUser.avatar_url);
   const [bannerUrl, setBannerUrl] = useState(currentUser.banner_url || '');
+  const [isCropModalOpen, setIsCropModalOpen] = useState(false);
+  const [rawAvatarToCrop, setRawAvatarToCrop] = useState('');
 
   // Email Update State
   const [accountEmail, setAccountEmail] = useState(currentUser.email || '');
@@ -107,22 +110,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  // Handle Local Avatar File Upload with Instant Compression
-  const handleAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Local Avatar File Upload with Crop / Sizing Adjuster
+  const handleAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      try {
-        const compressed = await compressAvatar(file);
-        setAvatarUrl(compressed);
-        addToast('Avatar Loaded', 'Profile photo optimized for fast cross-device sync.', 'success');
-      } catch {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          setAvatarUrl(event.target?.result as string);
-          addToast('Avatar Updated', 'Photo loaded from device.', 'success');
-        };
-        reader.readAsDataURL(file);
-      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setRawAvatarToCrop(event.target?.result as string);
+        setIsCropModalOpen(true);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -318,13 +315,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onChange={handleAvatarFile}
                       className="hidden"
                     />
-                    <button
-                      type="button"
-                      onClick={() => avatarInputRef.current?.click()}
-                      className="px-3 py-1.5 bg-[#0B132B] hover:bg-[#1E293B] border border-[#334155] rounded-xl text-xs font-semibold text-blue-300"
-                    >
-                      Change Photo
-                    </button>
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => avatarInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-[#0B132B] hover:bg-[#1E293B] border border-[#334155] rounded-xl text-xs font-semibold text-blue-300 cursor-pointer text-center"
+                      >
+                        Upload Photo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRawAvatarToCrop(avatarUrl);
+                          setIsCropModalOpen(true);
+                        }}
+                        className="px-3 py-1 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/40 rounded-xl text-[11px] font-semibold text-blue-200 cursor-pointer text-center"
+                      >
+                        Adjust / Fit Size
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -815,6 +824,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
 
         </div>
+
+        {/* Avatar Crop & Sizing Adjuster Modal */}
+        {isCropModalOpen && (
+          <AvatarCropModal
+            isOpen={isCropModalOpen}
+            imageSrc={rawAvatarToCrop || avatarUrl}
+            onClose={() => setIsCropModalOpen(false)}
+            onCropComplete={(croppedUrl) => {
+              setAvatarUrl(croppedUrl);
+              addToast('Profile Picture Fitted', 'Avatar adjusted and fitted perfectly.', 'success');
+            }}
+          />
+        )}
 
       </div>
     </div>

@@ -15,7 +15,8 @@ import {
   ShieldCheck,
   Share2
 } from 'lucide-react';
-import type { Post } from '../../types';
+import type { Post, Profile } from '../../types';
+import { VerifiedBadge } from '../ui/VerifiedBadge';
 
 interface PostDetailsModalProps {
   isOpen: boolean;
@@ -95,9 +96,7 @@ export const PostDetailsModal: React.FC<PostDetailsModalProps> = ({
                 <h4 className="text-xs font-bold text-white truncate">
                   {post.user?.display_name}
                 </h4>
-                {post.user?.is_verified && (
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-                )}
+                <VerifiedBadge user={post.user} showAdminLabel={true} />
               </div>
               <p className="text-[11px] text-blue-400 font-mono truncate">
                 @{post.user?.username}

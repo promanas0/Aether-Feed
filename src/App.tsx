@@ -52,6 +52,7 @@ import { ImageLightboxModal } from './components/feed/ImageLightboxModal';
 import { AccountSwitcherModal } from './components/auth/AccountSwitcherModal';
 import { AuthModal } from './components/auth/AuthModal';
 import { AdminPanelModal } from './components/admin/AdminPanelModal';
+import { VerifiedBadge } from './components/ui/VerifiedBadge';
 import { ToastContainer } from './components/ui/Toast';
 import { 
   Flame, 
@@ -510,9 +511,7 @@ export function App() {
                                 <span className="text-xs font-bold text-white truncate">
                                   {member.display_name}
                                 </span>
-                                {member.is_verified && (
-                                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                                )}
+                                <VerifiedBadge user={member} showAdminLabel={true} />
                               </div>
                               <p className="text-[11px] text-slate-400 font-mono truncate">
                                 @{member.username}
