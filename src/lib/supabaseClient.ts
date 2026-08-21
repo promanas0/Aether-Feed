@@ -1,6 +1,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const SUPABASE_CONFIG_KEY = 'aether_supabase_config_v1';
+const DEFAULT_SUPABASE_URL = 'https://eekdcgoeybphyqwfwgjs.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_VLP93NzwJavPGFQpYVccwA_v4fE_g_2';
 
 export interface SupabaseConfig {
   url: string;
@@ -9,19 +11,23 @@ export interface SupabaseConfig {
 }
 
 export const getStoredSupabaseConfig = (): SupabaseConfig => {
+  const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+  const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY;
+
   try {
     const saved = localStorage.getItem(SUPABASE_CONFIG_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && parsed.url && parsed.anonKey && parsed.isEnabled !== false) {
+        return parsed;
+      }
+    }
   } catch {}
-
-  // Fallback to Vite environment variables if present
-  const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
-  const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
   return {
     url: envUrl,
     anonKey: envKey,
-    isEnabled: Boolean(envUrl && envKey),
+    isEnabled: true,
   };
 };
 
@@ -71,18 +77,10 @@ export const testSupabaseConnection = async (
 
   try {
     const tempClient = createClient(url, anonKey);
-    // Simple query to verify connection
     const { error } = await tempClient.from('profiles').select('id').limit(1);
 
     if (error) {
       console.warn('[Aether Feed] Supabase connection test returned error:', error);
-      // Table might not exist yet, but connection itself is valid
-      if (error.code === 'PGRST116' || error.message.includes('relation "public.profiles" does not exist')) {
-        return {
-          success: true,
-          message: 'Connected to Supabase! (Note: Remember to run supabase/schema.sql in the SQL Editor to create tables).',
-        };
-      }
       return {
         success: false,
         message: `Supabase Error (${error.code || 'HTTP'}): ${error.message}`,
