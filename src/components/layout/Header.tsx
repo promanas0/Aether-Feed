@@ -14,9 +14,11 @@ import {
   FileText,
   ShieldCheck,
   ArrowRight,
-  Repeat
+  Repeat,
+  Crown
 } from 'lucide-react';
 import type { Profile, NotificationItem, ThemeMode, Post } from '../../types';
+import { isUserAdmin } from '../../lib/storage';
 import { NotificationFlyout } from './NotificationFlyout';
 
 interface HeaderProps {
@@ -34,6 +36,7 @@ interface HeaderProps {
   onOpenSettings: () => void;
   onSignOut: () => void;
   onOpenAccountSwitcher?: () => void;
+  onOpenAdminPanel?: () => void;
   onMarkAllNotificationsRead: () => void;
   onSelectPostFromNotif: (postId: string) => void;
   onSelectPostFromSearch?: (post: Post) => void;
@@ -54,6 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   onSignOut,
   onOpenAccountSwitcher,
+  onOpenAdminPanel,
   onMarkAllNotificationsRead,
   onSelectPostFromNotif,
   onSelectPostFromSearch,
@@ -358,6 +362,20 @@ export const Header: React.FC<HeaderProps> = ({
                     >
                       <Repeat className="w-3.5 h-3.5 text-blue-400" />
                       <span>Switch Account</span>
+                    </button>
+                  )}
+
+                  {/* Admin Console (Super Admin Exclusive) */}
+                  {isUserAdmin(currentUser) && onOpenAdminPanel && (
+                    <button
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        onOpenAdminPanel();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-300 hover:text-white bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 rounded-lg transition-colors text-left cursor-pointer font-bold shadow-sm"
+                    >
+                      <Crown className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Admin Panel</span>
                     </button>
                   )}
 

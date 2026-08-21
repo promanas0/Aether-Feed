@@ -51,6 +51,7 @@ import { SettingsModal } from './components/settings/SettingsModal';
 import { ImageLightboxModal } from './components/feed/ImageLightboxModal';
 import { AccountSwitcherModal } from './components/auth/AccountSwitcherModal';
 import { AuthModal } from './components/auth/AuthModal';
+import { AdminPanelModal } from './components/admin/AdminPanelModal';
 import { ToastContainer } from './components/ui/Toast';
 import { 
   Flame, 
@@ -93,6 +94,7 @@ export function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAccountSwitcherOpen, setIsAccountSwitcherOpen] = useState(false);
   const [isAddAccountOpen, setIsAddAccountOpen] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [detailsPost, setDetailsPost] = useState<Post | null>(null);
@@ -419,6 +421,7 @@ export function App() {
         onOpenProfile={handleOpenProfile}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
+        onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
         onSignOut={handleSignOut}
         onMarkAllNotificationsRead={() => {
           markAllNotificationsRead(currentUser.id);
@@ -454,6 +457,7 @@ export function App() {
           onOpenMyProfile={() => handleOpenProfile(currentUser)}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
+          onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
           onSignOut={handleSignOut}
         />
 
@@ -766,6 +770,19 @@ export function App() {
         onAddAccount={() => setIsAddAccountOpen(true)}
         addToast={addToast}
       />
+
+      {/* Admin Panel Console (Super Admin & Authorized Team Only) */}
+      {isAdminPanelOpen && (
+        <AdminPanelModal
+          isOpen={isAdminPanelOpen}
+          onClose={() => setIsAdminPanelOpen(false)}
+          currentUser={currentUser}
+          allUsers={users}
+          allPosts={posts}
+          onRefreshData={syncStateFromStorage}
+          addToast={addToast}
+        />
+      )}
 
       {/* Account Switcher Modal (Multi-Account) */}
       <AccountSwitcherModal

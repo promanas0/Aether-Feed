@@ -12,6 +12,7 @@ const STORAGE_KEYS = {
   INITIALIZED: 'aether_v4_initialized',
   SAVED_ACCOUNTS: 'aether_saved_accounts_v4',
   DELETED_POST_IDS: 'aether_deleted_post_ids_v4',
+  ADMIN_EMAILS: 'aether_admin_emails_v4',
 };
 
 // Safe LocalStorage helpers
@@ -1014,7 +1015,7 @@ export const createRealPost = (data: {
   return newPost;
 };
 
-export const deleteRealPost = (postId: string, userId: string): boolean => {
+export const deleteRealPost = (postId: string, userId?: string): boolean => {
   // 1. Mark as deleted in tombstone set so sync never restores it
   const deletedList = getItem<string[]>(STORAGE_KEYS.DELETED_POST_IDS, []);
   if (!deletedList.includes(postId)) {
@@ -1335,3 +1336,151 @@ export const setThemeMode = (mode: ThemeMode): void => {
     root.classList.remove('dark');
   }
 };
+
+/* ==========================================================================
+   ADMIN CONSOLE & SCAMMER / BOT MODERATION ENGINE
+   ========================================================================== */
+
+export const ROOT_ADMIN_EMAIL = 'promanas018@gmail.com';
+
+export const getAdminEmails = (): string[] => {
+  const saved = getItem<string[]>(STORAGE_KEYS.ADMIN_EMAILS, []);
+  const set = new Set<string>(saved.map(e => e.toLowerCase().trim()));
+  set.add(ROOT_ADMIN_EMAIL.toLowerCase());
+  return Array.from(set);
+};
+
+export const isUserAdmin = (userOrEmail?: Profile | string | null): boolean => {
+  if (!userOrEmail) return false;
+  const email = typeof userOrEmail === 'string' ? userOrEmail : userOrEmail.email;
+  if (!email) return false;
+  const cleanEmail = email.toLowerCase().trim();
+  const adminList = getAdminEmails();
+  return adminList.includes(cleanEmail);
+};
+
+export const addAdminEmail = (newEmail: string, actorEmail?: string): boolean => {
+  if (actorEmail && !isUserAdmin(actorEmail)) return false;
+  const clean = newEmail.toLowerCase().trim();
+  if (!clean || !clean.includes('@')) return false;
+
+  const current = getAdminEmails();
+  if (current.includes(clean)) return false;
+
+  current.push(clean);
+  setItem(STORAGE_KEYS.ADMIN_EMAILS, current);
+  return true;
+};
+
+export const removeAdminEmail = (targetEmail: string, actorEmail?: string): boolean => {
+  if (actorEmail && !isUserAdmin(actorEmail)) return false;
+  const clean = targetEmail.toLowerCase().trim();
+  if (clean === ROOT_ADMIN_EMAIL.toLowerCase()) return false; // Root admin is permanent
+
+  const current = getAdminEmails().filter(e => e !== clean);
+  setItem(STORAGE_KEYS.ADMIN_EMAILS, current);
+  return true;
+};
+
+/**
+ * Ban / Wipe Scammer or Bot Account Completely
+ * Purges profile, all their posts, votes, and notifications platform-wide.
+ */
+export const adminBanUser = (targetUserId: string, actorEmail?: string): { success: boolean; message: string } => {
+  if (actorEmail && !isUserAdmin(actorEmail)) {
+    return { success: false, message: 'Unauthorized: Admin privileges required.' };
+  }
+
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const targetUser = users.find(u => u.id === targetUserId);
+  if (!targetUser) {
+    return { success: false, message: 'User not found.' };
+  }
+
+  if (targetUser.email.toLowerCase().trim() === ROOT_ADMIN_EMAIL.toLowerCase()) {
+    return { success: false, message: 'Cannot ban the Root Super Admin.' };
+  }
+
+  // 1. Remove from local real users
+  const filteredUsers = users.filter(u => u.id !== targetUserId);
+  setItem(STORAGE_KEYS.REAL_USERS, filteredUsers);
+
+  // 2. Remove from saved accounts
+  const savedAccounts = getItem<Profile[]>(STORAGE_KEYS.SAVED_ACCOUNTS, []).filter(u => u.id !== targetUserId);
+  setItem(STORAGE_KEYS.SAVED_ACCOUNTS, savedAccounts);
+
+  // 3. Find and purge all posts by this user
+  const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+  const userPosts = posts.filter(p => p.user_id === targetUserId);
+  const userPostIds = new Set(userPosts.map(p => p.id));
+
+  const remainingPosts = posts.filter(p => p.user_id !== targetUserId);
+  setItem(STORAGE_KEYS.POSTS, remainingPosts);
+
+  // 4. Mark all their posts as deleted
+  const deletedIds = getItem<string[]>(STORAGE_KEYS.DELETED_POST_IDS, []);
+  const updatedDeletedIds = Array.from(new Set([...deletedIds, ...Array.from(userPostIds)]));
+  setItem(STORAGE_KEYS.DELETED_POST_IDS, updatedDeletedIds);
+
+  // 5. Purge all votes by or on this user's posts
+  const votes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(
+    v => v.user_id !== targetUserId && !userPostIds.has(v.post_id)
+  );
+  setItem(STORAGE_KEYS.VOTES, votes);
+
+  // 6. Purge notifications
+  const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []).filter(
+    n => n.user_id !== targetUserId && n.actor_id !== targetUserId
+  );
+  setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
+
+  // 7. Delete from Supabase Cloud DB
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('profiles').delete().eq('id', targetUserId).then(() => {}, () => {});
+    supabase.from('posts').delete().eq('user_id', targetUserId).then(() => {}, () => {});
+    supabase.from('votes').delete().eq('user_id', targetUserId).then(() => {}, () => {});
+    supabase.from('notifications').delete().eq('user_id', targetUserId).then(() => {}, () => {});
+    supabase.from('notifications').delete().eq('actor_id', targetUserId).then(() => {}, () => {});
+  }
+
+  // 8. Delete from local server API
+  userPostIds.forEach(pid => {
+    fetch(`/api/posts?id=${encodeURIComponent(pid)}`, { method: 'DELETE' }).catch(() => {});
+  });
+
+  syncWithServer();
+  return { success: true, message: `User @${targetUser.username} has been permanently banned and wiped.` };
+};
+
+/**
+ * Toggle Verified Checkmark badge for any user
+ */
+export const adminToggleVerifyUser = (targetUserId: string, actorEmail?: string): Profile | null => {
+  if (actorEmail && !isUserAdmin(actorEmail)) return null;
+
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const idx = users.findIndex(u => u.id === targetUserId);
+  if (idx === -1) return null;
+
+  users[idx] = {
+    ...users[idx],
+    is_verified: !users[idx].is_verified,
+    updated_at: new Date().toISOString(),
+  };
+
+  setItem(STORAGE_KEYS.REAL_USERS, users);
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase
+      .from('profiles')
+      .update({ is_verified: users[idx].is_verified })
+      .eq('id', targetUserId)
+      .then(() => {}, () => {});
+  }
+
+  syncWithServer();
+  return users[idx];
+};
+
