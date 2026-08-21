@@ -157,6 +157,99 @@ function databaseApiPlugin(): Plugin {
           return;
         }
 
+        // POST /api/votes
+        if (pathname === '/api/votes' && req.method === 'POST') {
+          let body = '';
+          req.on('data', (chunk) => (body += chunk));
+          req.on('end', () => {
+            try {
+              const vote = JSON.parse(body || '{}');
+              if (vote.user_id && vote.post_id && vote.type) {
+                const votes = readJson(votesFile, []);
+                const key = `${vote.user_id}_${vote.post_id}`;
+                const voteId = vote.id || `vote_${key}`;
+                const cleanVote = { ...vote, id: voteId };
+
+                const existingIdx = votes.findIndex((v: any) => (v.user_id === vote.user_id && v.post_id === vote.post_id) || v.id === voteId);
+                if (existingIdx !== -1) {
+                  votes[existingIdx] = cleanVote;
+                } else {
+                  votes.push(cleanVote);
+                }
+                writeJson(votesFile, votes);
+
+                // Update post counts
+                const posts = readJson(postsFile, []);
+                const postIdx = posts.findIndex((p: any) => p.id === vote.post_id);
+                if (postIdx !== -1) {
+                  const postVotes = votes.filter((v: any) => v.post_id === vote.post_id);
+                  posts[postIdx].votes_up = postVotes.filter((v: any) => v.type === 'up').length;
+                  posts[postIdx].votes_down = postVotes.filter((v: any) => v.type === 'down').length;
+                  posts[postIdx].net_votes = posts[postIdx].votes_up - posts[postIdx].votes_down;
+                  writeJson(postsFile, posts);
+                }
+              }
+
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true }));
+            } catch (e: any) {
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 400;
+              res.end(JSON.stringify({ success: false, message: e.message }));
+            }
+          });
+          return;
+        }
+
+        // DELETE /api/votes
+        if (pathname === '/api/votes' && req.method === 'DELETE') {
+          const urlObj = new URL(rawUrl, 'http://localhost');
+          const queryId = urlObj.searchParams.get('id');
+          const queryPostId = urlObj.searchParams.get('post_id');
+          const queryUserId = urlObj.searchParams.get('user_id');
+
+          let body = '';
+          req.on('data', (chunk) => (body += chunk));
+          req.on('end', () => {
+            try {
+              const parsed = JSON.parse(body || '{}');
+              const targetId = queryId || parsed.id;
+              const targetPostId = queryPostId || parsed.post_id || parsed.postId;
+              const targetUserId = queryUserId || parsed.user_id || parsed.userId;
+
+              const votes = readJson(votesFile, []);
+              const filteredVotes = votes.filter((v: any) => {
+                if (targetId && v.id === targetId) return false;
+                if (targetPostId && targetUserId && v.post_id === targetPostId && v.user_id === targetUserId) return false;
+                return true;
+              });
+              writeJson(votesFile, filteredVotes);
+
+              if (targetPostId) {
+                const posts = readJson(postsFile, []);
+                const postIdx = posts.findIndex((p: any) => p.id === targetPostId);
+                if (postIdx !== -1) {
+                  const postVotes = filteredVotes.filter((v: any) => v.post_id === targetPostId);
+                  posts[postIdx].votes_up = postVotes.filter((v: any) => v.type === 'up').length;
+                  posts[postIdx].votes_down = postVotes.filter((v: any) => v.type === 'down').length;
+                  posts[postIdx].net_votes = posts[postIdx].votes_up - posts[postIdx].votes_down;
+                  writeJson(postsFile, posts);
+                }
+              }
+
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true }));
+            } catch (e: any) {
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 400;
+              res.end(JSON.stringify({ success: false, message: e.message }));
+            }
+          });
+          return;
+        }
+
         // POST /api/auth/login
         if (pathname === '/api/auth/login' && req.method === 'POST') {
           let body = '';
@@ -296,21 +389,37 @@ function databaseApiPlugin(): Plugin {
 
               const voteMap = new Map<string, any>();
               currentVotes.forEach((v: any) => {
-                if (!deletedPostIds.has(v.post_id)) {
-                  voteMap.set(v.id, v);
+                if (!deletedPostIds.has(v.post_id) && v.user_id && v.post_id) {
+                  const key = `${v.user_id}_${v.post_id}`;
+                  voteMap.set(key, { ...v, id: `vote_${key}` });
                 }
               });
               (incoming.votes || []).forEach((v: any) => {
-                if (!deletedPostIds.has(v.post_id)) {
-                  voteMap.set(v.id, v);
+                if (!deletedPostIds.has(v.post_id) && v.user_id && v.post_id) {
+                  const key = `${v.user_id}_${v.post_id}`;
+                  voteMap.set(key, { ...v, id: `vote_${key}` });
                 }
               });
 
               const mergedUsers = Array.from(userMap.values());
-              const mergedPosts = Array.from(postMap.values()).sort(
-                (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-              );
               const mergedVotes = Array.from(voteMap.values());
+
+              const mergedPosts = Array.from(postMap.values())
+                .filter((p: any) => !deletedPostIds.has(p.id))
+                .map((p: any) => {
+                  const postVotes = mergedVotes.filter((v: any) => v.post_id === p.id);
+                  const up = postVotes.filter((v: any) => v.type === 'up').length;
+                  const down = postVotes.filter((v: any) => v.type === 'down').length;
+                  return {
+                    ...p,
+                    votes_up: up,
+                    votes_down: down,
+                    net_votes: up - down,
+                  };
+                })
+                .sort(
+                  (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                );
 
               writeJson(usersFile, mergedUsers);
               writeJson(postsFile, mergedPosts);

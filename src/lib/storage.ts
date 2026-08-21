@@ -212,26 +212,47 @@ export const syncWithServer = async (): Promise<boolean> => {
               localStorage.setItem(STORAGE_KEYS.REAL_USERS, JSON.stringify(Array.from(mergedUserMap.values())));
             }
 
-            if (Array.isArray(posts)) {
-              const cleanPosts = posts.filter(p => !deletedIds.has(p.id));
-              const oldPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
-              const oldPostIds = new Set(oldPosts.map(p => p.id));
-              const newForeignPosts = cleanPosts.filter(p => !oldPostIds.has(p.id) && p.user_id !== currentUserId);
-
-              localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(cleanPosts));
-
-              if (newForeignPosts.length > 0) {
-                const latestNew = newForeignPosts[0];
-                const author = Array.isArray(users) ? users.find((u: any) => u.id === latestNew.user_id) : undefined;
-                window.dispatchEvent(
-                  new CustomEvent('aether_post_broadcast', {
-                    detail: { post: { ...latestNew, user: author }, authorId: latestNew.user_id }
-                  })
-                );
-              }
-            }
             if (Array.isArray(votes)) {
-              localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(votes));
+              const voteMap = new Map<string, VoteRecord>();
+              [...votes, ...localVotes].forEach((v: any) => {
+                if (v && v.user_id && v.post_id && !deletedIds.has(v.post_id)) {
+                  const key = `${v.user_id}_${v.post_id}`;
+                  voteMap.set(key, { ...v, id: `vote_${key}` });
+                }
+              });
+              const cleanLocalVotes = Array.from(voteMap.values());
+              localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(cleanLocalVotes));
+
+              if (Array.isArray(posts)) {
+                const cleanPosts = posts
+                  .filter(p => !deletedIds.has(p.id))
+                  .map(p => {
+                    const pVotes = cleanLocalVotes.filter(v => v.post_id === p.id);
+                    const up = pVotes.filter(v => v.type === 'up').length;
+                    const down = pVotes.filter(v => v.type === 'down').length;
+                    return {
+                      ...p,
+                      votes_up: up,
+                      votes_down: down,
+                      net_votes: up - down,
+                    };
+                  });
+                const oldPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+                const oldPostIds = new Set(oldPosts.map(p => p.id));
+                const newForeignPosts = cleanPosts.filter(p => !oldPostIds.has(p.id) && p.user_id !== currentUserId);
+
+                localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(cleanPosts));
+
+                if (newForeignPosts.length > 0) {
+                  const latestNew = newForeignPosts[0];
+                  const author = Array.isArray(users) ? users.find((u: any) => u.id === latestNew.user_id) : undefined;
+                  window.dispatchEvent(
+                    new CustomEvent('aether_post_broadcast', {
+                      detail: { post: { ...latestNew, user: author }, authorId: latestNew.user_id }
+                    })
+                  );
+                }
+              }
             }
             if (Array.isArray(notifications)) {
               localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
@@ -287,23 +308,50 @@ export const syncWithServer = async (): Promise<boolean> => {
             localStorage.setItem(STORAGE_KEYS.REAL_USERS, JSON.stringify(Array.from(userMap.values())));
           }
 
-          // B. Pull all posts from Supabase (excluding deleted ones)
+          // C. Pull all votes from Supabase & deduplicate with local votes
+          const { data: supaVotes } = await supabase.from('votes').select('*');
+          const combinedVotes = [...(supaVotes || []), ...freshLocalVotes];
+          const voteMap = new Map<string, VoteRecord>();
+          combinedVotes.forEach((v: any) => {
+            if (v && v.user_id && v.post_id && !deletedIds.has(v.post_id)) {
+              const key = `${v.user_id}_${v.post_id}`;
+              const canonicalId = `vote_${key}`;
+              const existing = voteMap.get(key);
+              if (!existing) {
+                voteMap.set(key, { ...v, id: canonicalId });
+              } else {
+                const existingTime = new Date(existing.created_at || 0).getTime();
+                const newTime = new Date(v.created_at || 0).getTime();
+                if (newTime >= existingTime) {
+                  voteMap.set(key, { ...v, id: canonicalId });
+                }
+              }
+            }
+          });
+          const validVotes = Array.from(voteMap.values());
+          localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(validVotes));
+
+          // B. Pull all posts from Supabase (excluding deleted ones) and recompute exact vote counts
           const { data: supaPosts } = await supabase
             .from('posts')
             .select('*')
             .order('created_at', { ascending: false });
 
-          if (supaPosts && supaPosts.length > 0) {
-            const validSupaPosts = supaPosts.filter((p: any) => !deletedIds.has(p.id));
-            localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(validSupaPosts));
-          }
-
-          // C. Pull all votes from Supabase
-          const { data: supaVotes } = await supabase.from('votes').select('*');
-          if (supaVotes && supaVotes.length > 0) {
-            const validVotes = supaVotes.filter((v: any) => !deletedIds.has(v.post_id));
-            localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(validVotes));
-          }
+          const basePosts = (supaPosts && supaPosts.length > 0) ? supaPosts : freshLocalPosts;
+          const validSupaPosts = basePosts
+            .filter((p: any) => !deletedIds.has(p.id))
+            .map((p: any) => {
+              const pVotes = validVotes.filter(v => v.post_id === p.id);
+              const up = pVotes.filter(v => v.type === 'up').length;
+              const down = pVotes.filter(v => v.type === 'down').length;
+              return {
+                ...p,
+                votes_up: up,
+                votes_down: down,
+                net_votes: up - down,
+              };
+            });
+          localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(validSupaPosts));
         } catch (supaErr) {
           console.warn('[Aether Supabase] Sync notice:', supaErr);
         }
@@ -795,26 +843,38 @@ export const getRealPosts = (): Post[] => {
   const deletedIds = getDeletedPostIds();
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []).filter(p => !deletedIds.has(p.id));
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const votes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(v => !deletedIds.has(v.post_id));
 
-  return posts.map(p => ({
-    ...p,
-    user: users.find(u => u.id === p.user_id) || {
-      id: p.user_id,
-      email: '',
-      first_name: 'Member',
-      last_name: '',
-      display_name: 'Aether Member',
-      username: 'member',
-      avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-      bio: '',
-      dlicom_address: '',
-      is_verified: true,
-      followers: [],
-      following: [],
-      total_votes_received: 0,
-      created_at: new Date().toISOString(),
-    }
-  }));
+  return posts.map(p => {
+    // Deterministically calculate votes from canonical votes list
+    const postVotes = votes.filter(v => v.post_id === p.id);
+    const votes_up = postVotes.filter(v => v.type === 'up').length;
+    const votes_down = postVotes.filter(v => v.type === 'down').length;
+    const net_votes = votes_up - votes_down;
+
+    return {
+      ...p,
+      votes_up,
+      votes_down,
+      net_votes,
+      user: users.find(u => u.id === p.user_id) || {
+        id: p.user_id,
+        email: '',
+        first_name: 'Member',
+        last_name: '',
+        display_name: 'Aether Member',
+        username: 'member',
+        avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+        bio: '',
+        dlicom_address: '',
+        is_verified: true,
+        followers: [],
+        following: [],
+        total_votes_received: 0,
+        created_at: new Date().toISOString(),
+      }
+    };
+  });
 };
 
 export const createRealPost = (data: {
@@ -1004,38 +1064,38 @@ export const votePostAction = (
     throw new Error('Post not found');
   }
 
-  const existingVoteIdx = votes.findIndex(v => v.post_id === postId && v.user_id === userId);
+  const canonicalVoteId = `vote_${userId}_${postId}`;
+  const existingVoteIdx = votes.findIndex(
+    v => (v.post_id === postId && v.user_id === userId) || v.id === canonicalVoteId
+  );
   let finalUserVote: 'up' | 'down' | null = null;
 
   if (existingVoteIdx !== -1) {
     const prevVote = votes[existingVoteIdx];
     if (prevVote.type === voteType) {
+      // Toggle off
       votes.splice(existingVoteIdx, 1);
-      if (voteType === 'up') posts[postIdx].votes_up = Math.max(0, posts[postIdx].votes_up - 1);
-      if (voteType === 'down') posts[postIdx].votes_down = Math.max(0, posts[postIdx].votes_down - 1);
       finalUserVote = null;
     } else {
-      votes[existingVoteIdx].type = voteType;
-      if (voteType === 'up') {
-        posts[postIdx].votes_up += 1;
-        posts[postIdx].votes_down = Math.max(0, posts[postIdx].votes_down - 1);
-      } else {
-        posts[postIdx].votes_down += 1;
-        posts[postIdx].votes_up = Math.max(0, posts[postIdx].votes_up - 1);
-      }
+      // Change vote direction
+      votes[existingVoteIdx] = {
+        id: canonicalVoteId,
+        user_id: userId,
+        post_id: postId,
+        type: voteType,
+        created_at: new Date().toISOString(),
+      };
       finalUserVote = voteType;
     }
   } else {
+    // New vote
     votes.push({
-      id: `vote_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      id: canonicalVoteId,
       user_id: userId,
       post_id: postId,
       type: voteType,
       created_at: new Date().toISOString(),
     });
-
-    if (voteType === 'up') posts[postIdx].votes_up += 1;
-    if (voteType === 'down') posts[postIdx].votes_down += 1;
     finalUserVote = voteType;
 
     if (posts[postIdx].user_id !== userId) {
@@ -1048,6 +1108,10 @@ export const votePostAction = (
     }
   }
 
+  // Deterministically compute exact post vote counts from updated votes array
+  const postVotes = votes.filter(v => v.post_id === postId);
+  posts[postIdx].votes_up = postVotes.filter(v => v.type === 'up').length;
+  posts[postIdx].votes_down = postVotes.filter(v => v.type === 'down').length;
   posts[postIdx].net_votes = posts[postIdx].votes_up - posts[postIdx].votes_down;
 
   const authorId = posts[postIdx].user_id;
@@ -1063,6 +1127,26 @@ export const votePostAction = (
   setItem(STORAGE_KEYS.POSTS, posts);
   setItem(STORAGE_KEYS.VOTES, votes);
 
+  // Local server sync
+  if (finalUserVote === null) {
+    fetch(`/api/votes?id=${encodeURIComponent(canonicalVoteId)}&post_id=${encodeURIComponent(postId)}&user_id=${encodeURIComponent(userId)}`, {
+      method: 'DELETE'
+    }).catch(() => {});
+  } else {
+    fetch('/api/votes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: canonicalVoteId,
+        user_id: userId,
+        post_id: postId,
+        type: finalUserVote,
+        created_at: new Date().toISOString(),
+      })
+    }).catch(() => {});
+  }
+
+  // Supabase Cloud DB sync
   const supabase = getSupabaseClient();
   if (supabase) {
     supabase
@@ -1076,10 +1160,11 @@ export const votePostAction = (
       .then(() => {}, (err: any) => console.warn('[Aether Supabase] Post vote update error:', err));
 
     if (finalUserVote === null) {
+      supabase.from('votes').delete().eq('id', canonicalVoteId).then(() => {}, () => {});
       supabase.from('votes').delete().match({ user_id: userId, post_id: postId }).then(() => {}, () => {});
     } else {
       supabase.from('votes').upsert({
-        id: `vote_${userId}_${postId}`,
+        id: canonicalVoteId,
         user_id: userId,
         post_id: postId,
         type: finalUserVote,
