@@ -109,10 +109,14 @@ export const syncWithServer = async (): Promise<boolean> => {
       const supabase = getSupabaseClient();
       if (supabase) {
         try {
+          const currentUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
+          if (currentUsers.length > 0) {
+            await supabase.from('profiles').upsert(currentUsers);
+          }
+
           const { data: supaProfiles } = await supabase.from('profiles').select('*');
           if (supaProfiles && supaProfiles.length > 0) {
             const cleanSupaUsers = supaProfiles.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
-            const currentUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
             const userMap = new Map<string, Profile>();
             cleanSupaUsers.forEach((u: any) => userMap.set(u.id, u));
             currentUsers.forEach(u => {
@@ -291,7 +295,7 @@ export const authenticateUser = async (email: string, password: string): Promise
       const { data: supaUsers, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('email', cleanEmail)
+        .ilike('email', cleanEmail)
         .limit(1);
 
       if (!error && supaUsers && supaUsers.length > 0) {
