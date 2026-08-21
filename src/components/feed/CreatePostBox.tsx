@@ -10,6 +10,7 @@ import {
   Play
 } from 'lucide-react';
 import type { Profile, ToastMessage } from '../../types';
+import { compressPostImage } from '../../lib/imageUtils';
 
 interface CreatePostBoxProps {
   currentUser: Profile;
@@ -45,8 +46,8 @@ export const CreatePostBox: React.FC<CreatePostBoxProps> = ({
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
-  // Handle Photo selection
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Photo selection with Auto-Compression
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
@@ -54,14 +55,22 @@ export const CreatePostBox: React.FC<CreatePostBoxProps> = ({
         return;
       }
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setImageData(event.target?.result as string);
+      try {
+        const compressed = await compressPostImage(file);
+        setImageData(compressed);
         setVideoData(null);
         setMediaFileName(file.name);
-        addToast('Photo Attached', `${file.name} ready to publish.`, 'success');
-      };
-      reader.readAsDataURL(file);
+        addToast('Photo Attached', `${file.name} optimized and ready.`, 'success');
+      } catch {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setImageData(event.target?.result as string);
+          setVideoData(null);
+          setMediaFileName(file.name);
+          addToast('Photo Attached', `${file.name} ready to publish.`, 'success');
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 

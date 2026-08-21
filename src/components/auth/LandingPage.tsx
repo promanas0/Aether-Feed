@@ -20,7 +20,9 @@ import {
   createPendingRegistration, 
   verifyAndCreateUser, 
   authenticateUser,
-  syncWithServer
+  syncWithServer,
+  getSavedAccounts,
+  switchAccountSession
 } from '../../lib/storage';
 import { sendRealVerificationEmail } from '../../lib/emailService';
 import { EmailConfigModal } from './EmailConfigModal';
@@ -257,6 +259,55 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 Aether Feed
               </h1>
             </div>
+
+            {/* Saved Accounts on This Device (1-Click Switch) */}
+            {(() => {
+              const savedList = getSavedAccounts();
+              if (savedList.length === 0) return null;
+
+              return (
+                <div className="pt-2 text-left bg-[#1C2541]/70 border border-[#334155] rounded-2xl p-3.5 space-y-2">
+                  <p className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                    Saved Accounts on this Device ({savedList.length})
+                  </p>
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                    {savedList.map((acc) => (
+                      <button
+                        key={acc.id}
+                        type="button"
+                        onClick={() => {
+                          const active = switchAccountSession(acc.id);
+                          if (active) {
+                            addToast('Signed In', `Welcome back, ${active.display_name}!`, 'success');
+                            onAuthSuccess(active);
+                          }
+                        }}
+                        className="w-full p-2 bg-[#0B132B] hover:bg-[#2A3756] border border-[#334155] rounded-xl flex items-center justify-between gap-2.5 transition-all text-left cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <img
+                            src={acc.avatar_url}
+                            alt={acc.display_name}
+                            className="w-8 h-8 rounded-lg object-cover border border-blue-500/30 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-white truncate group-hover:text-blue-300">
+                              {acc.display_name}
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-mono truncate">
+                              @{acc.username}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-semibold text-blue-400 shrink-0 px-2 py-0.5 rounded-md bg-blue-950/60 border border-blue-500/30">
+                          Log In &rarr;
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* 2 Big Clean Action Buttons */}
             <div className="space-y-3 pt-2">

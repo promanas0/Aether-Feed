@@ -16,6 +16,7 @@ export interface Profile {
   following: string[]; // User IDs this user follows
   total_votes_received: number;
   created_at: string;
+  updated_at?: string;
   password_hash?: string;
   posts_count?: number;
 }

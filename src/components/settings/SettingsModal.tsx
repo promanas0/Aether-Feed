@@ -21,6 +21,7 @@ import {
 import type { Profile, ThemeMode, ToastMessage } from '../../types';
 import { createPasswordChangeOtp, verifyPasswordChangeOtp, deleteUserAccount } from '../../lib/storage';
 import { sendRealVerificationEmail } from '../../lib/emailService';
+import { compressAvatar, compressBanner } from '../../lib/imageUtils';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ interface SettingsModalProps {
   onThemeChange: (mode: ThemeMode) => void;
   onUpdateProfile: (updates: Partial<Profile>) => void;
   onSignOut: () => void;
+  onOpenAccountSwitcher?: () => void;
   addToast: (title: string, desc?: string, type?: ToastMessage['type']) => void;
 }
 
@@ -41,6 +43,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onThemeChange,
   onUpdateProfile,
   onSignOut,
+  onOpenAccountSwitcher,
   addToast,
 }) => {
   const [tab, setTab] = useState<'info' | 'security' | 'appearance' | 'account'>('info');
@@ -92,29 +95,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  // Handle Local Avatar File Upload
-  const handleAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Local Avatar File Upload with Instant Compression
+  const handleAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setAvatarUrl(event.target?.result as string);
-        addToast('Avatar Updated', 'Photo loaded from device.', 'success');
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressAvatar(file);
+        setAvatarUrl(compressed);
+        addToast('Avatar Loaded', 'Profile photo optimized for fast cross-device sync.', 'success');
+      } catch {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setAvatarUrl(event.target?.result as string);
+          addToast('Avatar Updated', 'Photo loaded from device.', 'success');
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
-  // Handle Local Banner File Upload
-  const handleBannerFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Local Banner File Upload with Instant Compression
+  const handleBannerFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setBannerUrl(event.target?.result as string);
-        addToast('Banner Updated', 'Cover photo loaded from device.', 'success');
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressBanner(file);
+        setBannerUrl(compressed);
+        addToast('Banner Loaded', 'Cover banner optimized.', 'success');
+      } catch {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setBannerUrl(event.target?.result as string);
+          addToast('Banner Updated', 'Cover photo loaded from device.', 'success');
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
@@ -590,6 +605,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* TAB 4: Account & Logout & Delete Account */}
           {tab === 'account' && (
             <div className="space-y-4">
+              
+              {/* Multi-Account Switcher Option */}
+              {onOpenAccountSwitcher && (
+                <div className="p-4 bg-[#1C2541] border border-blue-500/30 rounded-2xl flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Multi-Account Switcher</span>
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      Switch between your saved accounts or connect another profile.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenAccountSwitcher();
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-glow-sm transition-all shrink-0 cursor-pointer"
+                  >
+                    Switch Account
+                  </button>
+                </div>
+              )}
+
               {/* Sign Out Card */}
               <div className="p-4 bg-[#1C2541] border border-[#334155] rounded-2xl">
                 <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider mb-1">

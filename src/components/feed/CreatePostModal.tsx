@@ -11,6 +11,7 @@ import {
   Plus
 } from 'lucide-react';
 import type { Profile, ToastMessage } from '../../types';
+import { compressPostImage } from '../../lib/imageUtils';
 
 interface CreatePostModalProps {
   isOpen: boolean;
@@ -52,8 +53,8 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handle Photo selection from Local Device Folder
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Photo selection from Local Device Folder with Auto-Compression
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
@@ -61,14 +62,22 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
         return;
       }
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setImageData(event.target?.result as string);
+      try {
+        const compressed = await compressPostImage(file);
+        setImageData(compressed);
         setVideoData(null);
         setMediaFileName(file.name);
-        addToast('Photo Attached', `${file.name} ready to publish.`, 'success');
-      };
-      reader.readAsDataURL(file);
+        addToast('Photo Attached', `${file.name} optimized and ready.`, 'success');
+      } catch {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setImageData(event.target?.result as string);
+          setVideoData(null);
+          setMediaFileName(file.name);
+          addToast('Photo Attached', `${file.name} ready to publish.`, 'success');
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 

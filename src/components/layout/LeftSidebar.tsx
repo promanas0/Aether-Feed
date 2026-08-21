@@ -6,7 +6,9 @@ import {
   User, 
   Settings, 
   LogOut, 
-  ShieldCheck 
+  ShieldCheck,
+  UserCheck,
+  Repeat
 } from 'lucide-react';
 import type { Profile, ActiveView } from '../../types';
 
@@ -17,6 +19,7 @@ interface LeftSidebarProps {
   onOpenMyProfile: () => void;
   onOpenSettings: () => void;
   onSignOut: () => void;
+  onOpenAccountSwitcher?: () => void;
   onCopyDlicomAddress?: (addr: string) => void;
 }
 
@@ -27,6 +30,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onOpenMyProfile,
   onOpenSettings,
   onSignOut,
+  onOpenAccountSwitcher,
 }) => {
   const navItems: Array<{ id: ActiveView; label: string; icon: React.ComponentType<{ className?: string }> }> = [
     { id: 'feed', label: 'Home Feed', icon: Home },
@@ -38,28 +42,41 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     <aside className="w-64 shrink-0 hidden lg:block sticky top-20 h-[calc(100vh-6rem)] space-y-3 select-none">
       
       {/* Current User Card */}
-      <div 
-        onClick={onOpenMyProfile}
-        className="p-3.5 bg-[#1C2541] hover:bg-[#2A3756] border border-[#334155] rounded-2xl cursor-pointer transition-all flex items-center gap-3 group"
-      >
-        <img
-          src={currentUser.avatar_url}
-          alt={currentUser.display_name}
-          className="w-10 h-10 rounded-xl object-cover border border-blue-500/40 shrink-0"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1">
-            <h3 className="text-xs font-bold text-white truncate group-hover:text-blue-300 transition-colors">
-              {currentUser.display_name}
-            </h3>
-            {currentUser.is_verified && (
-              <ShieldCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-            )}
+      <div className="p-3 bg-[#1C2541] border border-[#334155] rounded-2xl space-y-2.5">
+        <div 
+          onClick={onOpenMyProfile}
+          className="flex items-center gap-3 cursor-pointer group"
+        >
+          <img
+            src={currentUser.avatar_url}
+            alt={currentUser.display_name}
+            className="w-10 h-10 rounded-xl object-cover border border-blue-500/40 shrink-0"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1">
+              <h3 className="text-xs font-bold text-white truncate group-hover:text-blue-300 transition-colors">
+                {currentUser.display_name}
+              </h3>
+              {currentUser.is_verified && (
+                <ShieldCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400 font-mono truncate">
+              @{currentUser.username}
+            </p>
           </div>
-          <p className="text-[11px] text-slate-400 font-mono truncate">
-            @{currentUser.username}
-          </p>
         </div>
+
+        {/* Quick Multi-Account Switcher Trigger */}
+        {onOpenAccountSwitcher && (
+          <button
+            onClick={onOpenAccountSwitcher}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-[#0B132B] hover:bg-[#2A3756] border border-[#334155] rounded-xl text-[11px] font-semibold text-blue-400 hover:text-white transition-all cursor-pointer shadow-sm"
+          >
+            <Repeat className="w-3.5 h-3.5 text-blue-400" />
+            <span>Switch / Multi Account</span>
+          </button>
+        )}
       </div>
 
       {/* Primary Navigation Links */}
@@ -71,7 +88,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
             <button
               key={item.id}
               onClick={() => onViewChange(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left cursor-pointer ${
                 isActive
                   ? 'bg-blue-600 text-white shadow-glow-sm'
                   : 'text-slate-300 hover:text-white hover:bg-[#1E293B]'
@@ -86,7 +103,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
         {/* My Profile Link */}
         <button
           onClick={onOpenMyProfile}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left cursor-pointer ${
             activeView === 'profile'
               ? 'bg-blue-600 text-white shadow-glow-sm'
               : 'text-slate-300 hover:text-white hover:bg-[#1E293B]'
@@ -101,7 +118,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
       <div className="p-2 bg-[#1C2541] border border-[#334155] rounded-2xl space-y-1">
         <button
           onClick={onOpenSettings}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-[#1E293B] transition-all text-left"
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-[#1E293B] transition-all text-left cursor-pointer"
         >
           <Settings className="w-4 h-4 text-slate-400 shrink-0" />
           <span>Settings</span>
@@ -109,7 +126,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
         <button
           onClick={onSignOut}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-950/30 transition-all text-left"
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-950/30 transition-all text-left cursor-pointer"
         >
           <LogOut className="w-4 h-4 shrink-0" />
           <span>Log Out</span>

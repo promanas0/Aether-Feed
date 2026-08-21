@@ -9,7 +9,9 @@ const STORAGE_KEYS = {
   CURRENT_USER_ID: 'aether_current_user_id_v4',
   THEME_MODE: 'aether_theme_mode_v4',
   PENDING_OTPS: 'aether_pending_otps_v4',
-  INITIALIZED: 'aether_v4_initialized'
+  INITIALIZED: 'aether_v4_initialized',
+  SAVED_ACCOUNTS: 'aether_saved_accounts_v4',
+  DELETED_POST_IDS: 'aether_deleted_post_ids_v4',
 };
 
 // Safe LocalStorage helpers
@@ -33,11 +35,126 @@ const setItem = <T>(key: string, value: T): void => {
 
 const FAKE_MOCK_IDS = ['usr_manas_01', 'usr_elena_02', 'usr_marcus_03'];
 
+export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
+  return {
+    id: p.id,
+    email: p.email,
+    first_name: p.first_name || '',
+    last_name: p.last_name || '',
+    display_name: p.display_name || '',
+    username: p.username || '',
+    avatar_url: p.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+    banner_url: p.banner_url || '',
+    bio: p.bio || '',
+    dlicom_address: p.dlicom_address || '',
+    location: p.location || '',
+    website: p.website || '',
+    is_verified: p.is_verified ?? true,
+    followers: p.followers || [],
+    following: p.following || [],
+    total_votes_received: p.total_votes_received || 0,
+    password_hash: p.password_hash || '',
+    created_at: p.created_at || new Date().toISOString(),
+  };
+};
+
+export const sanitizePostForSupabase = (p: Post) => {
+  return {
+    id: p.id,
+    user_id: p.user_id,
+    title: p.title || '',
+    image_data: p.image_data || '',
+    video_data: p.video_data || '',
+    media_type: p.media_type || 'text',
+    description: p.description || '',
+    tagged_users: p.tagged_users || [],
+    tags: p.tags || [],
+    votes_up: p.votes_up || 0,
+    votes_down: p.votes_down || 0,
+    net_votes: p.net_votes || 0,
+    created_at: p.created_at || new Date().toISOString(),
+  };
+};
+
+/* ==========================================================================
+   MULTI-ACCOUNT SWITCHER ENGINE
+   ========================================================================== */
+
+export const getSavedAccounts = (): Profile[] => {
+  const saved = getItem<Profile[]>(STORAGE_KEYS.SAVED_ACCOUNTS, []);
+  const allUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const currentId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);
+
+  // Map by ID and clean out fake mock IDs
+  const accountMap = new Map<string, Profile>();
+  saved.filter(u => u && u.id && !FAKE_MOCK_IDS.includes(u.id)).forEach(u => accountMap.set(u.id, u));
+
+  // If current active user exists and not in map, add them
+  if (currentId) {
+    const current = allUsers.find(u => u.id === currentId);
+    if (current && !FAKE_MOCK_IDS.includes(current.id)) {
+      accountMap.set(current.id, current);
+    }
+  }
+
+  // Update saved accounts if new active was added
+  const list = Array.from(accountMap.values());
+  if (list.length !== saved.length) {
+    setItem(STORAGE_KEYS.SAVED_ACCOUNTS, list);
+  }
+  return list;
+};
+
+export const addOrUpdateSavedAccount = (profile: Profile): void => {
+  if (!profile || !profile.id || FAKE_MOCK_IDS.includes(profile.id)) return;
+  const accounts = getSavedAccounts();
+  const idx = accounts.findIndex(a => a.id === profile.id || a.email.toLowerCase() === profile.email.toLowerCase());
+  if (idx !== -1) {
+    accounts[idx] = { ...accounts[idx], ...profile };
+  } else {
+    accounts.unshift(profile);
+  }
+  setItem(STORAGE_KEYS.SAVED_ACCOUNTS, accounts);
+};
+
+export const removeSavedAccount = (userId: string): Profile | null => {
+  const accounts = getSavedAccounts().filter(a => a.id !== userId);
+  setItem(STORAGE_KEYS.SAVED_ACCOUNTS, accounts);
+
+  const currentId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);
+  if (currentId === userId) {
+    const nextUser = accounts[0] || null;
+    setItem(STORAGE_KEYS.CURRENT_USER_ID, nextUser ? nextUser.id : null);
+    syncWithServer();
+    return nextUser;
+  }
+  return getCurrentUser();
+};
+
+export const switchAccountSession = (userId: string): Profile | null => {
+  const allUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const saved = getSavedAccounts();
+  const target = allUsers.find(u => u.id === userId) || saved.find(u => u.id === userId) || null;
+
+  if (target) {
+    setItem(STORAGE_KEYS.CURRENT_USER_ID, target.id);
+    addOrUpdateSavedAccount(target);
+    syncWithServer();
+    return target;
+  }
+  return null;
+};
+
 /* ==========================================================================
    CROSS-DEVICE & CENTRAL CLOUD/SERVER SYNC ENGINE
    ========================================================================== */
 
 let currentSyncPromise: Promise<boolean> | null = null;
+
+const getDeletedPostIds = (): Set<string> => {
+  const list = getItem<string[]>(STORAGE_KEYS.DELETED_POST_IDS, []);
+  return new Set(list);
+};
 
 export const syncWithServer = async (): Promise<boolean> => {
   if (currentSyncPromise) {
@@ -46,116 +163,156 @@ export const syncWithServer = async (): Promise<boolean> => {
 
   currentSyncPromise = (async () => {
     try {
+      const deletedIds = getDeletedPostIds();
       const localUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
-      const localPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
-      const localVotes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []);
+      const localPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []).filter(p => !deletedIds.has(p.id));
+      const localVotes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(v => !deletedIds.has(v.post_id));
       const localNotifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
       const localOtps = getItem<any[]>(STORAGE_KEYS.PENDING_OTPS, []);
 
-      const response = await fetch('/api/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          users: localUsers,
-          posts: localPosts,
-          votes: localVotes,
-          notifications: localNotifs,
-          pending_otps: localOtps,
-        }),
-      });
+      // 1. Local Vite / API Sync (if available on network)
+      try {
+        const response = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            users: localUsers,
+            posts: localPosts,
+            votes: localVotes,
+            notifications: localNotifs,
+            pending_otps: localOtps,
+            deleted_post_ids: Array.from(deletedIds),
+          }),
+        });
 
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success && result.data) {
-          const { users, posts, votes, notifications, pending_otps } = result.data;
-          
-          const oldPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
-          const oldPostIds = new Set(oldPosts.map(p => p.id));
-          const currentUserId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data) {
+            const { users, posts, votes, notifications, pending_otps } = result.data;
+            const currentUserId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);
 
-          if (Array.isArray(users)) {
-            const cleanUsers = users.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
-            localStorage.setItem(STORAGE_KEYS.REAL_USERS, JSON.stringify(cleanUsers));
-          }
-          if (Array.isArray(posts)) {
-            // Detect newly published posts from another device/user
-            const newForeignPosts = posts.filter(p => !oldPostIds.has(p.id) && p.user_id !== currentUserId);
-            
-            localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(posts));
+            if (Array.isArray(users)) {
+              const cleanUsers = users.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
+              // Merge local and server users based on update timestamps
+              const mergedUserMap = new Map<string, Profile>();
+              cleanUsers.forEach((u: Profile) => mergedUserMap.set(u.id, u));
+              localUsers.forEach((lu: Profile) => {
+                const existing = mergedUserMap.get(lu.id);
+                if (!existing) {
+                  mergedUserMap.set(lu.id, lu);
+                } else {
+                  // If local was updated more recently, keep local
+                  const localTime = new Date(lu.updated_at || lu.created_at || 0).getTime();
+                  const serverTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
+                  if (localTime >= serverTime) {
+                    mergedUserMap.set(lu.id, { ...existing, ...lu });
+                  }
+                }
+              });
+              localStorage.setItem(STORAGE_KEYS.REAL_USERS, JSON.stringify(Array.from(mergedUserMap.values())));
+            }
 
-            if (newForeignPosts.length > 0) {
-              const latestNew = newForeignPosts[0];
-              const author = Array.isArray(users) ? users.find((u: any) => u.id === latestNew.user_id) : undefined;
-              window.dispatchEvent(
-                new CustomEvent('aether_post_broadcast', {
-                  detail: { post: { ...latestNew, user: author }, authorId: latestNew.user_id }
-                })
-              );
+            if (Array.isArray(posts)) {
+              const cleanPosts = posts.filter(p => !deletedIds.has(p.id));
+              const oldPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+              const oldPostIds = new Set(oldPosts.map(p => p.id));
+              const newForeignPosts = cleanPosts.filter(p => !oldPostIds.has(p.id) && p.user_id !== currentUserId);
+
+              localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(cleanPosts));
+
+              if (newForeignPosts.length > 0) {
+                const latestNew = newForeignPosts[0];
+                const author = Array.isArray(users) ? users.find((u: any) => u.id === latestNew.user_id) : undefined;
+                window.dispatchEvent(
+                  new CustomEvent('aether_post_broadcast', {
+                    detail: { post: { ...latestNew, user: author }, authorId: latestNew.user_id }
+                  })
+                );
+              }
+            }
+            if (Array.isArray(votes)) {
+              localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(votes));
+            }
+            if (Array.isArray(notifications)) {
+              localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
+            }
+            if (Array.isArray(pending_otps)) {
+              localStorage.setItem(STORAGE_KEYS.PENDING_OTPS, JSON.stringify(pending_otps));
             }
           }
-          if (Array.isArray(votes)) {
-            localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(votes));
-          }
-          if (Array.isArray(notifications)) {
-            localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
-          }
-          if (Array.isArray(pending_otps)) {
-            localStorage.setItem(STORAGE_KEYS.PENDING_OTPS, JSON.stringify(pending_otps));
-          }
         }
+      } catch {
+        // API server fallback
       }
 
-      // Supabase Cloud DB Synchronization
+      // 2. Supabase Cloud DB Synchronization (Global Cross-Device Sync)
       const supabase = getSupabaseClient();
       if (supabase) {
         try {
-          const currentUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
-          if (currentUsers.length > 0) {
-            await supabase.from('profiles').upsert(currentUsers);
+          const freshLocalUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
+          if (freshLocalUsers.length > 0) {
+            await supabase.from('profiles').upsert(freshLocalUsers.map(sanitizeProfileForSupabase));
           }
 
-          const currentPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
-          if (currentPosts.length > 0) {
-            await supabase.from('posts').upsert(currentPosts);
+          const freshLocalPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []).filter(p => !deletedIds.has(p.id));
+          if (freshLocalPosts.length > 0) {
+            await supabase.from('posts').upsert(freshLocalPosts.map(sanitizePostForSupabase));
           }
 
-          const currentVotes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []);
-          if (currentVotes.length > 0) {
-            await supabase.from('votes').upsert(currentVotes);
+          const freshLocalVotes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(v => !deletedIds.has(v.post_id));
+          if (freshLocalVotes.length > 0) {
+            await supabase.from('votes').upsert(freshLocalVotes);
           }
 
-          // 1. Pull all profiles from Supabase
+          // A. Pull all profiles from Supabase
           const { data: supaProfiles } = await supabase.from('profiles').select('*');
           if (supaProfiles && supaProfiles.length > 0) {
             const cleanSupaUsers = supaProfiles.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
             const userMap = new Map<string, Profile>();
-            cleanSupaUsers.forEach((u: any) => userMap.set(u.id, u));
-            currentUsers.forEach(u => {
-              if (!userMap.has(u.id)) userMap.set(u.id, u);
+            cleanSupaUsers.forEach((u: Profile) => userMap.set(u.id, u));
+
+            freshLocalUsers.forEach((lu: Profile) => {
+              const supaUser = userMap.get(lu.id);
+              if (!supaUser) {
+                userMap.set(lu.id, lu);
+              } else {
+                const localTime = new Date(lu.updated_at || lu.created_at || 0).getTime();
+                const supaTime = new Date(supaUser.updated_at || supaUser.created_at || 0).getTime();
+                if (localTime > supaTime) {
+                  userMap.set(lu.id, { ...supaUser, ...lu });
+                }
+              }
             });
+
             localStorage.setItem(STORAGE_KEYS.REAL_USERS, JSON.stringify(Array.from(userMap.values())));
           }
 
-          // 2. Pull all posts from Supabase
-          const { data: supaPosts } = await supabase.from('posts').select('*').order('created_at', { ascending: false });
+          // B. Pull all posts from Supabase (excluding deleted ones)
+          const { data: supaPosts } = await supabase
+            .from('posts')
+            .select('*')
+            .order('created_at', { ascending: false });
+
           if (supaPosts && supaPosts.length > 0) {
-            localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(supaPosts));
+            const validSupaPosts = supaPosts.filter((p: any) => !deletedIds.has(p.id));
+            localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(validSupaPosts));
           }
 
-          // 3. Pull all votes from Supabase
+          // C. Pull all votes from Supabase
           const { data: supaVotes } = await supabase.from('votes').select('*');
           if (supaVotes && supaVotes.length > 0) {
-            localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(supaVotes));
+            const validVotes = supaVotes.filter((v: any) => !deletedIds.has(v.post_id));
+            localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(validVotes));
           }
         } catch (supaErr) {
-          console.warn('[Aether Supabase] Sync warning:', supaErr);
+          console.warn('[Aether Supabase] Sync notice:', supaErr);
         }
       }
 
       window.dispatchEvent(new Event('aether_storage_sync'));
       return true;
     } catch (e) {
-      // Offline / network fallback
+      // Offline fallback
     } finally {
       currentSyncPromise = null;
     }
@@ -166,10 +323,51 @@ export const syncWithServer = async (): Promise<boolean> => {
 };
 
 /**
- * Initialize Clean Storage with ZERO fake users and auto-sync with server
+ * Subscribe to Supabase Realtime Channel for instant cross-device live updates
+ */
+export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => void) => {
+  const supabase = getSupabaseClient();
+  if (!supabase) return () => {};
+
+  try {
+    const channel = supabase
+      .channel('public:aether_feed_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'posts' },
+        () => {
+          syncWithServer().then(() => onSyncNeeded());
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        () => {
+          syncWithServer().then(() => onSyncNeeded());
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'votes' },
+        () => {
+          syncWithServer().then(() => onSyncNeeded());
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  } catch (err) {
+    console.warn('[Aether Realtime] Subscription error:', err);
+    return () => {};
+  }
+};
+
+/**
+ * Initialize Storage with zero fake users and auto-sync
  */
 export const initializeV3Storage = (): void => {
-  // Purge any lingering fake seed users from localStorage
   const currentUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const cleanedUsers = currentUsers.filter(u => !FAKE_MOCK_IDS.includes(u.id));
   if (cleanedUsers.length !== currentUsers.length) {
@@ -182,7 +380,13 @@ export const initializeV3Storage = (): void => {
     setItem(STORAGE_KEYS.CURRENT_USER_ID, firstReal);
   }
 
-  // Initial silent server sync
+  // Ensure current user is in saved accounts
+  const currentUser = getCurrentUser();
+  if (currentUser) {
+    addOrUpdateSavedAccount(currentUser);
+  }
+
+  // Initial server and cloud sync
   syncWithServer();
 };
 
@@ -197,13 +401,10 @@ export const createPendingRegistration = (data: {
   password_hash: string;
 }): { otp_code: string } => {
   const pending = getItem<Array<any>>(STORAGE_KEYS.PENDING_OTPS, []);
-  
-  // Generate real 6-digit random numeric OTP
   const otp_code = String(Math.floor(100000 + Math.random() * 900000));
-  const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
+  const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
   const filtered = pending.filter(p => p.email.toLowerCase() !== data.email.toLowerCase());
-  
   filtered.push({
     ...data,
     email: data.email.toLowerCase().trim(),
@@ -218,14 +419,17 @@ export const createPendingRegistration = (data: {
   return { otp_code };
 };
 
-export const verifyAndCreateUser = async (email: string, otpCode: string): Promise<{ success: boolean; user?: Profile; message: string }> => {
+export const verifyAndCreateUser = async (
+  email: string,
+  otpCode: string
+): Promise<{ success: boolean; user?: Profile; message: string }> => {
   const pending = getItem<Array<any>>(STORAGE_KEYS.PENDING_OTPS, []);
   const found = pending.find(
     p => p.email.toLowerCase() === email.toLowerCase().trim() && p.otp_code === otpCode.trim()
   );
 
   if (!found) {
-    return { success: false, message: 'Invalid verification code. Please check your email inbox and spam folder.' };
+    return { success: false, message: 'Invalid verification code. Please check your email inbox.' };
   }
 
   if (new Date(found.expires_at).getTime() < Date.now()) {
@@ -233,19 +437,19 @@ export const verifyAndCreateUser = async (email: string, otpCode: string): Promi
   }
 
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-  
-  // Check if email already registered
   let existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
+
   if (existingUser) {
     setItem(STORAGE_KEYS.CURRENT_USER_ID, existingUser.id);
+    addOrUpdateSavedAccount(existingUser);
     await syncWithServer();
     return { success: true, user: existingUser, message: 'Account verified successfully!' };
   }
 
-  // Create new real verified profile
   const baseUsername = `${found.first_name}_${found.last_name}`.toLowerCase().replace(/[^a-z0-9_]/g, '');
   const username = baseUsername || `user_${Date.now().toString().slice(-4)}`;
   const userId = `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const now = new Date().toISOString();
 
   const newProfile: Profile = {
     id: userId,
@@ -263,15 +467,16 @@ export const verifyAndCreateUser = async (email: string, otpCode: string): Promi
     followers: [],
     following: [],
     total_votes_received: 0,
-    created_at: new Date().toISOString(),
+    created_at: now,
+    updated_at: now,
     password_hash: found.password_hash,
   };
 
   users.unshift(newProfile);
   setItem(STORAGE_KEYS.REAL_USERS, users);
   setItem(STORAGE_KEYS.CURRENT_USER_ID, userId);
+  addOrUpdateSavedAccount(newProfile);
 
-  // Remove from pending
   const updatedPending = pending.filter(p => p.email.toLowerCase() !== email.toLowerCase().trim());
   setItem(STORAGE_KEYS.PENDING_OTPS, updatedPending);
 
@@ -279,30 +484,29 @@ export const verifyAndCreateUser = async (email: string, otpCode: string): Promi
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
-      await supabase.from('profiles').upsert(newProfile);
+      await supabase.from('profiles').upsert(sanitizeProfileForSupabase(newProfile));
     } catch (err) {
       console.warn('[Aether Supabase] Profile upsert error:', err);
     }
   }
 
-  // Send direct registration to server
+  // Direct server registration
   try {
     await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user: newProfile }),
     });
-  } catch (err) {
-    console.warn('[Aether Auth] Server registration fallback:', err);
-  }
+  } catch {}
 
-  // Sync to central database immediately so all devices have this account
   await syncWithServer();
-
   return { success: true, user: newProfile, message: 'Account verified and created successfully!' };
 };
 
-export const authenticateUser = async (email: string, password: string): Promise<{ success: boolean; user?: Profile; message: string }> => {
+export const authenticateUser = async (
+  email: string,
+  password: string
+): Promise<{ success: boolean; user?: Profile; message: string }> => {
   const cleanEmail = email.toLowerCase().trim();
   const cleanPass = password.trim();
 
@@ -331,6 +535,7 @@ export const authenticateUser = async (email: string, password: string): Promise
         }
         setItem(STORAGE_KEYS.REAL_USERS, users);
         setItem(STORAGE_KEYS.CURRENT_USER_ID, supaUser.id);
+        addOrUpdateSavedAccount(supaUser);
         syncWithServer();
         return { success: true, user: supaUser, message: 'Signed in successfully.' };
       }
@@ -350,7 +555,6 @@ export const authenticateUser = async (email: string, password: string): Promise
     if (serverRes.ok) {
       const data = await serverRes.json();
       if (data.success && data.user) {
-        // Save user to local storage
         const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
         const idx = users.findIndex(u => u.id === data.user.id || u.email.toLowerCase() === cleanEmail);
         if (idx !== -1) {
@@ -360,15 +564,14 @@ export const authenticateUser = async (email: string, password: string): Promise
         }
         setItem(STORAGE_KEYS.REAL_USERS, users);
         setItem(STORAGE_KEYS.CURRENT_USER_ID, data.user.id);
+        addOrUpdateSavedAccount(data.user);
         syncWithServer();
         return { success: true, user: data.user, message: 'Signed in successfully.' };
       } else if (data.message && data.message.includes('Incorrect password')) {
         return { success: false, message: data.message };
       }
     }
-  } catch (err) {
-    console.warn('[Aether Auth] Server login request failed, falling back to local storage:', err);
-  }
+  } catch {}
 
   // 3. Local State Fallback / Sync
   await syncWithServer();
@@ -384,6 +587,7 @@ export const authenticateUser = async (email: string, password: string): Promise
   }
 
   setItem(STORAGE_KEYS.CURRENT_USER_ID, user.id);
+  addOrUpdateSavedAccount(user);
   syncWithServer();
   return { success: true, user, message: 'Signed in successfully.' };
 };
@@ -397,6 +601,10 @@ export const getCurrentUser = (): Profile | null => {
 
 export const setCurrentUserSession = (userId: string | null): void => {
   setItem(STORAGE_KEYS.CURRENT_USER_ID, userId);
+  if (userId) {
+    const user = getCurrentUser();
+    if (user) addOrUpdateSavedAccount(user);
+  }
   syncWithServer();
 };
 
@@ -425,15 +633,15 @@ export const createPasswordChangeOtp = (userId: string, email: string): { otp_co
 };
 
 export const verifyPasswordChangeOtp = (
-  userId: string, 
-  otpCode: string, 
+  userId: string,
+  otpCode: string,
   newPassword: string
 ): { success: boolean; message: string } => {
   const pending = getItem<Array<any>>(STORAGE_KEYS.PENDING_OTPS, []);
   const found = pending.find(p => p.userId === userId && p.type === 'password_change' && p.otp_code === otpCode.trim());
 
   if (!found) {
-    return { success: false, message: 'Invalid verification code. Please check your email inbox and spam folder.' };
+    return { success: false, message: 'Invalid verification code.' };
   }
 
   if (new Date(found.expires_at).getTime() < Date.now()) {
@@ -444,10 +652,16 @@ export const verifyPasswordChangeOtp = (
   const idx = users.findIndex(u => u.id === userId);
   if (idx !== -1) {
     users[idx].password_hash = newPassword.trim();
+    users[idx].updated_at = new Date().toISOString();
     setItem(STORAGE_KEYS.REAL_USERS, users);
+    addOrUpdateSavedAccount(users[idx]);
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('profiles').upsert(users[idx]).then(() => {}, () => {});
+    }
   }
 
-  // Remove from pending
   setItem(STORAGE_KEYS.PENDING_OTPS, pending.filter(p => p !== found));
   syncWithServer();
   return { success: true, message: 'Password updated successfully!' };
@@ -458,52 +672,60 @@ export const updateProfileData = (userId: string, updates: Partial<Profile>): Pr
   const idx = users.findIndex(u => u.id === userId);
   if (idx === -1) return null;
 
+  const now = new Date().toISOString();
   users[idx] = {
     ...users[idx],
     ...updates,
-    display_name: updates.first_name && updates.last_name 
-      ? `${updates.first_name} ${updates.last_name}` 
-      : (updates.display_name || users[idx].display_name)
+    updated_at: now,
+    display_name: updates.first_name && updates.last_name
+      ? `${updates.first_name} ${updates.last_name}`
+      : (updates.display_name || users[idx].display_name),
   };
 
   setItem(STORAGE_KEYS.REAL_USERS, users);
+  addOrUpdateSavedAccount(users[idx]);
 
   // Push updated profile to Supabase Cloud directly
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('profiles').upsert(users[idx]).then(
+    supabase.from('profiles').upsert(sanitizeProfileForSupabase(users[idx])).then(
       () => {},
       (err: any) => console.warn('[Aether Supabase] Profile update error:', err)
     );
   }
+
+  // Push to local server
+  try {
+    fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: users[idx] }),
+    }).catch(() => {});
+  } catch {}
 
   syncWithServer();
   return users[idx];
 };
 
 export const deleteUserAccount = async (userId: string): Promise<boolean> => {
-  // 1. Remove from local users list
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => u.id !== userId);
   setItem(STORAGE_KEYS.REAL_USERS, users);
 
-  // 2. Remove user posts
+  removeSavedAccount(userId);
+
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []).filter(p => p.user_id !== userId);
   setItem(STORAGE_KEYS.POSTS, posts);
 
-  // 3. Remove votes
   const votes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(v => v.user_id !== userId);
   setItem(STORAGE_KEYS.VOTES, votes);
 
-  // 4. Remove notifications
   const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []).filter(
     n => n.user_id !== userId && n.actor_id !== userId
   );
   setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
 
-  // 5. Clear current user session
   setItem(STORAGE_KEYS.CURRENT_USER_ID, null);
 
-  // 6. Delete from Supabase Cloud
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -516,7 +738,6 @@ export const deleteUserAccount = async (userId: string): Promise<boolean> => {
     }
   }
 
-  // 7. Sync with server
   await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
   return true;
@@ -551,7 +772,17 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
     });
   }
 
+  users[currentIdx].updated_at = new Date().toISOString();
+  users[targetIdx].updated_at = new Date().toISOString();
+
   setItem(STORAGE_KEYS.REAL_USERS, users);
+  addOrUpdateSavedAccount(users[currentIdx]);
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('profiles').upsert([users[currentIdx], users[targetIdx]]).then(() => {}, () => {});
+  }
+
   syncWithServer();
   return { isFollowing: !isFollowing, targetUser: users[targetIdx] };
 };
@@ -561,10 +792,10 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
    ========================================================================== */
 
 export const getRealPosts = (): Post[] => {
-  const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+  const deletedIds = getDeletedPostIds();
+  const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []).filter(p => !deletedIds.has(p.id));
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
 
-  // Hydrate user data
   return posts.map(p => ({
     ...p,
     user: users.find(u => u.id === p.user_id) || {
@@ -624,7 +855,6 @@ export const createRealPost = (data: {
   posts.unshift(newPost);
   setItem(STORAGE_KEYS.POSTS, posts);
 
-  // Notify tagged users
   if (data.tagged_users && data.tagged_users.length > 0) {
     const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
     data.tagged_users.forEach(uname => {
@@ -640,10 +870,10 @@ export const createRealPost = (data: {
     });
   }
 
-  // Send to Supabase Cloud if connected
+  // Send to Supabase Cloud
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('posts').upsert(newPost).then(
+    supabase.from('posts').upsert(sanitizePostForSupabase(newPost)).then(
       ({ error }) => {
         if (error) console.warn('[Aether Supabase] Post upsert error:', error);
       },
@@ -673,28 +903,53 @@ export const createRealPost = (data: {
 };
 
 export const deleteRealPost = (postId: string, userId: string): boolean => {
+  // 1. Mark as deleted in tombstone set so sync never restores it
+  const deletedList = getItem<string[]>(STORAGE_KEYS.DELETED_POST_IDS, []);
+  if (!deletedList.includes(postId)) {
+    deletedList.push(postId);
+    setItem(STORAGE_KEYS.DELETED_POST_IDS, deletedList);
+  }
+
+  // 2. Remove from local posts list
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
-  const idx = posts.findIndex(p => p.id === postId && p.user_id === userId);
-  if (idx === -1) return false;
+  const idx = posts.findIndex(p => p.id === postId && (p.user_id === userId || !userId));
+  if (idx !== -1) {
+    posts.splice(idx, 1);
+    setItem(STORAGE_KEYS.POSTS, posts);
+  }
 
-  posts.splice(idx, 1);
-  setItem(STORAGE_KEYS.POSTS, posts);
-
-  // Clean up votes and notifications for this post
+  // 3. Remove votes and notifications
   const votes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(v => v.post_id !== postId);
   setItem(STORAGE_KEYS.VOTES, votes);
 
   const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []).filter(n => n.post_id !== postId);
   setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
 
-  // Recalculate author's total votes
-  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-  const authorIdx = users.findIndex(u => u.id === userId);
-  if (authorIdx !== -1) {
-    const authorPosts = posts.filter(p => p.user_id === userId);
-    users[authorIdx].total_votes_received = authorPosts.reduce((acc, p) => acc + p.net_votes, 0);
-    setItem(STORAGE_KEYS.REAL_USERS, users);
+  // 4. Recalculate author's total votes
+  if (userId) {
+    const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+    const authorIdx = users.findIndex(u => u.id === userId);
+    if (authorIdx !== -1) {
+      const authorPosts = posts.filter(p => p.user_id === userId);
+      users[authorIdx].total_votes_received = authorPosts.reduce((acc, p) => acc + p.net_votes, 0);
+      setItem(STORAGE_KEYS.REAL_USERS, users);
+    }
   }
+
+  // 5. Delete from Supabase Cloud DB directly
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('posts').delete().eq('id', postId).then(() => {}, (err) => console.warn('[Supabase Delete Post]', err));
+    supabase.from('votes').delete().eq('post_id', postId).then(() => {}, () => {});
+    supabase.from('notifications').delete().eq('post_id', postId).then(() => {}, () => {});
+  }
+
+  // 6. Delete from local server storage
+  try {
+    fetch(`/api/posts?id=${encodeURIComponent(postId)}`, {
+      method: 'DELETE',
+    }).catch(() => {});
+  } catch {}
 
   syncWithServer();
   return true;
@@ -717,6 +972,12 @@ export const updateRealPostText = (
   };
 
   setItem(STORAGE_KEYS.POSTS, posts);
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('posts').upsert(sanitizePostForSupabase(posts[idx])).then(() => {}, () => {});
+  }
+
   syncWithServer();
   return posts[idx];
 };
@@ -749,13 +1010,11 @@ export const votePostAction = (
   if (existingVoteIdx !== -1) {
     const prevVote = votes[existingVoteIdx];
     if (prevVote.type === voteType) {
-      // Toggle off
       votes.splice(existingVoteIdx, 1);
       if (voteType === 'up') posts[postIdx].votes_up = Math.max(0, posts[postIdx].votes_up - 1);
       if (voteType === 'down') posts[postIdx].votes_down = Math.max(0, posts[postIdx].votes_down - 1);
       finalUserVote = null;
     } else {
-      // Switch from up to down or vice-versa
       votes[existingVoteIdx].type = voteType;
       if (voteType === 'up') {
         posts[postIdx].votes_up += 1;
@@ -767,7 +1026,6 @@ export const votePostAction = (
       finalUserVote = voteType;
     }
   } else {
-    // New vote
     votes.push({
       id: `vote_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       user_id: userId,
@@ -780,7 +1038,6 @@ export const votePostAction = (
     if (voteType === 'down') posts[postIdx].votes_down += 1;
     finalUserVote = voteType;
 
-    // Send notification to author
     if (posts[postIdx].user_id !== userId) {
       addNotification({
         user_id: posts[postIdx].user_id,
@@ -793,7 +1050,6 @@ export const votePostAction = (
 
   posts[postIdx].net_votes = posts[postIdx].votes_up - posts[postIdx].votes_down;
 
-  // Recalculate author's total votes
   const authorId = posts[postIdx].user_id;
   const authorPosts = posts.filter(p => p.user_id === authorId);
   const totalVotesReceived = authorPosts.reduce((acc, p) => acc + p.net_votes, 0);
@@ -807,10 +1063,8 @@ export const votePostAction = (
   setItem(STORAGE_KEYS.POSTS, posts);
   setItem(STORAGE_KEYS.VOTES, votes);
 
-  // Push vote and updated counts to Supabase Cloud directly
   const supabase = getSupabaseClient();
   if (supabase) {
-    // 1. Update post vote tally
     supabase
       .from('posts')
       .update({
@@ -821,7 +1075,6 @@ export const votePostAction = (
       .eq('id', postId)
       .then(() => {}, (err: any) => console.warn('[Aether Supabase] Post vote update error:', err));
 
-    // 2. Update individual vote record
     if (finalUserVote === null) {
       supabase.from('votes').delete().match({ user_id: userId, post_id: postId }).then(() => {}, () => {});
     } else {
@@ -834,7 +1087,6 @@ export const votePostAction = (
       }).then(() => {}, (err: any) => console.warn('[Aether Supabase] Vote record upsert error:', err));
     }
 
-    // 3. Update author's total votes
     supabase
       .from('profiles')
       .update({ total_votes_received: totalVotesReceived })
@@ -860,7 +1112,6 @@ export const getRealLeaderboard = (): Array<Profile & { rank: number; posts_coun
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
 
-  // Calculate actual posts and real net votes
   const list = users.map(user => {
     const userPosts = posts.filter(p => p.user_id === user.id);
     const netVotes = userPosts.reduce((acc, p) => acc + p.net_votes, 0);
@@ -871,7 +1122,6 @@ export const getRealLeaderboard = (): Array<Profile & { rank: number; posts_coun
     };
   });
 
-  // Sort descending by net votes
   list.sort((a, b) => b.total_votes_received - a.total_votes_received || b.posts_count - a.posts_count);
 
   return list.map((u, i) => ({

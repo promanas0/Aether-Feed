@@ -88,6 +88,43 @@ function databaseApiPlugin(): Plugin {
           return;
         }
 
+        // DELETE /api/posts (Permanent Post Deletion)
+        if (pathname === '/api/posts' && req.method === 'DELETE') {
+          const urlObj = new URL(rawUrl, 'http://localhost');
+          const queryId = urlObj.searchParams.get('id');
+
+          let body = '';
+          req.on('data', (chunk) => (body += chunk));
+          req.on('end', () => {
+            try {
+              let targetId = queryId;
+              if (!targetId && body) {
+                const parsed = JSON.parse(body || '{}');
+                targetId = parsed.id || parsed.postId;
+              }
+
+              if (targetId) {
+                const currentPosts = readJson(postsFile, []);
+                const filteredPosts = currentPosts.filter((p: any) => p.id !== targetId);
+                writeJson(postsFile, filteredPosts);
+
+                const currentVotes = readJson(votesFile, []);
+                const filteredVotes = currentVotes.filter((v: any) => v.post_id !== targetId);
+                writeJson(votesFile, filteredVotes);
+              }
+
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, deletedId: targetId }));
+            } catch (e: any) {
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 400;
+              res.end(JSON.stringify({ success: false, message: e.message }));
+            }
+          });
+          return;
+        }
+
         // POST /api/posts
         if (pathname === '/api/posts' && req.method === 'POST') {
           let body = '';
@@ -208,6 +245,8 @@ function databaseApiPlugin(): Plugin {
               const currentVotes = readJson(votesFile, []);
               const currentOtps = readJson(otpsFile, []);
 
+              const deletedPostIds = new Set<string>(incoming.deleted_post_ids || []);
+
               const FAKE_MOCK_IDS = ['usr_manas_01', 'usr_elena_02', 'usr_marcus_03'];
               const filteredCurrentUsers = currentUsers.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
               const incomingUsers = (incoming.users || []).filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
@@ -240,18 +279,32 @@ function databaseApiPlugin(): Plugin {
               });
 
               const postMap = new Map<string, any>();
-              currentPosts.forEach((p: any) => postMap.set(p.id, p));
-              (incoming.posts || []).forEach((p: any) => {
-                if (postMap.has(p.id)) {
-                  postMap.set(p.id, { ...postMap.get(p.id), ...p });
-                } else {
+              currentPosts.forEach((p: any) => {
+                if (!deletedPostIds.has(p.id)) {
                   postMap.set(p.id, p);
+                }
+              });
+              (incoming.posts || []).forEach((p: any) => {
+                if (!deletedPostIds.has(p.id)) {
+                  if (postMap.has(p.id)) {
+                    postMap.set(p.id, { ...postMap.get(p.id), ...p });
+                  } else {
+                    postMap.set(p.id, p);
+                  }
                 }
               });
 
               const voteMap = new Map<string, any>();
-              currentVotes.forEach((v: any) => voteMap.set(v.id, v));
-              (incoming.votes || []).forEach((v: any) => voteMap.set(v.id, v));
+              currentVotes.forEach((v: any) => {
+                if (!deletedPostIds.has(v.post_id)) {
+                  voteMap.set(v.id, v);
+                }
+              });
+              (incoming.votes || []).forEach((v: any) => {
+                if (!deletedPostIds.has(v.post_id)) {
+                  voteMap.set(v.id, v);
+                }
+              });
 
               const mergedUsers = Array.from(userMap.values());
               const mergedPosts = Array.from(postMap.values()).sort(

@@ -13,7 +13,8 @@ import {
   X,
   FileText,
   ShieldCheck,
-  ArrowRight
+  ArrowRight,
+  Repeat
 } from 'lucide-react';
 import type { Profile, NotificationItem, ThemeMode, Post } from '../../types';
 import { NotificationFlyout } from './NotificationFlyout';
@@ -32,6 +33,7 @@ interface HeaderProps {
   onOpenProfile: (profile: Profile) => void;
   onOpenSettings: () => void;
   onSignOut: () => void;
+  onOpenAccountSwitcher?: () => void;
   onMarkAllNotificationsRead: () => void;
   onSelectPostFromNotif: (postId: string) => void;
   onSelectPostFromSearch?: (post: Post) => void;
@@ -51,6 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenProfile,
   onOpenSettings,
   onSignOut,
+  onOpenAccountSwitcher,
   onMarkAllNotificationsRead,
   onSelectPostFromNotif,
   onSelectPostFromSearch,
@@ -344,6 +347,19 @@ export const Header: React.FC<HeaderProps> = ({
                     <User className="w-3.5 h-3.5 text-blue-400" />
                     <span>My Profile</span>
                   </button>
+
+                  {onOpenAccountSwitcher && (
+                    <button
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        onOpenAccountSwitcher();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-blue-400 hover:text-white hover:bg-blue-950/40 rounded-lg transition-colors text-left cursor-pointer font-medium"
+                    >
+                      <Repeat className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Switch Account</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => {

@@ -17,7 +17,12 @@ import {
   markAllNotificationsRead, 
   getThemeMode, 
   setThemeMode,
-  syncWithServer 
+  syncWithServer,
+  getSavedAccounts,
+  removeSavedAccount,
+  switchAccountSession,
+  subscribeToSupabaseRealtime,
+  authenticateUser
 } from './lib/storage';
 import type { 
   Profile, 
@@ -44,6 +49,8 @@ import { UserProfileView } from './components/profile/UserProfileView';
 import { RealLeaderboardView } from './components/leaderboard/RealLeaderboardView';
 import { SettingsModal } from './components/settings/SettingsModal';
 import { ImageLightboxModal } from './components/feed/ImageLightboxModal';
+import { AccountSwitcherModal } from './components/auth/AccountSwitcherModal';
+import { AuthModal } from './components/auth/AuthModal';
 import { ToastContainer } from './components/ui/Toast';
 import { 
   Flame, 
@@ -67,6 +74,7 @@ export function App() {
   }, []);
 
   const [currentUser, setCurrentUser] = useState<Profile | null>(() => getCurrentUser());
+  const [savedAccounts, setSavedAccounts] = useState<Profile[]>(() => getSavedAccounts());
   const [users, setUsers] = useState<Profile[]>(() => getRealUsers());
   const [posts, setPosts] = useState<Post[]>(() => getRealPosts());
   const [votes, setVotes] = useState(() => getVotesList());
@@ -83,6 +91,8 @@ export function App() {
 
   // Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAccountSwitcherOpen, setIsAccountSwitcherOpen] = useState(false);
+  const [isAddAccountOpen, setIsAddAccountOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [detailsPost, setDetailsPost] = useState<Post | null>(null);
@@ -112,6 +122,7 @@ export function App() {
   const syncStateFromStorage = useCallback(() => {
     const user = getCurrentUser();
     setCurrentUser(user);
+    setSavedAccounts(getSavedAccounts());
     setUsers(getRealUsers());
     setPosts(getRealPosts());
     setVotes(getVotesList());
@@ -128,10 +139,15 @@ export function App() {
     syncStateFromStorage();
     syncWithServer();
 
-    // Periodic sync from central server to pull new users & posts across all devices
+    // 1. Live Instant Supabase Realtime Subscription
+    const unsubscribeRealtime = subscribeToSupabaseRealtime(() => {
+      syncStateFromStorage();
+    });
+
+    // 2. Gentle Periodic Background Sync (every 10s)
     const pollInterval = setInterval(() => {
       syncWithServer();
-    }, 2000);
+    }, 10000);
 
     const handleSync = () => {
       syncStateFromStorage();
@@ -168,6 +184,7 @@ export function App() {
     window.addEventListener('aether_post_broadcast', handleBroadcast);
 
     return () => {
+      unsubscribeRealtime();
       clearInterval(pollInterval);
       window.removeEventListener('aether_storage_sync', handleSync);
       window.removeEventListener('storage', handleSync);
@@ -205,11 +222,13 @@ export function App() {
     title: string;
     description: string;
     image_data: string;
+    video_data?: string;
+    media_type?: 'image' | 'video' | 'text';
     tagged_users: string[];
     tags: string[];
   }) => {
     if (!currentUser) return;
-    const newPost = createRealPost({
+    createRealPost({
       ...data,
       authorId: currentUser.id,
     });
@@ -264,6 +283,24 @@ export function App() {
     }
   };
 
+  // Handle Multi-Account Switching
+  const handleSwitchAccount = (userId: string) => {
+    const nextUser = switchAccountSession(userId);
+    if (nextUser) {
+      setCurrentUser(nextUser);
+      syncStateFromStorage();
+      addToast('Account Switched', `Now active as @${nextUser.username} (${nextUser.display_name}).`, 'success');
+    }
+  };
+
+  // Handle Remove Saved Account
+  const handleRemoveSavedAccount = (userId: string) => {
+    const nextUser = removeSavedAccount(userId);
+    setCurrentUser(nextUser);
+    syncStateFromStorage();
+    addToast('Account Removed', 'Account removed from saved list.', 'info');
+  };
+
   // Handle Navigation to User Profile
   const handleOpenProfile = (profile: Profile) => {
     setSelectedProfile(profile);
@@ -303,7 +340,7 @@ export function App() {
     );
   }, [users, searchQuery]);
 
-  // Filtered Posts Logic (Search by Title, Description, Tags, Author)
+  // Filtered Posts Logic
   const displayedPosts = useMemo(() => {
     let result = [...posts];
 
@@ -367,7 +404,7 @@ export function App() {
       {/* Toast Alerts */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-      {/* Clean Top Header with Live Search Dropdown */}
+      {/* Clean Top Header with Live Search Dropdown & Switch Account */}
       <Header
         currentUser={currentUser}
         allUsers={users}
@@ -381,6 +418,7 @@ export function App() {
         onThemeToggle={handleToggleTheme}
         onOpenProfile={handleOpenProfile}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
         onSignOut={handleSignOut}
         onMarkAllNotificationsRead={() => {
           markAllNotificationsRead(currentUser.id);
@@ -415,6 +453,7 @@ export function App() {
           }}
           onOpenMyProfile={() => handleOpenProfile(currentUser)}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
           onSignOut={handleSignOut}
         />
 
@@ -425,7 +464,7 @@ export function App() {
           {(activeView === 'feed' || activeView === 'following_feed') && (
             <div className="view-transition">
               
-              {/* Post & Status Composer (Hidden when actively searching to keep clean results focus) */}
+              {/* Post & Status Composer */}
               {!searchQuery && (
                 <CreatePostBox
                   currentUser={currentUser}
@@ -435,7 +474,7 @@ export function App() {
                 />
               )}
 
-              {/* Matching Members Shelf (Appears when searching members) */}
+              {/* Matching Members Shelf */}
               {searchQuery.trim() && matchingSearchMembers.length > 0 && (
                 <div className="mb-6 p-4 bg-[#1C2541] border border-[#334155] rounded-3xl animate-in fade-in">
                   <div className="flex items-center justify-between mb-3">
@@ -453,27 +492,25 @@ export function App() {
                       return (
                         <div
                           key={member.id}
-                          className="p-3 bg-[#0B132B] border border-[#334155] rounded-2xl flex items-center justify-between gap-2.5 hover:border-blue-500/50 transition-all"
+                          className="p-3 bg-[#1E293B] border border-[#334155] rounded-2xl flex items-center justify-between gap-3 hover:border-slate-500 transition-all cursor-pointer"
+                          onClick={() => handleOpenProfile(member)}
                         >
-                          <div
-                            onClick={() => handleOpenProfile(member)}
-                            className="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1 group"
-                          >
+                          <div className="flex items-center gap-2.5 min-w-0">
                             <img
                               src={member.avatar_url}
                               alt={member.display_name}
-                              className="w-9 h-9 rounded-xl object-cover border border-[#334155]"
+                              className="w-9 h-9 rounded-xl object-cover border border-blue-500/30 shrink-0"
                             />
                             <div className="min-w-0">
                               <div className="flex items-center gap-1">
-                                <p className="text-xs font-bold text-white truncate group-hover:text-blue-300 transition-colors">
+                                <span className="text-xs font-bold text-white truncate">
                                   {member.display_name}
-                                </p>
+                                </span>
                                 {member.is_verified && (
-                                  <ShieldCheck className="w-3 h-3 text-blue-400 shrink-0" />
+                                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                                 )}
                               </div>
-                              <p className="text-[10px] text-slate-400 font-mono truncate">
+                              <p className="text-[11px] text-slate-400 font-mono truncate">
                                 @{member.username}
                               </p>
                             </div>
@@ -481,14 +518,21 @@ export function App() {
 
                           {!isSelf && (
                             <button
-                              onClick={() => handleToggleFollow(member.id)}
-                              className={`p-1.5 px-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95 cursor-pointer shrink-0 ${
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleFollow(member.id);
+                              }}
+                              className={`p-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 cursor-pointer ${
                                 isFollowing
-                                  ? 'bg-[#1C2541] text-slate-300 hover:text-rose-400 border border-[#334155]'
-                                  : 'bg-blue-600 hover:bg-blue-500 text-white shadow-glow-sm'
+                                  ? 'bg-[#1C2541] text-slate-300 hover:text-rose-300'
+                                  : 'bg-blue-600 text-white shadow-glow-sm hover:bg-blue-500'
                               }`}
                             >
-                              {isFollowing ? <UserCheck className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
+                              {isFollowing ? (
+                                <UserCheck className="w-4 h-4" />
+                              ) : (
+                                <UserPlus className="w-4 h-4" />
+                              )}
                             </button>
                           )}
                         </div>
@@ -498,104 +542,112 @@ export function App() {
                 </div>
               )}
 
-              {/* Feed Filter Bar & Search Result Banner */}
-              <div className="flex items-center justify-between gap-3 pb-3 mb-4 border-b border-[#334155]">
-                
-                {/* Search Active Indicator or Filter Tabs */}
-                {searchQuery.trim() ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-white">
-                      Search Results for: <span className="text-blue-400 font-mono">"{searchQuery}"</span>
-                    </span>
-                    <button
-                      onClick={() => setSearchQuery('')}
-                      className="px-2 py-0.5 bg-[#1C2541] hover:bg-[#2A3756] text-slate-300 hover:text-white rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <X className="w-3 h-3" />
-                      <span>Clear Search</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1 p-1 bg-[#1C2541] border border-[#334155] rounded-2xl text-xs font-semibold">
-                    <button
-                      onClick={() => setFeedFilter('latest')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                        feedFilter === 'latest' ? 'bg-blue-600 text-white shadow-glow-sm' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      <Clock className="w-3.5 h-3.5" />
-                      <span>Latest</span>
-                    </button>
-                    <button
-                      onClick={() => setFeedFilter('trending')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                        feedFilter === 'trending' ? 'bg-blue-600 text-white shadow-glow-sm' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      <Flame className="w-3.5 h-3.5" />
-                      <span>Trending</span>
-                    </button>
-                    <button
-                      onClick={() => setFeedFilter('top_voted')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                        feedFilter === 'top_voted' ? 'bg-blue-600 text-white shadow-glow-sm' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      <Award className="w-3.5 h-3.5" />
-                      <span>Top Upvoted</span>
-                    </button>
-                  </div>
-                )}
+              {/* Feed Filter Tabs (Trending, Latest, Top Voted) & Tag Clear */}
+              <div className="flex items-center justify-between gap-2 mb-4 bg-[#1C2541] border border-[#334155] p-1.5 rounded-2xl">
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setFeedFilter('latest')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      feedFilter === 'latest'
+                        ? 'bg-blue-600 text-white shadow-glow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Latest</span>
+                  </button>
 
-                {/* Active Sub-filter Indicator */}
+                  <button
+                    onClick={() => setFeedFilter('trending')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      feedFilter === 'trending'
+                        ? 'bg-blue-600 text-white shadow-glow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Flame className="w-3.5 h-3.5" />
+                    <span>Trending</span>
+                  </button>
+
+                  <button
+                    onClick={() => setFeedFilter('top_voted')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      feedFilter === 'top_voted'
+                        ? 'bg-blue-600 text-white shadow-glow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Award className="w-3.5 h-3.5" />
+                    <span>Top Voted</span>
+                  </button>
+                </div>
+
+                {/* Active Tag Filter Pill */}
                 {selectedTagFilter && (
-                  <div className="flex items-center gap-1 px-2.5 py-1 bg-blue-950/60 border border-blue-600/50 rounded-xl text-xs text-blue-300">
+                  <div className="flex items-center gap-1 bg-blue-950/60 border border-blue-500/40 px-2.5 py-1 rounded-xl text-xs text-blue-300 font-mono">
                     <span>#{selectedTagFilter}</span>
-                    <button onClick={() => setSelectedTagFilter(null)} className="hover:text-white ml-1 cursor-pointer">
+                    <button
+                      onClick={() => setSelectedTagFilter(null)}
+                      className="text-blue-400 hover:text-white cursor-pointer ml-1"
+                    >
                       <X className="w-3 h-3" />
                     </button>
                   </div>
                 )}
               </div>
 
-              {/* Feed Post List */}
-              {displayedPosts.length === 0 ? (
-                <div className="py-16 text-center bg-[#1C2541] border border-[#334155] rounded-3xl p-8">
-                  <FileText className="w-9 h-9 mx-auto text-slate-600 mb-2" />
-                  <p className="text-sm font-bold text-white">
-                    {searchQuery.trim() ? `No posts matched "${searchQuery}"` : 'No posts in feed yet'}
-                  </p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {searchQuery.trim()
-                      ? 'Try searching by title keywords, hashtags, or member username.'
-                      : activeView === 'following_feed'
-                      ? 'No posts from members you follow yet.'
-                      : 'Share a status update or attach a photo above to get started!'}
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {displayedPosts.map((post) => {
-                    const userVoteMatch = votes.find(v => v.post_id === post.id && v.user_id === currentUser.id);
+              {/* Posts Stream */}
+              <div className="space-y-4">
+                {displayedPosts.length === 0 ? (
+                  <div className="p-12 text-center bg-[#1C2541] border border-[#334155] rounded-3xl">
+                    <FileText className="w-10 h-10 text-slate-500 mx-auto mb-3" />
+                    <h3 className="text-sm font-bold text-white mb-1">
+                      No Posts in Stream
+                    </h3>
+                    <p className="text-xs text-slate-400 max-w-sm mx-auto mb-4">
+                      {searchQuery
+                        ? `No results matching "${searchQuery}". Try a different term or hashtag.`
+                        : activeView === 'following_feed'
+                        ? 'You are not following anyone with posts yet. Check the Home Feed or Leaderboard!'
+                        : 'Be the first creator to share a post or photo.'}
+                    </p>
+                    {activeView === 'following_feed' && (
+                      <button
+                        onClick={() => setActiveView('feed')}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                      >
+                        Explore Home Feed
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  displayedPosts.map((post) => {
+                    const userVoteRecord = votes.find(
+                      v => v.post_id === post.id && v.user_id === currentUser.id
+                    );
+                    const userVote = userVoteRecord ? userVoteRecord.type : null;
+                    const isFollowingAuthor = currentUser.following.includes(post.user_id);
+
                     return (
                       <PostCard
                         key={post.id}
                         post={post}
                         currentUser={currentUser}
-                        userVote={userVoteMatch ? userVoteMatch.type : null}
+                        userVote={userVote}
                         onVote={handleVote}
                         onDelete={handleDeletePost}
-                        onEdit={(p) => setEditingPost(p)}
-                        onViewDetails={(p) => setDetailsPost(p)}
-                        onOpenLightbox={(url, title) => setLightboxData({ isOpen: true, url, title })}
+                        onEdit={(p: Post) => setEditingPost(p)}
+                        onViewDetails={(p: Post) => setDetailsPost(p)}
+                        onOpenLightbox={(url: string, title: string) => setLightboxData({ isOpen: true, url, title })}
                         onOpenProfile={handleOpenProfile}
-                        onShare={(p) => setShareModalPost(p)}
-                        onSelectTag={(tag) => setSelectedTagFilter(tag)}
+                        onShare={(p: Post) => setShareModalPost(p)}
+                        onSelectTag={(tag: string) => setSelectedTagFilter(tag)}
                       />
                     );
-                  })}
-                </div>
-              )}
+                  })
+                )}
+              </div>
+
             </div>
           )}
 
@@ -709,8 +761,46 @@ export function App() {
         }}
         onUpdateProfile={handleUpdateProfile}
         onSignOut={handleSignOut}
+        onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
         addToast={addToast}
       />
+
+      {/* Account Switcher Modal (Multi-Account) */}
+      <AccountSwitcherModal
+        isOpen={isAccountSwitcherOpen}
+        onClose={() => setIsAccountSwitcherOpen(false)}
+        currentUser={currentUser}
+        savedAccounts={savedAccounts}
+        onSwitchAccount={handleSwitchAccount}
+        onAddAnotherAccount={() => setIsAddAccountOpen(true)}
+        onRemoveAccount={handleRemoveSavedAccount}
+      />
+
+      {/* Add Account Modal (Sign In / Switch to Another Profile) */}
+      {isAddAccountOpen && (
+        <AuthModal
+          isOpen={isAddAccountOpen}
+          onClose={() => setIsAddAccountOpen(false)}
+          onSignIn={async (email, pass) => {
+            const res = await authenticateUser(email, pass);
+            if (res.success && res.user) {
+              setIsAddAccountOpen(false);
+              setCurrentUser(res.user);
+              syncStateFromStorage();
+              addToast('Account Added & Switched', `Active as @${res.user.username} (${res.user.display_name}).`, 'success');
+            } else {
+              addToast('Sign In Failed', res.message, 'info');
+            }
+          }}
+          onSignUpStart={() => {
+            setIsAddAccountOpen(false);
+            handleSignOut();
+            addToast('Registration', 'Fill in details on the registration page to create a new account.', 'info');
+          }}
+          onQuickSelectDemo={() => {}}
+          demoProfiles={[]}
+        />
+      )}
 
       {/* Lightbox Modal */}
       <ImageLightboxModal
