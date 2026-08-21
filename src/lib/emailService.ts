@@ -12,17 +12,27 @@ export interface EmailServiceConfig {
 }
 
 export const getStoredEmailConfig = (): EmailServiceConfig => {
+  const defaultEmailjsServiceId = (import.meta as any).env?.VITE_EMAILJS_SERVICE_ID || 'service_m41wswe';
+  const defaultEmailjsTemplateId = (import.meta as any).env?.VITE_EMAILJS_TEMPLATE_ID || 'template_t3lyaoh';
+  const defaultEmailjsPublicKey = (import.meta as any).env?.VITE_EMAILJS_PUBLIC_KEY || 'lUxvD8jEw-LlgVT83';
+  const defaultResendApiKey = (import.meta as any).env?.VITE_RESEND_API_KEY || '';
+
   try {
     const saved = localStorage.getItem(EMAIL_CONFIG_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && (parsed.emailjsPublicKey || parsed.resendApiKey)) {
+        return parsed;
+      }
+    }
   } catch {}
 
   return {
     provider: 'emailjs',
-    emailjsServiceId: (import.meta as any).env?.VITE_EMAILJS_SERVICE_ID || 'service_m41wswe',
-    emailjsTemplateId: (import.meta as any).env?.VITE_EMAILJS_TEMPLATE_ID || 'template_t3lyaoh',
-    emailjsPublicKey: (import.meta as any).env?.VITE_EMAILJS_PUBLIC_KEY || 'lUxvD8jEw-LlgVT83',
-    resendApiKey: (import.meta as any).env?.VITE_RESEND_API_KEY || '',
+    emailjsServiceId: defaultEmailjsServiceId,
+    emailjsTemplateId: defaultEmailjsTemplateId,
+    emailjsPublicKey: defaultEmailjsPublicKey,
+    resendApiKey: defaultResendApiKey,
     senderName: 'Aether Feed',
   };
 };
