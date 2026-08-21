@@ -1,4 +1,5 @@
 import type { Profile, Post, VoteRecord, NotificationItem, ThemeMode } from '../types';
+import { getSupabaseClient } from './supabaseClient';
 
 const STORAGE_KEYS = {
   REAL_USERS: 'aether_real_users_v4',
@@ -101,10 +102,36 @@ export const syncWithServer = async (): Promise<boolean> => {
           if (Array.isArray(pending_otps)) {
             localStorage.setItem(STORAGE_KEYS.PENDING_OTPS, JSON.stringify(pending_otps));
           }
-          window.dispatchEvent(new Event('aether_storage_sync'));
-          return true;
         }
       }
+
+      // Supabase Cloud DB Synchronization
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        try {
+          const { data: supaProfiles } = await supabase.from('profiles').select('*');
+          if (supaProfiles && supaProfiles.length > 0) {
+            const cleanSupaUsers = supaProfiles.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
+            const currentUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+            const userMap = new Map<string, Profile>();
+            cleanSupaUsers.forEach((u: any) => userMap.set(u.id, u));
+            currentUsers.forEach(u => {
+              if (!userMap.has(u.id)) userMap.set(u.id, u);
+            });
+            localStorage.setItem(STORAGE_KEYS.REAL_USERS, JSON.stringify(Array.from(userMap.values())));
+          }
+
+          const { data: supaPosts } = await supabase.from('posts').select('*').order('created_at', { ascending: false });
+          if (supaPosts && supaPosts.length > 0) {
+            localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(supaPosts));
+          }
+        } catch (supaErr) {
+          console.warn('[Aether Supabase] Sync warning:', supaErr);
+        }
+      }
+
+      window.dispatchEvent(new Event('aether_storage_sync'));
+      return true;
     } catch (e) {
       // Offline / network fallback
     } finally {
