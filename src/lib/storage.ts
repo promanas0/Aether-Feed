@@ -253,6 +253,16 @@ export const verifyAndCreateUser = async (email: string, otpCode: string): Promi
   const updatedPending = pending.filter(p => p.email.toLowerCase() !== email.toLowerCase().trim());
   setItem(STORAGE_KEYS.PENDING_OTPS, updatedPending);
 
+  // Send direct registration to Supabase Cloud
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      await supabase.from('profiles').upsert(newProfile);
+    } catch (err) {
+      console.warn('[Aether Supabase] Profile upsert error:', err);
+    }
+  }
+
   // Send direct registration to server
   try {
     await fetch('/api/auth/register', {
@@ -274,7 +284,40 @@ export const authenticateUser = async (email: string, password: string): Promise
   const cleanEmail = email.toLowerCase().trim();
   const cleanPass = password.trim();
 
-  // 1. Direct Server Authentication
+  // 1. Supabase Cloud Database Authentication
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const { data: supaUsers, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', cleanEmail)
+        .limit(1);
+
+      if (!error && supaUsers && supaUsers.length > 0) {
+        const supaUser = supaUsers[0];
+        if (supaUser.password_hash && supaUser.password_hash !== cleanPass) {
+          return { success: false, message: 'Incorrect password. Please try again.' };
+        }
+
+        const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
+        const idx = users.findIndex(u => u.id === supaUser.id || u.email.toLowerCase() === cleanEmail);
+        if (idx !== -1) {
+          users[idx] = { ...users[idx], ...supaUser };
+        } else {
+          users.unshift(supaUser);
+        }
+        setItem(STORAGE_KEYS.REAL_USERS, users);
+        setItem(STORAGE_KEYS.CURRENT_USER_ID, supaUser.id);
+        syncWithServer();
+        return { success: true, user: supaUser, message: 'Signed in successfully.' };
+      }
+    } catch (err) {
+      console.warn('[Aether Supabase] Auth query fallback:', err);
+    }
+  }
+
+  // 2. Direct Server Authentication
   try {
     const serverRes = await fetch('/api/auth/login', {
       method: 'POST',
@@ -305,7 +348,7 @@ export const authenticateUser = async (email: string, password: string): Promise
     console.warn('[Aether Auth] Server login request failed, falling back to local storage:', err);
   }
 
-  // 2. Local State Fallback / Sync
+  // 3. Local State Fallback / Sync
   await syncWithServer();
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const user = users.find(u => u.email.toLowerCase() === cleanEmail);
@@ -522,6 +565,19 @@ export const createRealPost = (data: {
         });
       }
     });
+  }
+
+  // Send to Supabase Cloud if connected
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('posts').upsert(newPost).then(
+      ({ error }) => {
+        if (error) console.warn('[Aether Supabase] Post upsert error:', error);
+      },
+      (err: any) => {
+        console.warn('[Aether Supabase] Post upsert error:', err);
+      }
+    );
   }
 
   // Direct Server Dispatch
