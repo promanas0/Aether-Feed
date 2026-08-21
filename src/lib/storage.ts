@@ -169,7 +169,7 @@ export const createPendingRegistration = (data: {
   return { otp_code };
 };
 
-export const verifyAndCreateUser = (email: string, otpCode: string): { success: boolean; user?: Profile; message: string } => {
+export const verifyAndCreateUser = async (email: string, otpCode: string): Promise<{ success: boolean; user?: Profile; message: string }> => {
   const pending = getItem<Array<any>>(STORAGE_KEYS.PENDING_OTPS, []);
   const found = pending.find(
     p => p.email.toLowerCase() === email.toLowerCase().trim() && p.otp_code === otpCode.trim()
@@ -189,7 +189,7 @@ export const verifyAndCreateUser = (email: string, otpCode: string): { success: 
   let existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
   if (existingUser) {
     setItem(STORAGE_KEYS.CURRENT_USER_ID, existingUser.id);
-    syncWithServer();
+    await syncWithServer();
     return { success: true, user: existingUser, message: 'Account verified successfully!' };
   }
 
@@ -228,15 +228,17 @@ export const verifyAndCreateUser = (email: string, otpCode: string): { success: 
 
   // Send direct registration to server
   try {
-    fetch('/api/auth/register', {
+    await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user: newProfile }),
-    }).catch(() => {});
-  } catch {}
+    });
+  } catch (err) {
+    console.warn('[Aether Auth] Server registration fallback:', err);
+  }
 
   // Sync to central database immediately so all devices have this account
-  syncWithServer();
+  await syncWithServer();
 
   return { success: true, user: newProfile, message: 'Account verified and created successfully!' };
 };

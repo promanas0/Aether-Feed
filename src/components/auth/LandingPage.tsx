@@ -155,7 +155,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   };
 
   // Handle Complete OTP Verification
-  const handleVerifyOtp = (e: React.FormEvent) => {
+  const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     const entered = otpDigits.join('');
     if (entered.length < 6) {
@@ -163,7 +163,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       return;
     }
 
-    const res = verifyAndCreateUser(signUpEmail, entered);
+    const res = await verifyAndCreateUser(signUpEmail, entered);
     if (res.success && res.user) {
       addToast('Account Verified', `Welcome to Aether Feed, ${res.user.display_name}!`, 'success');
       onAuthSuccess(res.user);
