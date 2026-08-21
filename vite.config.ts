@@ -4,30 +4,38 @@ import fs from 'fs';
 import path from 'path';
 
 function databaseApiPlugin(): Plugin {
-  const dbFilePath = path.resolve(process.cwd(), 'data', 'database.json');
+  const storageDir = path.resolve(process.cwd(), 'storage');
+  const usersFile = path.resolve(storageDir, 'users.json');
+  const postsFile = path.resolve(storageDir, 'posts.json');
+  const votesFile = path.resolve(storageDir, 'votes.json');
+  const otpsFile = path.resolve(storageDir, 'otps.json');
 
-  const readDb = () => {
+  const ensureStorageDir = () => {
+    if (!fs.existsSync(storageDir)) {
+      fs.mkdirSync(storageDir, { recursive: true });
+    }
+  };
+
+  const readJson = (filePath: string, defaultValue: any) => {
     try {
-      if (fs.existsSync(dbFilePath)) {
-        const raw = fs.readFileSync(dbFilePath, 'utf-8');
+      ensureStorageDir();
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf-8');
         return JSON.parse(raw);
       }
     } catch (e) {
-      console.error('[API Server] Failed to read database.json:', e);
+      console.error(`[API Server] Failed to read ${filePath}:`, e);
     }
-    return { users: [], posts: [], votes: [], notifications: [], pending_otps: [] };
+    return defaultValue;
   };
 
-  const writeDb = (data: any) => {
+  const writeJson = (filePath: string, data: any) => {
     try {
-      const dir = path.dirname(dbFilePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(dbFilePath, JSON.stringify(data, null, 2), 'utf-8');
+      ensureStorageDir();
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
       return true;
     } catch (e) {
-      console.error('[API Server] Failed to write database.json:', e);
+      console.error(`[API Server] Failed to write ${filePath}:`, e);
       return false;
     }
   };
@@ -36,7 +44,6 @@ function databaseApiPlugin(): Plugin {
     name: 'aether-database-api',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        // Enable CORS for LAN and multi-device access
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -50,36 +57,38 @@ function databaseApiPlugin(): Plugin {
         const rawUrl = req.url || '';
         const pathname = rawUrl.split('?')[0].replace(/\/+$/, '') || '/';
 
-        // Endpoint: GET /api/data
+        // GET /api/data
         if (pathname === '/api/data' && req.method === 'GET') {
-          const db = readDb();
+          const users = readJson(usersFile, []);
+          const posts = readJson(postsFile, []);
+          const votes = readJson(votesFile, []);
+          const otps = readJson(otpsFile, []);
           res.setHeader('Content-Type', 'application/json');
           res.statusCode = 200;
-          res.end(JSON.stringify(db));
+          res.end(JSON.stringify({ users, posts, votes, notifications: [], pending_otps: otps }));
           return;
         }
 
-        // Endpoint: GET /api/users
+        // GET /api/users
         if (pathname === '/api/users' && req.method === 'GET') {
-          const db = readDb();
           const FAKE_MOCK_IDS = ['usr_manas_01', 'usr_elena_02', 'usr_marcus_03'];
-          const users = (db.users || []).filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
+          const users = readJson(usersFile, []).filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
           res.setHeader('Content-Type', 'application/json');
           res.statusCode = 200;
           res.end(JSON.stringify({ success: true, users }));
           return;
         }
 
-        // Endpoint: GET /api/posts
+        // GET /api/posts
         if (pathname === '/api/posts' && req.method === 'GET') {
-          const db = readDb();
+          const posts = readJson(postsFile, []);
           res.setHeader('Content-Type', 'application/json');
           res.statusCode = 200;
-          res.end(JSON.stringify({ success: true, posts: db.posts || [] }));
+          res.end(JSON.stringify({ success: true, posts }));
           return;
         }
 
-        // Endpoint: POST /api/posts (Create new post)
+        // POST /api/posts
         if (pathname === '/api/posts' && req.method === 'POST') {
           let body = '';
           req.on('data', (chunk) => (body += chunk));
@@ -87,16 +96,16 @@ function databaseApiPlugin(): Plugin {
             try {
               const incoming = JSON.parse(body || '{}');
               const post = incoming.post || incoming;
-              const db = readDb();
+              const posts = readJson(postsFile, []);
 
               if (post && post.id) {
-                const existingIdx = (db.posts || []).findIndex((p: any) => p.id === post.id);
+                const existingIdx = posts.findIndex((p: any) => p.id === post.id);
                 if (existingIdx !== -1) {
-                  db.posts[existingIdx] = { ...db.posts[existingIdx], ...post };
+                  posts[existingIdx] = { ...posts[existingIdx], ...post };
                 } else {
-                  db.posts = [post, ...(db.posts || [])];
+                  posts.unshift(post);
                 }
-                writeDb(db);
+                writeJson(postsFile, posts);
               }
 
               res.setHeader('Content-Type', 'application/json');
@@ -111,16 +120,16 @@ function databaseApiPlugin(): Plugin {
           return;
         }
 
-        // Endpoint: POST /api/auth/login
+        // POST /api/auth/login
         if (pathname === '/api/auth/login' && req.method === 'POST') {
           let body = '';
           req.on('data', (chunk) => (body += chunk));
           req.on('end', () => {
             try {
               const { email, password } = JSON.parse(body || '{}');
-              const db = readDb();
+              const users = readJson(usersFile, []);
               const cleanEmail = (email || '').toLowerCase().trim();
-              const user = (db.users || []).find((u: any) => (u.email || '').toLowerCase().trim() === cleanEmail);
+              const user = users.find((u: any) => (u.email || '').toLowerCase().trim() === cleanEmail);
 
               if (!user) {
                 res.setHeader('Content-Type', 'application/json');
@@ -148,14 +157,13 @@ function databaseApiPlugin(): Plugin {
           return;
         }
 
-        // Endpoint: POST /api/auth/register
+        // POST /api/auth/register
         if (pathname === '/api/auth/register' && req.method === 'POST') {
           let body = '';
           req.on('data', (chunk) => (body += chunk));
           req.on('end', () => {
             try {
               const incoming = JSON.parse(body || '{}');
-              const db = readDb();
               const user = incoming.user || incoming;
               if (!user || !user.email) {
                 res.setHeader('Content-Type', 'application/json');
@@ -164,16 +172,17 @@ function databaseApiPlugin(): Plugin {
                 return;
               }
 
+              const users = readJson(usersFile, []);
               const cleanEmail = user.email.toLowerCase().trim();
-              const existingIdx = (db.users || []).findIndex((u: any) => (u.email || '').toLowerCase().trim() === cleanEmail);
+              const existingIdx = users.findIndex((u: any) => (u.email || '').toLowerCase().trim() === cleanEmail);
 
               if (existingIdx !== -1) {
-                db.users[existingIdx] = { ...db.users[existingIdx], ...user };
+                users[existingIdx] = { ...users[existingIdx], ...user };
               } else {
-                db.users = [user, ...(db.users || [])];
+                users.unshift(user);
               }
 
-              writeDb(db);
+              writeJson(usersFile, users);
 
               res.setHeader('Content-Type', 'application/json');
               res.statusCode = 200;
@@ -187,24 +196,26 @@ function databaseApiPlugin(): Plugin {
           return;
         }
 
-        // Endpoint: POST /api/sync (Two-way merger)
+        // POST /api/sync
         if (pathname === '/api/sync' && req.method === 'POST') {
           let body = '';
           req.on('data', (chunk) => (body += chunk));
           req.on('end', () => {
             try {
               const incoming = JSON.parse(body || '{}');
-              const db = readDb();
+              const currentUsers = readJson(usersFile, []);
+              const currentPosts = readJson(postsFile, []);
+              const currentVotes = readJson(votesFile, []);
+              const currentOtps = readJson(otpsFile, []);
 
               const FAKE_MOCK_IDS = ['usr_manas_01', 'usr_elena_02', 'usr_marcus_03'];
-              const currentUsers = (db.users || []).filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
+              const filteredCurrentUsers = currentUsers.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
               const incomingUsers = (incoming.users || []).filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
 
               const userMap = new Map<string, any>();
               const emailMap = new Map<string, string>();
 
-              // Index existing users
-              currentUsers.forEach((u: any) => {
+              filteredCurrentUsers.forEach((u: any) => {
                 if (u && u.id) {
                   userMap.set(u.id, u);
                   if (u.email) {
@@ -213,7 +224,6 @@ function databaseApiPlugin(): Plugin {
                 }
               });
 
-              // Merge incoming users
               incomingUsers.forEach((u: any) => {
                 if (!u) return;
                 const userEmail = (u.email || '').toLowerCase().trim();
@@ -229,9 +239,8 @@ function databaseApiPlugin(): Plugin {
                 }
               });
 
-              // Merge Posts
               const postMap = new Map<string, any>();
-              (db.posts || []).forEach((p: any) => postMap.set(p.id, p));
+              currentPosts.forEach((p: any) => postMap.set(p.id, p));
               (incoming.posts || []).forEach((p: any) => {
                 if (postMap.has(p.id)) {
                   postMap.set(p.id, { ...postMap.get(p.id), ...p });
@@ -240,36 +249,34 @@ function databaseApiPlugin(): Plugin {
                 }
               });
 
-              // Merge Votes
               const voteMap = new Map<string, any>();
-              (db.votes || []).forEach((v: any) => voteMap.set(v.id, v));
+              currentVotes.forEach((v: any) => voteMap.set(v.id, v));
               (incoming.votes || []).forEach((v: any) => voteMap.set(v.id, v));
 
-              // Merge Notifications
-              const notifMap = new Map<string, any>();
-              (db.notifications || []).forEach((n: any) => notifMap.set(n.id, n));
-              (incoming.notifications || []).forEach((n: any) => notifMap.set(n.id, n));
+              const mergedUsers = Array.from(userMap.values());
+              const mergedPosts = Array.from(postMap.values()).sort(
+                (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              );
+              const mergedVotes = Array.from(voteMap.values());
 
-              // Merge Pending OTPs
-              const pendingMap = new Map<string, any>();
-              (db.pending_otps || []).forEach((o: any) => pendingMap.set(`${o.email}_${o.otp_code}`, o));
-              (incoming.pending_otps || []).forEach((o: any) => pendingMap.set(`${o.email}_${o.otp_code}`, o));
-
-              const mergedDb = {
-                users: Array.from(userMap.values()),
-                posts: Array.from(postMap.values()).sort(
-                  (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                ),
-                votes: Array.from(voteMap.values()),
-                notifications: Array.from(notifMap.values()),
-                pending_otps: Array.from(pendingMap.values()),
-              };
-
-              writeDb(mergedDb);
+              writeJson(usersFile, mergedUsers);
+              writeJson(postsFile, mergedPosts);
+              writeJson(votesFile, mergedVotes);
 
               res.setHeader('Content-Type', 'application/json');
               res.statusCode = 200;
-              res.end(JSON.stringify({ success: true, data: mergedDb }));
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  data: {
+                    users: mergedUsers,
+                    posts: mergedPosts,
+                    votes: mergedVotes,
+                    notifications: incoming.notifications || [],
+                    pending_otps: incoming.pending_otps || currentOtps,
+                  },
+                })
+              );
             } catch (e: any) {
               res.setHeader('Content-Type', 'application/json');
               res.statusCode = 400;
