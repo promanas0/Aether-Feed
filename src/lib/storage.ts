@@ -36,60 +36,66 @@ const FAKE_MOCK_IDS = ['usr_manas_01', 'usr_elena_02', 'usr_marcus_03'];
    CROSS-DEVICE & CENTRAL CLOUD/SERVER SYNC ENGINE
    ========================================================================== */
 
-let isSyncing = false;
+let currentSyncPromise: Promise<boolean> | null = null;
 
 export const syncWithServer = async (): Promise<boolean> => {
-  if (isSyncing) return false;
-  isSyncing = true;
-  try {
-    const localUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
-    const localPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
-    const localVotes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []);
-    const localNotifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
-    const localOtps = getItem<any[]>(STORAGE_KEYS.PENDING_OTPS, []);
-
-    const response = await fetch('/api/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        users: localUsers,
-        posts: localPosts,
-        votes: localVotes,
-        notifications: localNotifs,
-        pending_otps: localOtps,
-      }),
-    });
-
-    if (response.ok) {
-      const result = await response.json();
-      if (result.success && result.data) {
-        const { users, posts, votes, notifications, pending_otps } = result.data;
-        if (Array.isArray(users)) {
-          const cleanUsers = users.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
-          localStorage.setItem(STORAGE_KEYS.REAL_USERS, JSON.stringify(cleanUsers));
-        }
-        if (Array.isArray(posts)) {
-          localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(posts));
-        }
-        if (Array.isArray(votes)) {
-          localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(votes));
-        }
-        if (Array.isArray(notifications)) {
-          localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
-        }
-        if (Array.isArray(pending_otps)) {
-          localStorage.setItem(STORAGE_KEYS.PENDING_OTPS, JSON.stringify(pending_otps));
-        }
-        window.dispatchEvent(new Event('aether_storage_sync'));
-        isSyncing = false;
-        return true;
-      }
-    }
-  } catch (e) {
-    // Offline / local fallback
+  if (currentSyncPromise) {
+    return currentSyncPromise;
   }
-  isSyncing = false;
-  return false;
+
+  currentSyncPromise = (async () => {
+    try {
+      const localUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
+      const localPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+      const localVotes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []);
+      const localNotifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+      const localOtps = getItem<any[]>(STORAGE_KEYS.PENDING_OTPS, []);
+
+      const response = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          users: localUsers,
+          posts: localPosts,
+          votes: localVotes,
+          notifications: localNotifs,
+          pending_otps: localOtps,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data) {
+          const { users, posts, votes, notifications, pending_otps } = result.data;
+          if (Array.isArray(users)) {
+            const cleanUsers = users.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
+            localStorage.setItem(STORAGE_KEYS.REAL_USERS, JSON.stringify(cleanUsers));
+          }
+          if (Array.isArray(posts)) {
+            localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(posts));
+          }
+          if (Array.isArray(votes)) {
+            localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(votes));
+          }
+          if (Array.isArray(notifications)) {
+            localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
+          }
+          if (Array.isArray(pending_otps)) {
+            localStorage.setItem(STORAGE_KEYS.PENDING_OTPS, JSON.stringify(pending_otps));
+          }
+          window.dispatchEvent(new Event('aether_storage_sync'));
+          return true;
+        }
+      }
+    } catch (e) {
+      // Offline / network fallback
+    } finally {
+      currentSyncPromise = null;
+    }
+    return false;
+  })();
+
+  return currentSyncPromise;
 };
 
 /**
@@ -202,6 +208,15 @@ export const verifyAndCreateUser = (email: string, otpCode: string): { success: 
   const updatedPending = pending.filter(p => p.email.toLowerCase() !== email.toLowerCase().trim());
   setItem(STORAGE_KEYS.PENDING_OTPS, updatedPending);
 
+  // Send direct registration to server
+  try {
+    fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: newProfile }),
+    }).catch(() => {});
+  } catch {}
+
   // Sync to central database immediately so all devices have this account
   syncWithServer();
 
@@ -209,22 +224,50 @@ export const verifyAndCreateUser = (email: string, otpCode: string): { success: 
 };
 
 export const authenticateUser = async (email: string, password: string): Promise<{ success: boolean; user?: Profile; message: string }> => {
-  // First check local state
-  let users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-  let user = users.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
+  const cleanEmail = email.toLowerCase().trim();
+  const cleanPass = password.trim();
 
-  // If not found locally, sync with server to fetch accounts registered on other devices
-  if (!user) {
-    await syncWithServer();
-    users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-    user = users.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
+  // 1. Direct Server Authentication
+  try {
+    const serverRes = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: cleanEmail, password: cleanPass }),
+    });
+
+    if (serverRes.ok) {
+      const data = await serverRes.json();
+      if (data.success && data.user) {
+        // Save user to local storage
+        const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
+        const idx = users.findIndex(u => u.id === data.user.id || u.email.toLowerCase() === cleanEmail);
+        if (idx !== -1) {
+          users[idx] = { ...users[idx], ...data.user };
+        } else {
+          users.unshift(data.user);
+        }
+        setItem(STORAGE_KEYS.REAL_USERS, users);
+        setItem(STORAGE_KEYS.CURRENT_USER_ID, data.user.id);
+        syncWithServer();
+        return { success: true, user: data.user, message: 'Signed in successfully.' };
+      } else if (data.message && data.message.includes('Incorrect password')) {
+        return { success: false, message: data.message };
+      }
+    }
+  } catch (err) {
+    console.warn('[Aether Auth] Server login request failed, falling back to local storage:', err);
   }
+
+  // 2. Local State Fallback / Sync
+  await syncWithServer();
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const user = users.find(u => u.email.toLowerCase() === cleanEmail);
 
   if (!user) {
     return { success: false, message: 'No registered account found with this email. Please create an account first.' };
   }
 
-  if (user.password_hash && user.password_hash !== password.trim()) {
+  if (user.password_hash && user.password_hash !== cleanPass) {
     return { success: false, message: 'Incorrect password. Please try again.' };
   }
 
@@ -593,7 +636,7 @@ export const votePostAction = (
    ========================================================================== */
 
 export const getRealLeaderboard = (): Array<Profile & { rank: number; posts_count: number }> => {
-  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
 
   // Calculate actual posts and real net votes
