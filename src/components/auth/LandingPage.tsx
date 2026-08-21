@@ -193,11 +193,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           }}
           className="flex items-center gap-2.5 group cursor-pointer focus:outline-none"
         >
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 p-0.5 shadow-glow-sm">
-            <div className="w-full h-full bg-[#0B132B] rounded-[10px] flex items-center justify-center">
-              <Layers className="w-4 h-4 text-blue-400" />
-            </div>
-          </div>
+          <img
+            src="/logo.jpg"
+            alt="Aether Feed Logo"
+            className="w-8 h-8 rounded-xl object-cover shadow-glow-sm border border-blue-500/40"
+          />
           <span className="text-base font-extrabold text-white tracking-tight">
             Aether Feed
           </span>
@@ -235,12 +235,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {viewState === 'home' && !isVerifyingOtp && (
           <div className="w-full text-center space-y-6 animate-in fade-in zoom-in-95 duration-200">
             
-            {/* Big Brand Icon */}
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-800 p-1 shadow-glow mx-auto">
-              <div className="w-full h-full bg-[#0B132B] rounded-[14px] flex items-center justify-center">
-                <Layers className="w-8 h-8 text-blue-400" />
-              </div>
-            </div>
+            {/* Big Brand Logo */}
+            <img
+              src="/logo.jpg"
+              alt="Aether Feed Logo"
+              className="w-18 h-18 rounded-2xl object-cover shadow-glow mx-auto border-2 border-blue-500/40"
+            />
 
             <div>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">

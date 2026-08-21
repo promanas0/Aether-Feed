@@ -111,11 +111,11 @@ export const Header: React.FC<HeaderProps> = ({
             className="flex items-center gap-2.5 group text-left focus:outline-none cursor-pointer"
             title="Go to Home Feed"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 p-0.5 shadow-glow-sm group-hover:scale-105 transition-transform duration-200">
-              <div className="w-full h-full bg-[#0B132B] rounded-[10px] flex items-center justify-center">
-                <Layers className="w-5 h-5 text-blue-400 group-hover:text-blue-300 transition-colors" />
-              </div>
-            </div>
+            <img
+              src="/logo.jpg"
+              alt="Aether Feed"
+              className="w-9 h-9 rounded-xl object-cover shadow-glow-sm group-hover:scale-105 transition-transform duration-200 border border-blue-500/40"
+            />
             
             <span className="text-base font-extrabold text-white tracking-tight group-hover:text-blue-400 transition-colors">
               Aether Feed
