@@ -127,7 +127,7 @@ export const FollowersListModal: React.FC<FollowersListModalProps> = ({
                         <h4 className="text-xs font-bold text-white truncate group-hover:text-blue-300 transition-colors">
                           {user.display_name}
                         </h4>
-                        <VerifiedBadge user={user} showAdminLabel={true} />
+                        <VerifiedBadge user={user} />
                         {isSelf && (
                           <span className="px-1.5 py-0.2 bg-blue-600/30 text-blue-300 text-[9px] font-mono rounded">
                             You

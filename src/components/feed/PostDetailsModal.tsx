@@ -96,7 +96,7 @@ export const PostDetailsModal: React.FC<PostDetailsModalProps> = ({
                 <h4 className="text-xs font-bold text-white truncate">
                   {post.user?.display_name}
                 </h4>
-                <VerifiedBadge user={post.user} showAdminLabel={true} />
+                <VerifiedBadge user={post.user} />
               </div>
               <p className="text-[11px] text-blue-400 font-mono truncate">
                 @{post.user?.username}

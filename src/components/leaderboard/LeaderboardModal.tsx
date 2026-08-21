@@ -141,7 +141,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                         <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-blue-300 transition-colors">
                           {creator.display_name}
                         </h4>
-                        <VerifiedBadge user={creator} showAdminLabel={true} />
+                        <VerifiedBadge user={creator} />
                         <span className="text-[11px] font-mono text-blue-400 truncate">
                           @{creator.username}
                         </span>

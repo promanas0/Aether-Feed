@@ -54,7 +54,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   <h2 className="text-base font-bold text-white tracking-tight">
                     {profile.display_name}
                   </h2>
-                  <VerifiedBadge user={profile} showAdminLabel={true} />
+                  <VerifiedBadge user={profile} />
                   {isCurrentUser && (
                     <span className="px-2 py-0.5 bg-blue-600/30 border border-blue-500/40 text-blue-300 text-[10px] font-mono rounded-md">
                       You

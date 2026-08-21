@@ -340,7 +340,7 @@ export const Header: React.FC<HeaderProps> = ({
                   >
                     <div className="flex items-center gap-1.5">
                       <p className="text-xs font-bold text-white truncate">{currentUser.display_name}</p>
-                      <VerifiedBadge user={currentUser} size="xs" showAdminLabel={true} />
+                      <VerifiedBadge user={currentUser} size="xs" />
                     </div>
                     <p className="text-[11px] text-blue-400 font-mono">@{currentUser.username}</p>
                   </div>

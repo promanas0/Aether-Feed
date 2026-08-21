@@ -116,7 +116,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   <h1 className="text-lg sm:text-2xl font-bold text-white tracking-tight">
                     {profile.display_name}
                   </h1>
-                  <VerifiedBadge user={profile} size="md" showAdminLabel={true} />
+                  <VerifiedBadge user={profile} size="md" />
                 </div>
                 <p className="text-xs text-blue-400 font-mono">
                   @{profile.username}

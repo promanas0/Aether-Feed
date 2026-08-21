@@ -511,7 +511,7 @@ export function App() {
                                 <span className="text-xs font-bold text-white truncate">
                                   {member.display_name}
                                 </span>
-                                <VerifiedBadge user={member} showAdminLabel={true} />
+                                <VerifiedBadge user={member} />
                               </div>
                               <p className="text-[11px] text-slate-400 font-mono truncate">
                                 @{member.username}

@@ -62,7 +62,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
               <h3 className="text-xs font-bold text-white truncate group-hover:text-blue-300 transition-colors">
                 {currentUser.display_name}
               </h3>
-              <VerifiedBadge user={currentUser} showAdminLabel={true} />
+              <VerifiedBadge user={currentUser} />
             </div>
             <p className="text-[11px] text-slate-400 font-mono truncate">
               @{currentUser.username}
@@ -124,9 +124,6 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
           >
             <Crown className="w-4 h-4 text-amber-400 shrink-0" />
             <span className="flex-1">Admin Panel</span>
-            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-rose-500/30 text-rose-200 border border-rose-400/40">
-              OWNER
-            </span>
           </button>
         )}
       </nav>

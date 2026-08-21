@@ -106,7 +106,7 @@ export const PostCard: React.FC<PostCardProps> = ({
               <h4 className="text-xs font-bold text-white group-hover/author:text-blue-300 transition-colors">
                 {author.display_name}
               </h4>
-              <VerifiedBadge user={author} showAdminLabel={true} />
+              <VerifiedBadge user={author} />
             </div>
             <p className="text-[11px] text-slate-400 font-mono">
               @{author.username}

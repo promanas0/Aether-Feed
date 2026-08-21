@@ -105,7 +105,7 @@ export const RealLeaderboardView: React.FC<RealLeaderboardViewProps> = ({
                       <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-blue-300 transition-colors">
                         {curator.display_name}
                       </h4>
-                      <VerifiedBadge user={curator} showAdminLabel={true} />
+                      <VerifiedBadge user={curator} />
                       {isSelf && (
                         <span className="px-1.5 py-0.2 bg-blue-600/30 text-blue-300 text-[9px] font-mono rounded">
                           You
