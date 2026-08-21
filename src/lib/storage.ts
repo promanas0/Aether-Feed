@@ -114,6 +114,17 @@ export const syncWithServer = async (): Promise<boolean> => {
             await supabase.from('profiles').upsert(currentUsers);
           }
 
+          const currentPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+          if (currentPosts.length > 0) {
+            await supabase.from('posts').upsert(currentPosts);
+          }
+
+          const currentVotes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []);
+          if (currentVotes.length > 0) {
+            await supabase.from('votes').upsert(currentVotes);
+          }
+
+          // 1. Pull all profiles from Supabase
           const { data: supaProfiles } = await supabase.from('profiles').select('*');
           if (supaProfiles && supaProfiles.length > 0) {
             const cleanSupaUsers = supaProfiles.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
@@ -125,9 +136,16 @@ export const syncWithServer = async (): Promise<boolean> => {
             localStorage.setItem(STORAGE_KEYS.REAL_USERS, JSON.stringify(Array.from(userMap.values())));
           }
 
+          // 2. Pull all posts from Supabase
           const { data: supaPosts } = await supabase.from('posts').select('*').order('created_at', { ascending: false });
           if (supaPosts && supaPosts.length > 0) {
             localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(supaPosts));
+          }
+
+          // 3. Pull all votes from Supabase
+          const { data: supaVotes } = await supabase.from('votes').select('*');
+          if (supaVotes && supaVotes.length > 0) {
+            localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(supaVotes));
           }
         } catch (supaErr) {
           console.warn('[Aether Supabase] Sync warning:', supaErr);
@@ -788,6 +806,42 @@ export const votePostAction = (
 
   setItem(STORAGE_KEYS.POSTS, posts);
   setItem(STORAGE_KEYS.VOTES, votes);
+
+  // Push vote and updated counts to Supabase Cloud directly
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    // 1. Update post vote tally
+    supabase
+      .from('posts')
+      .update({
+        votes_up: posts[postIdx].votes_up,
+        votes_down: posts[postIdx].votes_down,
+        net_votes: posts[postIdx].net_votes,
+      })
+      .eq('id', postId)
+      .then(() => {}, (err: any) => console.warn('[Aether Supabase] Post vote update error:', err));
+
+    // 2. Update individual vote record
+    if (finalUserVote === null) {
+      supabase.from('votes').delete().match({ user_id: userId, post_id: postId }).then(() => {}, () => {});
+    } else {
+      supabase.from('votes').upsert({
+        id: `vote_${userId}_${postId}`,
+        user_id: userId,
+        post_id: postId,
+        type: finalUserVote,
+        created_at: new Date().toISOString(),
+      }).then(() => {}, (err: any) => console.warn('[Aether Supabase] Vote record upsert error:', err));
+    }
+
+    // 3. Update author's total votes
+    supabase
+      .from('profiles')
+      .update({ total_votes_received: totalVotesReceived })
+      .eq('id', authorId)
+      .then(() => {}, () => {});
+  }
+
   syncWithServer();
 
   return {
