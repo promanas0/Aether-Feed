@@ -307,11 +307,13 @@ function databaseApiPlugin(): Plugin {
               const existingIdx = users.findIndex((u: any) => (u.email || '').toLowerCase().trim() === cleanEmail);
 
               if (existingIdx !== -1) {
-                users[existingIdx] = { ...users[existingIdx], ...user };
-              } else {
-                users.unshift(user);
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 400;
+                res.end(JSON.stringify({ success: false, message: 'An account already exists with this email address. Please sign in instead.' }));
+                return;
               }
 
+              users.unshift(user);
               writeJson(usersFile, users);
 
               res.setHeader('Content-Type', 'application/json');

@@ -16,10 +16,18 @@ import {
   RefreshCw, 
   Send,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Users,
+  UserPlus
 } from 'lucide-react';
 import type { Profile, ThemeMode, ToastMessage } from '../../types';
-import { createPasswordChangeOtp, verifyPasswordChangeOtp, deleteUserAccount } from '../../lib/storage';
+import { 
+  createPasswordChangeOtp, 
+  verifyPasswordChangeOtp, 
+  deleteUserAccount,
+  getSavedAccounts,
+  switchAccountSession
+} from '../../lib/storage';
 import { sendRealVerificationEmail } from '../../lib/emailService';
 import { compressAvatar, compressBanner } from '../../lib/imageUtils';
 
@@ -32,6 +40,8 @@ interface SettingsModalProps {
   onUpdateProfile: (updates: Partial<Profile>) => void;
   onSignOut: () => void;
   onOpenAccountSwitcher?: () => void;
+  onSwitchAccount?: (userId: string) => void;
+  onAddAccount?: () => void;
   addToast: (title: string, desc?: string, type?: ToastMessage['type']) => void;
 }
 
@@ -44,6 +54,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateProfile,
   onSignOut,
   onOpenAccountSwitcher,
+  onSwitchAccount,
+  onAddAccount,
   addToast,
 }) => {
   const [tab, setTab] = useState<'info' | 'security' | 'appearance' | 'account'>('info');
@@ -602,34 +614,115 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {/* TAB 4: Account & Logout & Delete Account */}
+          {/* TAB 4: Multi-Account Switcher & Logout & Delete Account */}
           {tab === 'account' && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               
-              {/* Multi-Account Switcher Option */}
-              {onOpenAccountSwitcher && (
-                <div className="p-4 bg-[#1C2541] border border-blue-500/30 rounded-2xl flex items-center justify-between gap-3">
-                  <div>
-                    <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-blue-400" />
-                      <span>Multi-Account Switcher</span>
-                    </h4>
-                    <p className="text-xs text-slate-400">
-                      Switch between your saved accounts or connect another profile.
-                    </p>
+              {/* Dedicated In-Settings Multi-Account Switcher Section */}
+              <div className="p-5 bg-[#0B132B] border border-blue-500/30 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-blue-600/20 border border-blue-500/40 flex items-center justify-center">
+                      <Users className="w-4 h-4 text-blue-400" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Multi-Account Switcher
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        Switch between accounts saved on this device without logging out.
+                      </p>
+                    </div>
                   </div>
+
                   <button
                     type="button"
                     onClick={() => {
-                      onClose();
-                      onOpenAccountSwitcher();
+                      if (onAddAccount) {
+                        onClose();
+                        onAddAccount();
+                      } else if (onOpenAccountSwitcher) {
+                        onClose();
+                        onOpenAccountSwitcher();
+                      }
                     }}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-glow-sm transition-all shrink-0 cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 rounded-xl text-xs font-semibold transition-all cursor-pointer"
                   >
-                    Switch Account
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>Add Account</span>
                   </button>
                 </div>
-              )}
+
+                {/* List of Saved Accounts on this Device */}
+                <div className="space-y-2 pt-1">
+                  {(() => {
+                    const savedList = getSavedAccounts();
+                    return savedList.map((acc) => {
+                      const isActive = acc.id === currentUser.id;
+
+                      return (
+                        <div
+                          key={acc.id}
+                          className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-all ${
+                            isActive
+                              ? 'bg-blue-950/40 border-blue-500/50 shadow-glow-sm'
+                              : 'bg-[#1C2541] border-[#334155] hover:border-slate-500'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <img
+                              src={acc.avatar_url}
+                              alt={acc.display_name}
+                              className={`w-9 h-9 rounded-xl object-cover shrink-0 border ${
+                                isActive ? 'border-blue-400 shadow-glow-sm' : 'border-slate-600'
+                              }`}
+                            />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="text-xs font-bold text-white truncate">
+                                  {acc.display_name}
+                                </p>
+                                {isActive && (
+                                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    Active
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-400 font-mono truncate">
+                                @{acc.username}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div>
+                            {isActive ? (
+                              <span className="text-[11px] font-semibold text-slate-400 px-3 py-1.5 rounded-lg bg-[#0B132B] border border-[#334155]">
+                                Current Session
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const switched = switchAccountSession(acc.id);
+                                  if (switched) {
+                                    addToast('Account Switched', `Now active as @${switched.username} (${switched.display_name})`, 'success');
+                                    onSwitchAccount?.(switched.id);
+                                    onClose();
+                                  }
+                                }}
+                                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-glow-sm transition-all cursor-pointer"
+                              >
+                                Switch &rarr;
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
 
               {/* Sign Out Card */}
               <div className="p-4 bg-[#1C2541] border border-[#334155] rounded-2xl">

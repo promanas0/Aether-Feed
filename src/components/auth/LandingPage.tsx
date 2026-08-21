@@ -22,7 +22,8 @@ import {
   authenticateUser,
   syncWithServer,
   getSavedAccounts,
-  switchAccountSession
+  switchAccountSession,
+  checkEmailExists
 } from '../../lib/storage';
 import { sendRealVerificationEmail } from '../../lib/emailService';
 import { EmailConfigModal } from './EmailConfigModal';
@@ -110,28 +111,43 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
     setIsSendingEmail(true);
 
-    const { otp_code } = createPendingRegistration({
-      first_name: firstName.trim(),
-      last_name: lastName.trim(),
-      email: signUpEmail.trim(),
-      password_hash: signUpPassword.trim(),
-    });
+    // Verify if account already exists before sending code
+    const alreadyRegistered = await checkEmailExists(signUpEmail.trim());
+    if (alreadyRegistered) {
+      setIsSendingEmail(false);
+      addToast('Account Already Exists', 'An account already exists with this email! Redirecting you to Sign In.', 'info');
+      setSignInEmail(signUpEmail.trim());
+      setViewState('signin');
+      return;
+    }
 
-    // Send real email via EmailJS / Resend
-    const emailResult = await sendRealVerificationEmail({
-      toEmail: signUpEmail.trim(),
-      toName: `${firstName.trim()} ${lastName.trim()}`,
-      otpCode: otp_code,
-    });
+    try {
+      const { otp_code } = createPendingRegistration({
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        email: signUpEmail.trim(),
+        password_hash: signUpPassword.trim(),
+      });
 
-    setIsSendingEmail(false);
-    setIsVerifyingOtp(true);
-    setOtpDigits(['', '', '', '', '', '']);
+      // Send real email via EmailJS / Resend
+      const emailResult = await sendRealVerificationEmail({
+        toEmail: signUpEmail.trim(),
+        toName: `${firstName.trim()} ${lastName.trim()}`,
+        otpCode: otp_code,
+      });
 
-    if (emailResult.success) {
-      addToast('Verification Code Sent', emailResult.message, 'success');
-    } else {
-      addToast('Email Dispatch Notice', emailResult.message, 'info');
+      setIsSendingEmail(false);
+      setIsVerifyingOtp(true);
+      setOtpDigits(['', '', '', '', '', '']);
+
+      if (emailResult.success) {
+        addToast('Verification Code Sent', emailResult.message, 'success');
+      } else {
+        addToast('Email Dispatch Notice', emailResult.message, 'info');
+      }
+    } catch (err: any) {
+      setIsSendingEmail(false);
+      addToast('Registration Notice', err.message || 'Unable to start registration.', 'info');
     }
   };
 

@@ -442,20 +442,72 @@ export const initializeV3Storage = (): void => {
    AUTHENTICATION & REAL REGISTRATION FLOW
    ========================================================================== */
 
+/**
+ * Check whether an account already exists with this email address
+ * across LocalStorage, Supabase Cloud DB, and the local Server API.
+ */
+export const checkEmailExists = async (email: string): Promise<boolean> => {
+  const cleanEmail = email.toLowerCase().trim();
+  if (!cleanEmail) return false;
+
+  // 1. Check LocalStorage
+  const localUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  if (localUsers.some(u => (u.email || '').toLowerCase().trim() === cleanEmail)) {
+    return true;
+  }
+
+  // 2. Check Supabase Cloud DB
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, email')
+        .ilike('email', cleanEmail)
+        .limit(1);
+      if (data && data.length > 0) {
+        return true;
+      }
+    } catch {}
+  }
+
+  // 3. Check Local Server API
+  try {
+    const res = await fetch('/api/users');
+    if (res.ok) {
+      const json = await res.json();
+      if (json.users && Array.isArray(json.users)) {
+        if (json.users.some((u: any) => (u.email || '').toLowerCase().trim() === cleanEmail)) {
+          return true;
+        }
+      }
+    }
+  } catch {}
+
+  return false;
+};
+
 export const createPendingRegistration = (data: {
   first_name: string;
   last_name: string;
   email: string;
   password_hash: string;
 }): { otp_code: string } => {
+  const cleanEmail = data.email.toLowerCase().trim();
+  const localUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const alreadyExists = localUsers.some(u => (u.email || '').toLowerCase().trim() === cleanEmail);
+  if (alreadyExists) {
+    throw new Error('An account already exists with this email address. Please sign in instead.');
+  }
+
   const pending = getItem<Array<any>>(STORAGE_KEYS.PENDING_OTPS, []);
   const otp_code = String(Math.floor(100000 + Math.random() * 900000));
   const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-  const filtered = pending.filter(p => p.email.toLowerCase() !== data.email.toLowerCase());
+  const filtered = pending.filter(p => p.email.toLowerCase() !== cleanEmail);
   filtered.push({
     ...data,
-    email: data.email.toLowerCase().trim(),
+    email: cleanEmail,
     otp_code,
     expires_at,
   });

@@ -762,6 +762,8 @@ export function App() {
         onUpdateProfile={handleUpdateProfile}
         onSignOut={handleSignOut}
         onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
+        onSwitchAccount={handleSwitchAccount}
+        onAddAccount={() => setIsAddAccountOpen(true)}
         addToast={addToast}
       />
 

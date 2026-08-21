@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Lock, Mail, ArrowRight, Layers, AlertCircle, Info } from 'lucide-react';
 import type { Profile } from '../../types';
+import { checkEmailExists } from '../../lib/storage';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -28,7 +29,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
 
@@ -45,9 +46,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    console.log(`[Aether Auth] Submitting ${isSignUp ? 'SignUp' : 'SignIn'} for:`, cleanEmail);
-
     if (isSignUp) {
+      const exists = await checkEmailExists(cleanEmail);
+      if (exists) {
+        setValidationError('An account already exists with this email address. Please switch to Sign In.');
+        return;
+      }
       onSignUpStart(cleanEmail, cleanPassword);
     } else {
       onSignIn(cleanEmail, cleanPassword);
