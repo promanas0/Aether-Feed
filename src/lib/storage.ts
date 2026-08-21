@@ -463,6 +463,47 @@ export const updateProfileData = (userId: string, updates: Partial<Profile>): Pr
   return users[idx];
 };
 
+export const deleteUserAccount = async (userId: string): Promise<boolean> => {
+  // 1. Remove from local users list
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => u.id !== userId);
+  setItem(STORAGE_KEYS.REAL_USERS, users);
+
+  // 2. Remove user posts
+  const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []).filter(p => p.user_id !== userId);
+  setItem(STORAGE_KEYS.POSTS, posts);
+
+  // 3. Remove votes
+  const votes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(v => v.user_id !== userId);
+  setItem(STORAGE_KEYS.VOTES, votes);
+
+  // 4. Remove notifications
+  const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []).filter(
+    n => n.user_id !== userId && n.actor_id !== userId
+  );
+  setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
+
+  // 5. Clear current user session
+  setItem(STORAGE_KEYS.CURRENT_USER_ID, null);
+
+  // 6. Delete from Supabase Cloud
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      await supabase.from('profiles').delete().eq('id', userId);
+      await supabase.from('posts').delete().eq('user_id', userId);
+      await supabase.from('votes').delete().eq('user_id', userId);
+      await supabase.from('notifications').delete().eq('user_id', userId);
+    } catch (err) {
+      console.warn('[Aether Supabase] Delete user error:', err);
+    }
+  }
+
+  // 7. Sync with server
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  return true;
+};
+
 /* ==========================================================================
    FOLLOW / UNFOLLOW ENGINE
    ========================================================================== */

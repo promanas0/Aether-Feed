@@ -10,14 +10,16 @@ import {
   Upload, 
   Lock, 
   Eye, 
-  EyeOff,
-  Mail,
-  KeyRound,
-  RefreshCw,
-  Send
+  EyeOff, 
+  Mail, 
+  KeyRound, 
+  RefreshCw, 
+  Send,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import type { Profile, ThemeMode, ToastMessage } from '../../types';
-import { createPasswordChangeOtp, verifyPasswordChangeOtp } from '../../lib/storage';
+import { createPasswordChangeOtp, verifyPasswordChangeOtp, deleteUserAccount } from '../../lib/storage';
 import { sendRealVerificationEmail } from '../../lib/emailService';
 
 interface SettingsModalProps {
@@ -62,10 +64,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isSendingCode, setIsSendingCode] = useState(false);
   const [passwordOtpDigits, setPasswordOtpDigits] = useState(['', '', '', '', '', '']);
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmationText.trim().toUpperCase() !== 'DELETE') {
+      addToast('Confirmation Error', 'Please type DELETE to confirm.', 'info');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    try {
+      await deleteUserAccount(currentUser.id);
+      addToast('Account Deleted', 'Your profile and data have been permanently removed.', 'info');
+      onClose();
+      onSignOut();
+    } catch (e) {
+      addToast('Delete Failed', 'Could not delete account. Please try again.', 'info');
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
 
   // Handle Local Avatar File Upload
   const handleAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -562,14 +587,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {/* TAB 4: Account & Logout */}
+          {/* TAB 4: Account & Logout & Delete Account */}
           {tab === 'account' && (
             <div className="space-y-4">
-              <div className="p-4 bg-rose-950/30 border border-rose-600/30 rounded-2xl">
-                <h4 className="text-xs font-bold text-rose-300 uppercase tracking-wider mb-1">
+              {/* Sign Out Card */}
+              <div className="p-4 bg-[#1C2541] border border-[#334155] rounded-2xl">
+                <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider mb-1">
                   Sign Out of Aether Feed
                 </h4>
-                <p className="text-xs text-slate-300 mb-4">
+                <p className="text-xs text-slate-400 mb-4">
                   Logging out will end your active session and return you to the Landing Page.
                 </p>
                 <button
@@ -578,11 +604,78 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onClose();
                     onSignOut();
                   }}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-[#2A3756] hover:bg-[#334155] border border-[#475569] text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
                 >
-                  <LogOut className="w-4 h-4" />
-                  <span>Confirm Log Out</span>
+                  <LogOut className="w-4 h-4 text-blue-400" />
+                  <span>Log Out</span>
                 </button>
+              </div>
+
+              {/* Danger Zone: Delete Account */}
+              <div className="p-4 bg-rose-950/30 border border-rose-600/40 rounded-2xl">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle className="w-4 h-4 text-rose-400" />
+                  <h4 className="text-xs font-bold text-rose-300 uppercase tracking-wider">
+                    Danger Zone &bull; Delete Account
+                  </h4>
+                </div>
+                <p className="text-xs text-slate-300 mb-4">
+                  Permanently delete your profile, username (@{currentUser.username}), posts, upvotes, and cloud data. This action is irreversible.
+                </p>
+
+                {!showDeleteConfirm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete My Account</span>
+                  </button>
+                ) : (
+                  <div className="p-3 bg-rose-950/60 border border-rose-500/50 rounded-xl space-y-3">
+                    <p className="text-xs font-semibold text-rose-200">
+                      To confirm permanent deletion, please type <span className="font-mono font-bold text-white bg-rose-900/80 px-1.5 py-0.5 rounded">DELETE</span> below:
+                    </p>
+                    <input
+                      type="text"
+                      placeholder="Type DELETE"
+                      value={deleteConfirmationText}
+                      onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0B132B] border border-rose-500/60 focus:border-rose-400 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDeleteConfirm(false);
+                          setDeleteConfirmationText('');
+                        }}
+                        className="px-4 py-2 bg-[#1C2541] hover:bg-[#2A3756] text-slate-300 rounded-xl text-xs font-semibold cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deleteConfirmationText.trim().toUpperCase() !== 'DELETE' || isDeletingAccount}
+                        onClick={handleDeleteAccount}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold shadow-glow-sm cursor-pointer"
+                      >
+                        {isDeletingAccount ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Deleting Account...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="w-4 h-4" />
+                            <span>Permanently Delete Account</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
