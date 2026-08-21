@@ -16,7 +16,8 @@ import {
   getNotificationsForRealUser, 
   markAllNotificationsRead, 
   getThemeMode, 
-  setThemeMode 
+  setThemeMode,
+  syncWithServer 
 } from './lib/storage';
 import type { 
   Profile, 
@@ -125,9 +126,25 @@ export function App() {
 
   useEffect(() => {
     syncStateFromStorage();
+    syncWithServer();
+
+    // Periodic sync from central server to pull new users & posts across all devices
+    const pollInterval = setInterval(() => {
+      syncWithServer();
+    }, 3500);
 
     const handleSync = () => {
       syncStateFromStorage();
+    };
+
+    const handleWindowFocus = () => {
+      syncWithServer();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncWithServer();
+      }
     };
 
     const handleBroadcast = (e: Event) => {
@@ -145,10 +162,17 @@ export function App() {
     };
 
     window.addEventListener('aether_storage_sync', handleSync);
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('aether_post_broadcast', handleBroadcast);
 
     return () => {
+      clearInterval(pollInterval);
       window.removeEventListener('aether_storage_sync', handleSync);
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('aether_post_broadcast', handleBroadcast);
     };
   }, [syncStateFromStorage, addToast]);

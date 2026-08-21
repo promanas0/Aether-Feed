@@ -32,11 +32,71 @@ const setItem = <T>(key: string, value: T): void => {
 
 const FAKE_MOCK_IDS = ['usr_manas_01', 'usr_elena_02', 'usr_marcus_03'];
 
+/* ==========================================================================
+   CROSS-DEVICE & CENTRAL CLOUD/SERVER SYNC ENGINE
+   ========================================================================== */
+
+let isSyncing = false;
+
+export const syncWithServer = async (): Promise<boolean> => {
+  if (isSyncing) return false;
+  isSyncing = true;
+  try {
+    const localUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
+    const localPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+    const localVotes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []);
+    const localNotifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+    const localOtps = getItem<any[]>(STORAGE_KEYS.PENDING_OTPS, []);
+
+    const response = await fetch('/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        users: localUsers,
+        posts: localPosts,
+        votes: localVotes,
+        notifications: localNotifs,
+        pending_otps: localOtps,
+      }),
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      if (result.success && result.data) {
+        const { users, posts, votes, notifications, pending_otps } = result.data;
+        if (Array.isArray(users)) {
+          const cleanUsers = users.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
+          localStorage.setItem(STORAGE_KEYS.REAL_USERS, JSON.stringify(cleanUsers));
+        }
+        if (Array.isArray(posts)) {
+          localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(posts));
+        }
+        if (Array.isArray(votes)) {
+          localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(votes));
+        }
+        if (Array.isArray(notifications)) {
+          localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
+        }
+        if (Array.isArray(pending_otps)) {
+          localStorage.setItem(STORAGE_KEYS.PENDING_OTPS, JSON.stringify(pending_otps));
+        }
+        window.dispatchEvent(new Event('aether_storage_sync'));
+        isSyncing = false;
+        return true;
+      }
+    }
+  } catch (e) {
+    // Offline / local fallback
+  }
+  isSyncing = false;
+  return false;
+};
+
 /**
- * Initialize Clean Storage with ZERO fake users, ZERO fake posts, ZERO fake votes
+ * Initialize Clean Storage with ZERO fake users and auto-sync with server
  */
 export const initializeV3Storage = (): void => {
-  // Always purge any lingering fake seed users from localStorage
+  // Purge any lingering fake seed users from localStorage
   const currentUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const cleanedUsers = currentUsers.filter(u => !FAKE_MOCK_IDS.includes(u.id));
   if (cleanedUsers.length !== currentUsers.length) {
@@ -48,6 +108,9 @@ export const initializeV3Storage = (): void => {
     const firstReal = cleanedUsers[0]?.id || null;
     setItem(STORAGE_KEYS.CURRENT_USER_ID, firstReal);
   }
+
+  // Initial silent server sync
+  syncWithServer();
 };
 
 /* ==========================================================================
@@ -76,6 +139,7 @@ export const createPendingRegistration = (data: {
   });
 
   setItem(STORAGE_KEYS.PENDING_OTPS, filtered);
+  syncWithServer();
 
   console.info(`[Aether Auth] 6-Digit OTP code for ${data.email}: ${otp_code}`);
   return { otp_code };
@@ -100,8 +164,8 @@ export const verifyAndCreateUser = (email: string, otpCode: string): { success: 
   // Check if email already registered
   let existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
   if (existingUser) {
-    // Activate and login
     setItem(STORAGE_KEYS.CURRENT_USER_ID, existingUser.id);
+    syncWithServer();
     return { success: true, user: existingUser, message: 'Account verified successfully!' };
   }
 
@@ -138,12 +202,23 @@ export const verifyAndCreateUser = (email: string, otpCode: string): { success: 
   const updatedPending = pending.filter(p => p.email.toLowerCase() !== email.toLowerCase().trim());
   setItem(STORAGE_KEYS.PENDING_OTPS, updatedPending);
 
+  // Sync to central database immediately so all devices have this account
+  syncWithServer();
+
   return { success: true, user: newProfile, message: 'Account verified and created successfully!' };
 };
 
-export const authenticateUser = (email: string, password: string): { success: boolean; user?: Profile; message: string } => {
-  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-  const user = users.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
+export const authenticateUser = async (email: string, password: string): Promise<{ success: boolean; user?: Profile; message: string }> => {
+  // First check local state
+  let users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  let user = users.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
+
+  // If not found locally, sync with server to fetch accounts registered on other devices
+  if (!user) {
+    await syncWithServer();
+    users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+    user = users.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
+  }
 
   if (!user) {
     return { success: false, message: 'No registered account found with this email. Please create an account first.' };
@@ -154,6 +229,7 @@ export const authenticateUser = (email: string, password: string): { success: bo
   }
 
   setItem(STORAGE_KEYS.CURRENT_USER_ID, user.id);
+  syncWithServer();
   return { success: true, user, message: 'Signed in successfully.' };
 };
 
@@ -166,6 +242,7 @@ export const getCurrentUser = (): Profile | null => {
 
 export const setCurrentUserSession = (userId: string | null): void => {
   setItem(STORAGE_KEYS.CURRENT_USER_ID, userId);
+  syncWithServer();
 };
 
 export const getRealUsers = (): Profile[] => {
@@ -188,6 +265,7 @@ export const createPasswordChangeOtp = (userId: string, email: string): { otp_co
   });
 
   setItem(STORAGE_KEYS.PENDING_OTPS, filtered);
+  syncWithServer();
   return { otp_code };
 };
 
@@ -216,6 +294,7 @@ export const verifyPasswordChangeOtp = (
 
   // Remove from pending
   setItem(STORAGE_KEYS.PENDING_OTPS, pending.filter(p => p !== found));
+  syncWithServer();
   return { success: true, message: 'Password updated successfully!' };
 };
 
@@ -233,6 +312,7 @@ export const updateProfileData = (userId: string, updates: Partial<Profile>): Pr
   };
 
   setItem(STORAGE_KEYS.REAL_USERS, users);
+  syncWithServer();
   return users[idx];
 };
 
@@ -258,7 +338,6 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
     users[currentIdx].following.push(targetUserId);
     users[targetIdx].followers.push(currentUserId);
 
-    // Push notification to target user
     addNotification({
       user_id: targetUserId,
       actor_id: currentUserId,
@@ -267,6 +346,7 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
   }
 
   setItem(STORAGE_KEYS.REAL_USERS, users);
+  syncWithServer();
   return { isFollowing: !isFollowing, targetUser: users[targetIdx] };
 };
 
@@ -360,6 +440,7 @@ export const createRealPost = (data: {
     })
   );
 
+  syncWithServer();
   return newPost;
 };
 
@@ -387,6 +468,7 @@ export const deleteRealPost = (postId: string, userId: string): boolean => {
     setItem(STORAGE_KEYS.REAL_USERS, users);
   }
 
+  syncWithServer();
   return true;
 };
 
@@ -407,6 +489,7 @@ export const updateRealPostText = (
   };
 
   setItem(STORAGE_KEYS.POSTS, posts);
+  syncWithServer();
   return posts[idx];
 };
 
@@ -495,6 +578,7 @@ export const votePostAction = (
 
   setItem(STORAGE_KEYS.POSTS, posts);
   setItem(STORAGE_KEYS.VOTES, votes);
+  syncWithServer();
 
   return {
     userVote: finalUserVote,
@@ -555,6 +639,7 @@ export const addNotification = (item: {
 
   list.unshift(newNotif);
   setItem(STORAGE_KEYS.NOTIFICATIONS, list);
+  syncWithServer();
 };
 
 export const getNotificationsForRealUser = (userId: string): NotificationItem[] => {
@@ -577,6 +662,7 @@ export const markAllNotificationsRead = (userId: string): void => {
     if (n.user_id === userId) n.is_read = true;
   });
   setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
+  syncWithServer();
 };
 
 /* ==========================================================================

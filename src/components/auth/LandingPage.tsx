@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Layers, 
   Lock, 
@@ -19,7 +19,8 @@ import {
 import { 
   createPendingRegistration, 
   verifyAndCreateUser, 
-  authenticateUser 
+  authenticateUser,
+  syncWithServer
 } from '../../lib/storage';
 import { sendRealVerificationEmail } from '../../lib/emailService';
 import { EmailConfigModal } from './EmailConfigModal';
@@ -45,6 +46,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   const [signInEmail, setSignInEmail] = useState('');
   const [signInPassword, setSignInPassword] = useState('');
   const [showSignInPass, setShowSignInPass] = useState(false);
+  const [isSigningIn, setIsSigningIn] = useState(false);
 
   // Sign Up State
   const [firstName, setFirstName] = useState('');
@@ -59,6 +61,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isEmailConfigOpen, setIsEmailConfigOpen] = useState(false);
 
+  useEffect(() => {
+    // Initial fetch from central server database
+    syncWithServer();
+  }, []);
+
   // Password Strength Calculation
   const hasMinLength = signUpPassword.length >= 8;
   const hasUpper = /[A-Z]/.test(signUpPassword);
@@ -67,14 +74,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   const isPasswordStrong = hasMinLength && hasUpper && hasNumber && hasSpecial;
 
   // Handle Sign In Submit
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!signInEmail.trim() || !signInPassword.trim()) {
       addToast('Validation Error', 'Please enter email and password.', 'info');
       return;
     }
 
-    const res = authenticateUser(signInEmail.trim(), signInPassword.trim());
+    setIsSigningIn(true);
+    const res = await authenticateUser(signInEmail.trim(), signInPassword.trim());
+    setIsSigningIn(false);
+
     if (res.success && res.user) {
       addToast('Welcome Back', `Signed in as ${res.user.display_name}.`, 'success');
       onAuthSuccess(res.user);
@@ -332,10 +342,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
               <button
                 type="submit"
-                className="w-full mt-2 flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-glow transition-all active:scale-95"
+                disabled={isSigningIn}
+                className="w-full mt-2 flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-glow transition-all active:scale-95 cursor-pointer"
               >
-                <span>Sign In</span>
-                <ArrowRight className="w-4 h-4" />
+                {isSigningIn ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Signing in...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Sign In</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
 
               <p className="text-center text-xs text-slate-400 pt-2">
