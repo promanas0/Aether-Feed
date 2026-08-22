@@ -28,7 +28,9 @@ import {
   Terminal,
   Cpu,
   Layers,
-  Compass
+  Compass,
+  Cloud,
+  Database
 } from 'lucide-react';
 import type { Profile, ThemeMode, ToastMessage } from '../../types';
 import { 
@@ -36,8 +38,14 @@ import {
   verifyPasswordChangeOtp, 
   deleteUserAccount,
   getSavedAccounts,
-  switchAccountSession
+  switchAccountSession,
+  syncWithServer
 } from '../../lib/storage';
+import { 
+  getStoredSupabaseConfig, 
+  saveSupabaseConfig, 
+  testSupabaseConnection 
+} from '../../lib/supabaseClient';
 import { sendRealVerificationEmail } from '../../lib/emailService';
 import { compressAvatar, compressBanner } from '../../lib/imageUtils';
 import { AvatarCropModal } from '../profile/AvatarCropModal';
@@ -69,7 +77,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onAddAccount,
   addToast,
 }) => {
-  const [tab, setTab] = useState<'info' | 'rules' | 'resources' | 'security' | 'appearance' | 'account'>('info');
+  const [tab, setTab] = useState<'info' | 'cloud' | 'rules' | 'resources' | 'security' | 'appearance' | 'account'>('info');
+
+  // Supabase Cloud Sync State
+  const [supaUrl, setSupaUrl] = useState(() => getStoredSupabaseConfig().url);
+  const [supaKey, setSupaKey] = useState(() => getStoredSupabaseConfig().anonKey);
+  const [isTestingSupa, setIsTestingSupa] = useState(false);
+  const [supaStatus, setSupaStatus] = useState<{ success?: boolean; message?: string } | null>(null);
 
   // Profile Info State
   const [firstName, setFirstName] = useState(currentUser.first_name || '');
@@ -100,6 +114,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
+
+  const handleTestAndSaveSupabase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsTestingSupa(true);
+    setSupaStatus(null);
+
+    const res = await testSupabaseConnection(supaUrl.trim(), supaKey.trim());
+    setIsTestingSupa(false);
+    setSupaStatus(res);
+
+    if (res.success) {
+      saveSupabaseConfig({
+        url: supaUrl.trim(),
+        anonKey: supaKey.trim(),
+        isEnabled: true,
+      });
+      addToast('Supabase Connected', 'Cloud database real-time sync is now 100% active!', 'success');
+      syncWithServer();
+    } else {
+      addToast('Connection Failed', res.message, 'info');
+    }
+  };
 
   const handleDeleteAccount = async () => {
     if (deleteConfirmationText.trim().toUpperCase() !== 'DELETE') {
@@ -262,8 +298,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        {/* 6 Tabs Bar */}
-        <div className="grid grid-cols-3 sm:grid-cols-6 border-b border-[#334155] bg-[#1C2541] text-xs font-semibold">
+        {/* 7 Tabs Bar */}
+        <div className="grid grid-cols-4 sm:grid-cols-7 border-b border-[#334155] bg-[#1C2541] text-xs font-semibold">
           <button
             onClick={() => setTab('info')}
             className={`py-3 text-center border-b-2 transition-all ${
@@ -271,6 +307,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }`}
           >
             Profile Info
+          </button>
+          <button
+            onClick={() => setTab('cloud')}
+            className={`py-3 text-center border-b-2 transition-all flex items-center justify-center gap-1 ${
+              tab === 'cloud' ? 'border-emerald-500 text-emerald-300 bg-[#1E293B]' : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            <Cloud className="w-3.5 h-3.5" />
+            <span>Cloud Sync</span>
           </button>
           <button
             onClick={() => setTab('rules')}
@@ -465,6 +510,104 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
             </form>
+          )}
+
+          {/* TAB 2: Supabase Cloud Sync */}
+          {tab === 'cloud' && (
+            <div className="space-y-6 text-xs animate-in fade-in duration-200">
+              <div className="p-5 bg-[#0B132B] rounded-2xl border border-emerald-500/30 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-emerald-400">
+                    <Cloud className="w-5 h-5" />
+                    <h4 className="text-sm font-bold text-white tracking-wide">
+                      Supabase Cloud Database & Real-Time Cross-Device Sync
+                    </h4>
+                  </div>
+                  <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-extrabold rounded-lg flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    Cloud Engine
+                  </span>
+                </div>
+                
+                <p className="text-slate-300 leading-relaxed">
+                  Enter your official Supabase Project URL and Anon Public Key below to enable 100% real-time cross-device synchronization for posts, profile changes, golden checkmarks, and admin permissions across all devices.
+                </p>
+
+                <form onSubmit={handleTestAndSaveSupabase} className="space-y-4 pt-1">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Supabase Project URL
+                    </label>
+                    <input
+                      type="url"
+                      required
+                      value={supaUrl}
+                      onChange={(e) => setSupaUrl(e.target.value)}
+                      placeholder="https://your-project.supabase.co"
+                      className="w-full px-3 py-2 bg-[#1C2541] border border-[#334155] focus:border-blue-500 rounded-xl text-xs text-white font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Supabase Anon Public API Key (JWT Key starting with eyJ...)
+                    </label>
+                    <textarea
+                      required
+                      rows={3}
+                      value={supaKey}
+                      onChange={(e) => setSupaKey(e.target.value)}
+                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                      className="w-full px-3 py-2 bg-[#1C2541] border border-[#334155] focus:border-blue-500 rounded-xl text-xs text-white font-mono"
+                    />
+                  </div>
+
+                  {supaStatus && (
+                    <div className={`p-3 rounded-xl border text-xs font-medium ${
+                      supaStatus.success 
+                        ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
+                        : 'bg-rose-950/40 border-rose-500/50 text-rose-300'
+                    }`}>
+                      {supaStatus.message}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="submit"
+                      disabled={isTestingSupa}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-glow flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isTestingSupa ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Testing Connection...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4" />
+                          <span>Test & Save Cloud Sync</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Guide Box */}
+              <div className="p-4 bg-[#1E293B] rounded-2xl border border-[#334155] space-y-2">
+                <h5 className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  How to copy your Supabase Anon JWT Key in 3 seconds:
+                </h5>
+                <ol className="text-xs text-slate-300 space-y-1.5 list-decimal list-inside leading-relaxed">
+                  <li>Log into your Supabase Dashboard (<a href="https://supabase.com" target="_blank" rel="noreferrer" className="text-blue-400 underline">supabase.com</a>).</li>
+                  <li>Go to <strong>Project Settings &rarr; API</strong>.</li>
+                  <li>Under <strong>Project API Keys</strong>, copy the key labeled <code className="px-1 py-0.5 bg-[#0B132B] rounded text-emerald-300 font-mono">anon</code> <code className="px-1 py-0.5 bg-[#0B132B] rounded text-emerald-300 font-mono">public</code> (starts with <code className="text-emerald-300 font-mono">eyJ...</code>).</li>
+                  <li>Paste the key into the input above and click <strong>Test & Save Cloud Sync</strong>!</li>
+                </ol>
+              </div>
+            </div>
           )}
 
           {/* TAB: Rules & Ecosystem Roles */}
