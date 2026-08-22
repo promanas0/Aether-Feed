@@ -127,8 +127,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   };
 
   // Handle Toggle Standard Verification Badge (Blue)
-  const handleToggleVerify = (targetUser: Profile) => {
-    const updated = adminToggleVerifyUser(targetUser.id, currentUser.email);
+  const handleToggleVerify = async (targetUser: Profile) => {
+    const updated = await adminToggleVerifyUser(targetUser.id, currentUser.email);
     if (updated) {
       addToast(
         updated.is_verified ? 'Verified Badge Granted' : 'Verified Badge Revoked',
@@ -140,8 +140,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   };
 
   // Handle Toggle Golden Checkmark Badge (Gold VIP)
-  const handleToggleGoldenVerify = (targetUser: Profile) => {
-    const updated = adminToggleGoldenVerifyUser(targetUser.id, currentUser.email);
+  const handleToggleGoldenVerify = async (targetUser: Profile) => {
+    const updated = await adminToggleGoldenVerifyUser(targetUser.id, currentUser.email);
     if (updated) {
       addToast(
         updated.is_golden_verified ? 'Golden Checkmark Granted' : 'Golden Checkmark Revoked',
@@ -153,7 +153,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   };
 
   // Handle Set Posting Timeout
-  const handleSetTimeout = (targetUser: Profile, duration: '24h' | '7d' | '30d' | 'indefinite' | 'clear') => {
+  const handleSetTimeout = async (targetUser: Profile, duration: '24h' | '7d' | '30d' | 'indefinite' | 'clear') => {
     let timeoutUntil: string | null = null;
     if (duration === '24h') {
       timeoutUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -167,7 +167,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       timeoutUntil = null;
     }
 
-    const updated = adminSetPostingTimeout(targetUser.id, timeoutUntil, currentUser.email);
+    const updated = await adminSetPostingTimeout(targetUser.id, timeoutUntil, currentUser.email);
     if (updated) {
       addToast(
         timeoutUntil ? 'Posting Timeout Applied' : 'Posting Timeout Cleared',

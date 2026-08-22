@@ -1052,7 +1052,7 @@ export const verifyPasswordChangeOtp = (
   return { success: true, message: 'Password updated successfully!' };
 };
 
-export const updateProfileData = (userId: string, updates: Partial<Profile>): Profile | null => {
+export const updateProfileData = async (userId: string, updates: Partial<Profile>): Promise<Profile | null> => {
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const idx = users.findIndex(u => u.id === userId);
   if (idx === -1) return null;
@@ -1108,9 +1108,8 @@ export const updateProfileData = (userId: string, updates: Partial<Profile>): Pr
   }
 
   // Push updated profile to Supabase Cloud & Local API with fallback
-  saveProfileToCloud(updatedUser);
-
-  syncWithServer();
+  await saveProfileToCloud(updatedUser);
+  await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
   if (syncChannel) {
     syncChannel.postMessage('sync');
@@ -1803,30 +1802,33 @@ export const adminBanUser = (targetUserId: string, actorEmail?: string): { succe
 /**
  * Toggle Verified Checkmark badge for any user
  */
-export const adminToggleVerifyUser = (targetUserId: string, actorEmail?: string): Profile | null => {
+export const adminToggleVerifyUser = async (targetUserId: string, actorEmail?: string): Promise<Profile | null> => {
   if (actorEmail && !isUserAdmin(actorEmail)) return null;
 
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const idx = users.findIndex(u => u.id === targetUserId);
   if (idx === -1) return null;
 
-  users[idx] = {
+  const updatedUser: Profile = {
     ...users[idx],
     is_verified: !users[idx].is_verified,
     updated_at: new Date().toISOString(),
   };
 
+  users[idx] = updatedUser;
   setItem(STORAGE_KEYS.REAL_USERS, users);
-  saveProfileToCloud(users[idx]);
-  syncWithServer();
-  return users[idx];
+  await saveProfileToCloud(updatedUser);
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+  return updatedUser;
 };
 
 /**
  * Toggle Golden Checkmark (VIP Badge) for any user
  * Note: Granting Golden Checkmark does NOT give Admin privileges!
  */
-export const adminToggleGoldenVerifyUser = (targetUserId: string, actorEmail?: string): Profile | null => {
+export const adminToggleGoldenVerifyUser = async (targetUserId: string, actorEmail?: string): Promise<Profile | null> => {
   if (actorEmail && !isUserAdmin(actorEmail)) return null;
 
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
@@ -1834,42 +1836,48 @@ export const adminToggleGoldenVerifyUser = (targetUserId: string, actorEmail?: s
   if (idx === -1) return null;
 
   const nextGolden = !users[idx].is_golden_verified;
-  users[idx] = {
+  const updatedUser: Profile = {
     ...users[idx],
     is_golden_verified: nextGolden,
     updated_at: new Date().toISOString(),
   };
 
+  users[idx] = updatedUser;
   setItem(STORAGE_KEYS.REAL_USERS, users);
-  saveProfileToCloud(users[idx]);
-  syncWithServer();
-  return users[idx];
+  await saveProfileToCloud(updatedUser);
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+  return updatedUser;
 };
 
 /**
  * Set Posting Timeout for a user (24h, 7d, 30d, Indefinite, or null to remove)
  */
-export const adminSetPostingTimeout = (
+export const adminSetPostingTimeout = async (
   targetUserId: string,
   timeoutUntil: string | null,
   actorEmail?: string
-): Profile | null => {
+): Promise<Profile | null> => {
   if (actorEmail && !isUserAdmin(actorEmail)) return null;
 
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const idx = users.findIndex(u => u.id === targetUserId);
   if (idx === -1) return null;
 
-  users[idx] = {
+  const updatedUser: Profile = {
     ...users[idx],
     posting_timeout_until: timeoutUntil || undefined,
     updated_at: new Date().toISOString(),
   };
 
+  users[idx] = updatedUser;
   setItem(STORAGE_KEYS.REAL_USERS, users);
-  saveProfileToCloud(users[idx]);
-  syncWithServer();
-  return users[idx];
+  await saveProfileToCloud(updatedUser);
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+  return updatedUser;
 };
 
 /**

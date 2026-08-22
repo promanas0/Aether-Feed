@@ -286,9 +286,9 @@ export function App() {
   };
 
   // Handle Profile Update
-  const handleUpdateProfile = (updates: Partial<Profile>) => {
+  const handleUpdateProfile = async (updates: Partial<Profile>) => {
     if (!currentUser) return;
-    const updated = updateProfileData(currentUser.id, updates);
+    const updated = await updateProfileData(currentUser.id, updates);
     if (updated) {
       setCurrentUser(updated);
       syncStateFromStorage();
