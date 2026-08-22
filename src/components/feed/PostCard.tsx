@@ -22,6 +22,7 @@ interface PostCardProps {
   post: Post;
   userVote: 'up' | 'down' | null;
   currentUser?: Profile | null;
+  allUsers?: Profile[];
   onVote: (postId: string, type: 'up' | 'down') => void;
   onOpenLightbox: (imageData: string, title: string) => void;
   onOpenProfile: (profile: Profile) => void;
@@ -47,6 +48,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   post,
   userVote,
   currentUser,
+  allUsers,
   onVote,
   onOpenLightbox,
   onOpenProfile,
@@ -67,22 +69,25 @@ export const PostCard: React.FC<PostCardProps> = ({
     setTimeout(() => setIsPopAnim(false), 300);
   };
 
-  const author = post.user || {
-    id: post.user_id,
-    email: '',
-    first_name: 'Member',
-    last_name: '',
-    display_name: 'Aether Member',
-    username: 'member',
-    avatar_url: DEFAULT_DLICOM_AVATAR,
-    bio: '',
-    dlicom_address: '',
-    is_verified: true,
-    followers: [],
-    following: [],
-    total_votes_received: 0,
-    created_at: '',
-  };
+  const author = (currentUser && currentUser.id === post.user_id ? currentUser : null)
+    || (allUsers ? allUsers.find(u => u.id === post.user_id) : null)
+    || post.user 
+    || {
+      id: post.user_id,
+      email: '',
+      first_name: 'Member',
+      last_name: '',
+      display_name: 'Aether Member',
+      username: 'member',
+      avatar_url: DEFAULT_DLICOM_AVATAR,
+      bio: '',
+      dlicom_address: '',
+      is_verified: true,
+      followers: [],
+      following: [],
+      total_votes_received: 0,
+      created_at: '',
+    };
 
   const isAuthor = Boolean(currentUser && currentUser.id === post.user_id);
   const isAdmin = Boolean(currentUser && isUserAdmin(currentUser));

@@ -644,6 +644,7 @@ export function App() {
                         key={post.id}
                         post={post}
                         currentUser={currentUser}
+                        allUsers={users}
                         userVote={userVote}
                         onVote={handleVote}
                         onDelete={handleDeletePost}

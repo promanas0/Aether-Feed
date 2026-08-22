@@ -881,7 +881,7 @@ export const updateProfileData = (userId: string, updates: Partial<Profile>): Pr
   if (idx === -1) return null;
 
   const now = new Date().toISOString();
-  users[idx] = {
+  const updatedUser: Profile = {
     ...users[idx],
     ...updates,
     updated_at: now,
@@ -890,13 +890,50 @@ export const updateProfileData = (userId: string, updates: Partial<Profile>): Pr
       : (updates.display_name || users[idx].display_name),
   };
 
+  users[idx] = updatedUser;
   setItem(STORAGE_KEYS.REAL_USERS, users);
-  addOrUpdateSavedAccount(users[idx]);
+  addOrUpdateSavedAccount(updatedUser);
+
+  // Cascade author update to all existing posts in LocalStorage
+  const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+  let hasPostChanges = false;
+  const updatedPosts = posts.map(p => {
+    if (p.user_id === userId) {
+      hasPostChanges = true;
+      return {
+        ...p,
+        user: updatedUser,
+      };
+    }
+    return p;
+  });
+  if (hasPostChanges) {
+    setItem(STORAGE_KEYS.POSTS, updatedPosts);
+  }
+
+  // Cascade sender update to VIP Chat messages in LocalStorage
+  const chatMsgs = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
+  let hasChatChanges = false;
+  const updatedChat = chatMsgs.map(m => {
+    if (m.user_id === userId) {
+      hasChatChanges = true;
+      return {
+        ...m,
+        sender_name: updatedUser.display_name,
+        sender_avatar: updatedUser.avatar_url,
+        is_golden: Boolean(updatedUser.is_golden_verified),
+      };
+    }
+    return m;
+  });
+  if (hasChatChanges) {
+    setItem(STORAGE_KEYS.VIP_CHAT, updatedChat);
+  }
 
   // Push updated profile to Supabase Cloud directly
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('profiles').upsert(sanitizeProfileForSupabase(users[idx])).then(
+    supabase.from('profiles').upsert(sanitizeProfileForSupabase(updatedUser)).then(
       () => {},
       (err: any) => console.warn('[Aether Supabase] Profile update error:', err)
     );
@@ -907,13 +944,16 @@ export const updateProfileData = (userId: string, updates: Partial<Profile>): Pr
     fetch('/api/users/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user: sanitizeProfileForSupabase(users[idx]) }),
+      body: JSON.stringify({ user: sanitizeProfileForSupabase(updatedUser) }),
     }).catch(() => {});
   } catch {}
 
   syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
-  return users[idx];
+  if (syncChannel) {
+    syncChannel.postMessage('sync');
+  }
+  return updatedUser;
 };
 
 export const deleteUserAccount = async (userId: string): Promise<boolean> => {
