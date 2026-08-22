@@ -9,7 +9,9 @@ import {
   ShieldCheck,
   UserCheck,
   Repeat,
-  Crown
+  Crown,
+  MessageSquare,
+  Sparkles
 } from 'lucide-react';
 import type { Profile, ActiveView } from '../../types';
 import { isUserAdmin } from '../../lib/storage';
@@ -37,10 +39,13 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onOpenAccountSwitcher,
   onOpenAdminPanel,
 }) => {
-  const navItems: Array<{ id: ActiveView; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+  const isGolden = Boolean(currentUser.is_golden_verified || isUserAdmin(currentUser));
+
+  const navItems: Array<{ id: ActiveView; label: string; icon: React.ComponentType<{ className?: string }>; badge?: string }> = [
     { id: 'feed', label: 'Home Feed', icon: Home },
     { id: 'following_feed', label: 'Following Feed', icon: Users },
     { id: 'leaderboard', label: 'Top Leaderboard', icon: Trophy },
+    { id: 'chat', label: 'VIP Golden Chat', icon: MessageSquare, badge: isGolden ? 'VIP' : '🔒' },
   ];
 
   return (
@@ -87,18 +92,33 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeView === item.id;
+          const isChat = item.id === 'chat';
+
           return (
             <button
               key={item.id}
               onClick={() => onViewChange(item.id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left cursor-pointer ${
                 isActive
-                  ? 'bg-blue-600 text-white shadow-glow-sm'
+                  ? isChat
+                    ? 'bg-gradient-to-r from-amber-600 to-amber-500 text-slate-950 font-black shadow-[0_0_15px_rgba(251,191,36,0.4)]'
+                    : 'bg-blue-600 text-white shadow-glow-sm'
                   : 'text-slate-300 hover:text-white hover:bg-[#1E293B]'
               }`}
             >
-              <Icon className="w-4 h-4 shrink-0" />
-              <span>{item.label}</span>
+              <Icon className={`w-4 h-4 shrink-0 ${isChat && isActive ? 'text-slate-950' : isChat ? 'text-amber-400' : ''}`} />
+              <span className="flex-1">{item.label}</span>
+              {item.badge && (
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase ${
+                  isActive
+                    ? 'bg-slate-950 text-amber-300'
+                    : isGolden
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    : 'bg-slate-800 text-slate-400'
+                }`}>
+                  {item.badge}
+                </span>
+              )}
             </button>
           );
         })}

@@ -4,8 +4,9 @@ import type { Profile } from '../../types';
 import { isUserAdmin } from '../../lib/storage';
 
 interface VerifiedBadgeProps {
-  user?: Profile | { email?: string; is_verified?: boolean;[key: string]: any } | null;
+  user?: Profile | { email?: string; is_verified?: boolean; is_golden_verified?: boolean; [key: string]: any } | null;
   isVerified?: boolean;
+  isGoldenVerified?: boolean;
   className?: string;
   size?: 'xs' | 'sm' | 'md' | 'lg';
   showAdminLabel?: boolean;
@@ -14,14 +15,16 @@ interface VerifiedBadgeProps {
 export const VerifiedBadge: React.FC<VerifiedBadgeProps> = ({
   user,
   isVerified,
+  isGoldenVerified,
   className = '',
   size = 'sm',
 }) => {
   const userEmail = typeof user === 'string' ? user : user?.email;
   const isAdmin = isUserAdmin(userEmail || (user as any));
+  const isGolden = isGoldenVerified ?? user?.is_golden_verified ?? isAdmin;
   const verified = isVerified ?? user?.is_verified ?? false;
 
-  if (!isAdmin && !verified) return null;
+  if (!isGolden && !verified) return null;
 
   const sizeClasses = {
     xs: 'w-3 h-3',
@@ -30,11 +33,11 @@ export const VerifiedBadge: React.FC<VerifiedBadgeProps> = ({
     lg: 'w-5 h-5',
   }[size];
 
-  if (isAdmin) {
+  if (isGolden) {
     return (
       <span
         className={`inline-flex items-center shrink-0 ${className}`}
-        title="Verified Admin / Team"
+        title={isAdmin ? "Verified Admin / Team (Golden Checkmark)" : "Golden VIP Verified Member"}
       >
         <ShieldCheck
           className={`${sizeClasses} text-amber-400 fill-amber-400/20 drop-shadow-[0_0_8px_rgba(251,191,36,0.85)] animate-pulse`}
@@ -54,3 +57,4 @@ export const VerifiedBadge: React.FC<VerifiedBadgeProps> = ({
     </span>
   );
 };
+

@@ -12,6 +12,9 @@ export interface Profile {
   location?: string;
   website?: string;
   is_verified: boolean;
+  is_golden_verified?: boolean; // Exclusive Golden Checkmark badge
+  posting_timeout_until?: string; // Timeout ISO date string or 'indefinite'
+  is_banned?: boolean; // Account banned status
   followers: string[]; // User IDs who follow this user
   following: string[]; // User IDs this user follows
   total_votes_received: number;
@@ -58,9 +61,19 @@ export interface NotificationItem {
   post?: Post;
 }
 
+export interface ChatMessage {
+  id: string;
+  user_id: string;
+  text: string;
+  image_data?: string;
+  code_snippet?: string;
+  created_at: string;
+  user?: Profile;
+}
+
 export type ThemeMode = 'dark' | 'light';
 
-export type ActiveView = 'feed' | 'following_feed' | 'profile' | 'leaderboard' | 'settings';
+export type ActiveView = 'feed' | 'following_feed' | 'profile' | 'leaderboard' | 'settings' | 'chat';
 
 export type FeedFilter = 'trending' | 'latest' | 'top_voted';
 
@@ -70,3 +83,4 @@ export interface ToastMessage {
   description?: string;
   type: 'info' | 'success' | 'broadcast' | 'vote';
 }
+

@@ -16,7 +16,7 @@ import {
 import type { Post, Profile } from '../../types';
 
 import { VerifiedBadge } from '../ui/VerifiedBadge';
-import { DEFAULT_DLICOM_AVATAR } from '../../lib/storage';
+import { DEFAULT_DLICOM_AVATAR, isUserAdmin } from '../../lib/storage';
 
 interface PostCardProps {
   post: Post;
@@ -70,11 +70,11 @@ export const PostCard: React.FC<PostCardProps> = ({
   const author = post.user || {
     id: post.user_id,
     email: '',
-    first_name: 'Aether',
-    last_name: 'Member',
+    first_name: 'Member',
+    last_name: '',
     display_name: 'Aether Member',
     username: 'member',
-    avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+    avatar_url: DEFAULT_DLICOM_AVATAR,
     bio: '',
     dlicom_address: '',
     is_verified: true,
@@ -85,6 +85,8 @@ export const PostCard: React.FC<PostCardProps> = ({
   };
 
   const isAuthor = Boolean(currentUser && currentUser.id === post.user_id);
+  const isAdmin = Boolean(currentUser && isUserAdmin(currentUser));
+  const canDelete = isAuthor || isAdmin;
   const hasImage = Boolean(post.image_data && post.image_data.trim().length > 0);
 
   return (
@@ -185,20 +187,22 @@ export const PostCard: React.FC<PostCardProps> = ({
                     <span>Share Post</span>
                   </button>
 
-                  {/* Option 4: Delete Post (Author Only) */}
-                  {isAuthor && onDelete && (
+                  {/* Option 4: Delete Post (Author or Admin) */}
+                  {canDelete && onDelete && (
                     <div className="border-t border-[#334155] pt-1 mt-1">
                       {!showDeleteConfirm ? (
                         <button
                           onClick={() => setShowDeleteConfirm(true)}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-rose-400 hover:bg-rose-950/40 rounded-xl transition-colors text-left cursor-pointer"
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-rose-400 hover:bg-rose-950/40 rounded-xl transition-colors text-left cursor-pointer font-semibold"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                          <span>Delete Post</span>
+                          <span>{isAdmin && !isAuthor ? 'Delete Post (Admin)' : 'Delete Post'}</span>
                         </button>
                       ) : (
                         <div className="p-2 bg-rose-950/40 border border-rose-600/40 rounded-xl space-y-1.5">
-                          <p className="text-[11px] font-bold text-rose-300">Permanently delete?</p>
+                          <p className="text-[11px] font-bold text-rose-300">
+                            {isAdmin && !isAuthor ? 'Admin delete post?' : 'Permanently delete?'}
+                          </p>
                           <div className="flex gap-1">
                             <button
                               onClick={() => {

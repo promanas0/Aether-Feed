@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { Profile, ToastMessage } from '../../types';
 import { compressPostImage } from '../../lib/imageUtils';
+import { isUserPostingRestricted } from '../../lib/storage';
 
 interface CreatePostBoxProps {
   currentUser: Profile;
@@ -125,6 +126,12 @@ export const CreatePostBox: React.FC<CreatePostBoxProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const restriction = isUserPostingRestricted(currentUser);
+    if (restriction.restricted) {
+      addToast('Posting Restricted', restriction.reason || 'You cannot create posts right now.', 'info');
+      return;
+    }
+
     if (!statusText.trim() && !imageData && !videoData) {
       addToast('Empty Status', 'Please write a status update or attach a photo/video.', 'info');
       return;

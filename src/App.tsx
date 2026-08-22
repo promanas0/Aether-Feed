@@ -38,6 +38,7 @@ import type {
 import { LandingPage } from './components/auth/LandingPage';
 import { Header } from './components/layout/Header';
 import { LeftSidebar } from './components/layout/LeftSidebar';
+import { RightSidebar } from './components/layout/RightSidebar';
 import { MobileBottomNav } from './components/layout/MobileBottomNav';
 import { CreatePostBox } from './components/feed/CreatePostBox';
 import { CreatePostModal } from './components/feed/CreatePostModal';
@@ -47,6 +48,7 @@ import { SharePostModal } from './components/feed/SharePostModal';
 import { PostCard } from './components/feed/PostCard';
 import { UserProfileView } from './components/profile/UserProfileView';
 import { RealLeaderboardView } from './components/leaderboard/RealLeaderboardView';
+import { VipChatView } from './components/chat/VipChatView';
 import { SettingsModal } from './components/settings/SettingsModal';
 import { ImageLightboxModal } from './components/feed/ImageLightboxModal';
 import { AccountSwitcherModal } from './components/auth/AccountSwitcherModal';
@@ -449,8 +451,8 @@ export function App() {
         }}
       />
 
-      {/* Main Content Layout: Clean Focused 2-Column with Mobile Bottom Nav Clearance */}
-      <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 pb-24 lg:pb-8 flex gap-6 flex-1">
+      {/* Main Content Layout: Balanced 3-Column Desktop Layout */}
+      <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-8 flex gap-6 flex-1 justify-center">
         
         {/* Left Column: Navigation Menu (Desktop) */}
         <LeftSidebar
@@ -470,7 +472,7 @@ export function App() {
         />
 
         {/* Center Main Column: Pure Focused Stream */}
-        <main className="flex-1 min-w-0 max-w-2xl mx-auto w-full">
+        <main className="flex-1 min-w-0 max-w-2xl w-full">
           
           {/* VIEW 1: Feed (Home or Following) */}
           {(activeView === 'feed' || activeView === 'following_feed') && (
@@ -636,7 +638,6 @@ export function App() {
                       v => v.post_id === post.id && v.user_id === currentUser.id
                     );
                     const userVote = userVoteRecord ? userVoteRecord.type : null;
-                    const isFollowingAuthor = currentUser.following.includes(post.user_id);
 
                     return (
                       <PostCard
@@ -696,7 +697,37 @@ export function App() {
             </div>
           )}
 
+          {/* VIEW 4: VIP Golden Chat Lounge */}
+          {activeView === 'chat' && (
+            <div className="view-transition">
+              <VipChatView
+                currentUser={currentUser}
+                allUsers={users}
+                addToast={addToast}
+                onOpenProfile={handleOpenProfile}
+              />
+            </div>
+          )}
+
         </main>
+
+        {/* Right Column: Trending Curators, Topics & VIP Status (Desktop) */}
+        <RightSidebar
+          leaderboard={leaderboard}
+          registeredUsers={users}
+          currentUser={currentUser}
+          onSelectUser={handleOpenProfile}
+          onToggleFollow={handleToggleFollow}
+          onSelectTag={(tag) => {
+            setSelectedTagFilter(tag);
+            setActiveView('feed');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          onOpenFullLeaderboard={() => {
+            setActiveView('leaderboard');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+        />
 
       </div>
 

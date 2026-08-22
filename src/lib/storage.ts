@@ -1,4 +1,4 @@
-import type { Profile, Post, VoteRecord, NotificationItem, ThemeMode } from '../types';
+import type { Profile, Post, VoteRecord, NotificationItem, ThemeMode, ChatMessage } from '../types';
 import { getSupabaseClient } from './supabaseClient';
 
 const STORAGE_KEYS = {
@@ -13,7 +13,22 @@ const STORAGE_KEYS = {
   SAVED_ACCOUNTS: 'aether_saved_accounts_v4',
   DELETED_POST_IDS: 'aether_deleted_post_ids_v4',
   ADMIN_EMAILS: 'aether_admin_emails_v4',
+  VIP_CHAT: 'aether_vip_chat_v4',
+  BANNED_USER_IDS: 'aether_banned_user_ids_v4',
 };
+
+// Cross-tab instant broadcast channel
+const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
+  ? new BroadcastChannel('aether_realtime_sync_channel')
+  : null;
+
+if (syncChannel) {
+  syncChannel.onmessage = () => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('aether_storage_sync'));
+    }
+  };
+}
 
 // Safe LocalStorage helpers
 const getItem = <T>(key: string, defaultValue: T): T => {
@@ -29,6 +44,9 @@ const setItem = <T>(key: string, value: T): void => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
     window.dispatchEvent(new Event('aether_storage_sync'));
+    if (syncChannel) {
+      syncChannel.postMessage('sync');
+    }
   } catch (e) {
     console.error('Failed to write to localStorage', e);
   }
@@ -107,6 +125,9 @@ export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
     location: p.location || '',
     website: p.website || '',
     is_verified: p.is_verified ?? true,
+    is_golden_verified: p.is_golden_verified ?? false,
+    posting_timeout_until: p.posting_timeout_until || null,
+    is_banned: p.is_banned ?? false,
     followers: parseArray(p.followers),
     following: parseArray(p.following),
     total_votes_received: p.total_votes_received || 0,
@@ -1608,4 +1629,234 @@ export const adminToggleVerifyUser = (targetUserId: string, actorEmail?: string)
   syncWithServer();
   return users[idx];
 };
+
+/**
+ * Toggle Golden Checkmark (VIP Badge) for any user
+ * Note: Granting Golden Checkmark does NOT give Admin privileges!
+ */
+export const adminToggleGoldenVerifyUser = (targetUserId: string, actorEmail?: string): Profile | null => {
+  if (actorEmail && !isUserAdmin(actorEmail)) return null;
+
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const idx = users.findIndex(u => u.id === targetUserId);
+  if (idx === -1) return null;
+
+  const nextGolden = !users[idx].is_golden_verified;
+  users[idx] = {
+    ...users[idx],
+    is_golden_verified: nextGolden,
+    updated_at: new Date().toISOString(),
+  };
+
+  setItem(STORAGE_KEYS.REAL_USERS, users);
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase
+      .from('profiles')
+      .update({ is_golden_verified: nextGolden })
+      .eq('id', targetUserId)
+      .then(() => {}, () => {});
+  }
+
+  syncWithServer();
+  return users[idx];
+};
+
+/**
+ * Set Posting Timeout for a user (24h, 7d, 30d, Indefinite, or null to remove)
+ */
+export const adminSetPostingTimeout = (
+  targetUserId: string,
+  timeoutUntil: string | null,
+  actorEmail?: string
+): Profile | null => {
+  if (actorEmail && !isUserAdmin(actorEmail)) return null;
+
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const idx = users.findIndex(u => u.id === targetUserId);
+  if (idx === -1) return null;
+
+  users[idx] = {
+    ...users[idx],
+    posting_timeout_until: timeoutUntil || undefined,
+    updated_at: new Date().toISOString(),
+  };
+
+  setItem(STORAGE_KEYS.REAL_USERS, users);
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase
+      .from('profiles')
+      .update({ posting_timeout_until: timeoutUntil })
+      .eq('id', targetUserId)
+      .then(() => {}, () => {});
+  }
+
+  syncWithServer();
+  return users[idx];
+};
+
+/**
+ * Unban a previously banned user
+ */
+export const adminUnbanUser = (targetUserId: string, actorEmail?: string): { success: boolean; message: string } => {
+  if (actorEmail && !isUserAdmin(actorEmail)) {
+    return { success: false, message: 'Unauthorized: Admin privileges required.' };
+  }
+
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const idx = users.findIndex(u => u.id === targetUserId);
+  if (idx === -1) {
+    return { success: false, message: 'User not found.' };
+  }
+
+  users[idx] = {
+    ...users[idx],
+    is_banned: false,
+    updated_at: new Date().toISOString(),
+  };
+
+  setItem(STORAGE_KEYS.REAL_USERS, users);
+
+  const bannedIds = getItem<string[]>(STORAGE_KEYS.BANNED_USER_IDS, []).filter(id => id !== targetUserId);
+  setItem(STORAGE_KEYS.BANNED_USER_IDS, bannedIds);
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('profiles').update({ is_banned: false }).eq('id', targetUserId).then(() => {}, () => {});
+  }
+
+  syncWithServer();
+  return { success: true, message: `User @${users[idx].username} has been unbanned successfully.` };
+};
+
+/**
+ * Check whether a user is restricted from creating posts or comments
+ */
+export const isUserPostingRestricted = (user?: Profile | null): { restricted: boolean; reason?: string } => {
+  if (!user) return { restricted: true, reason: 'You must be logged in to post.' };
+
+  if (user.is_banned) {
+    return { restricted: true, reason: 'Your account is currently banned by Admin.' };
+  }
+
+  if (user.posting_timeout_until) {
+    if (user.posting_timeout_until === 'indefinite') {
+      return { restricted: true, reason: 'Your posting privileges have been indefinitely restricted by Admin.' };
+    }
+    const timeoutDate = new Date(user.posting_timeout_until).getTime();
+    if (!isNaN(timeoutDate) && timeoutDate > Date.now()) {
+      const formattedDate = new Date(user.posting_timeout_until).toLocaleString();
+      return {
+        restricted: true,
+        reason: `Your posting privileges are timed out until ${formattedDate}.`,
+      };
+    }
+  }
+
+  return { restricted: false };
+};
+
+/* ==========================================================================
+   VIP GOLDEN CHAT ENGINE
+   ========================================================================== */
+
+export const getVipChatMessages = (): ChatMessage[] => {
+  const messages = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+
+  return messages.map(msg => ({
+    ...msg,
+    user: users.find(u => u.id === msg.user_id) || {
+      id: msg.user_id,
+      email: '',
+      first_name: 'VIP',
+      last_name: 'Member',
+      display_name: 'Golden Member',
+      username: 'golden_member',
+      avatar_url: DEFAULT_DLICOM_AVATAR,
+      bio: '',
+      dlicom_address: '',
+      is_verified: true,
+      is_golden_verified: true,
+      followers: [],
+      following: [],
+      total_votes_received: 0,
+      created_at: new Date().toISOString(),
+    },
+  }));
+};
+
+export const sendVipChatMessage = (data: {
+  user_id: string;
+  text: string;
+  image_data?: string;
+  code_snippet?: string;
+}): ChatMessage => {
+  const messages = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const user = users.find(u => u.id === data.user_id);
+
+  const newMsg: ChatMessage = {
+    id: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    user_id: data.user_id,
+    text: data.text.trim(),
+    image_data: data.image_data || undefined,
+    code_snippet: data.code_snippet || undefined,
+    created_at: new Date().toISOString(),
+    user,
+  };
+
+  messages.push(newMsg);
+  // Keep last 300 VIP chat messages
+  if (messages.length > 300) {
+    messages.shift();
+  }
+
+  setItem(STORAGE_KEYS.VIP_CHAT, messages);
+
+  // Supabase Cloud push if connected
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('vip_messages').upsert({
+      id: newMsg.id,
+      user_id: newMsg.user_id,
+      text: newMsg.text,
+      image_data: newMsg.image_data || null,
+      code_snippet: newMsg.code_snippet || null,
+      created_at: newMsg.created_at,
+    }).then(() => {}, (err) => console.warn('[Supabase VIP Chat notice]', err));
+  }
+
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  return newMsg;
+};
+
+export const deleteVipChatMessage = (messageId: string, actorId: string): boolean => {
+  const messages = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const actor = users.find(u => u.id === actorId);
+  const isAdmin = isUserAdmin(actor);
+
+  const idx = messages.findIndex(m => m.id === messageId);
+  if (idx === -1) return false;
+
+  if (!isAdmin && messages[idx].user_id !== actorId) {
+    return false;
+  }
+
+  messages.splice(idx, 1);
+  setItem(STORAGE_KEYS.VIP_CHAT, messages);
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('vip_messages').delete().eq('id', messageId).then(() => {}, () => {});
+  }
+
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  return true;
+};
+
 

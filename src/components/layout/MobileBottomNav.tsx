@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Users, Plus, Trophy, User } from 'lucide-react';
+import { Home, Users, Plus, Trophy, User, MessageSquare } from 'lucide-react';
 import type { Profile, ActiveView } from '../../types';
 
 interface MobileBottomNavProps {
@@ -23,7 +23,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       {/* Home Feed */}
       <button
         onClick={() => onViewChange('feed')}
-        className={`flex flex-col items-center justify-center py-1 px-3 rounded-2xl transition-all active:scale-90 ${
+        className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition-all active:scale-90 ${
           activeView === 'feed'
             ? 'text-blue-400 font-bold'
             : 'text-slate-400 hover:text-white'
@@ -37,7 +37,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       {/* Following Feed */}
       <button
         onClick={() => onViewChange('following_feed')}
-        className={`flex flex-col items-center justify-center py-1 px-3 rounded-2xl transition-all active:scale-90 ${
+        className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition-all active:scale-90 ${
           activeView === 'following_feed'
             ? 'text-blue-400 font-bold'
             : 'text-slate-400 hover:text-white'
@@ -51,16 +51,30 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       {/* Center + Post Button */}
       <button
         onClick={onOpenCreateModal}
-        className="flex items-center justify-center -mt-5 w-12 h-12 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white shadow-glow transition-all active:scale-90 hover:scale-105"
+        className="flex items-center justify-center -mt-5 w-11 h-11 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white shadow-glow transition-all active:scale-90 hover:scale-105 shrink-0"
         title="Create New Post / Status"
       >
         <Plus className="w-6 h-6 stroke-[3]" />
       </button>
 
+      {/* VIP Chat Lounge */}
+      <button
+        onClick={() => onViewChange('chat')}
+        className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition-all active:scale-90 ${
+          activeView === 'chat'
+            ? 'text-amber-400 font-bold'
+            : 'text-slate-400 hover:text-white'
+        }`}
+        title="VIP Golden Chat"
+      >
+        <MessageSquare className={`w-5 h-5 ${activeView === 'chat' ? 'stroke-[2.5] text-amber-400' : 'stroke-2'}`} />
+        <span className="text-[10px] mt-0.5 font-medium">Chat</span>
+      </button>
+
       {/* Leaderboard */}
       <button
         onClick={() => onViewChange('leaderboard')}
-        className={`flex flex-col items-center justify-center py-1 px-3 rounded-2xl transition-all active:scale-90 ${
+        className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition-all active:scale-90 ${
           activeView === 'leaderboard'
             ? 'text-blue-400 font-bold'
             : 'text-slate-400 hover:text-white'
@@ -68,7 +82,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         title="Leaderboard"
       >
         <Trophy className={`w-5 h-5 ${activeView === 'leaderboard' ? 'stroke-[2.5]' : 'stroke-2'}`} />
-        <span className="text-[10px] mt-0.5 font-medium">Rankings</span>
+        <span className="text-[10px] mt-0.5 font-medium font-mono">Rank</span>
       </button>
 
       {/* Profile */}

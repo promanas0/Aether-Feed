@@ -16,7 +16,11 @@ import {
   Lock,
   Mail,
   CheckCircle2,
-  ExternalLink
+  ExternalLink,
+  Sparkles,
+  Clock,
+  UserCheck,
+  UserX
 } from 'lucide-react';
 import type { Profile, Post, ToastMessage } from '../../types';
 import { 
@@ -24,7 +28,10 @@ import {
   addAdminEmail, 
   removeAdminEmail, 
   adminBanUser, 
+  adminUnbanUser,
   adminToggleVerifyUser, 
+  adminToggleGoldenVerifyUser,
+  adminSetPostingTimeout,
   deleteRealPost,
   syncWithServer
 } from '../../lib/storage';
@@ -55,6 +62,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [banConfirmId, setBanConfirmId] = useState<string | null>(null);
   const [deletePostId, setDeletePostId] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [timeoutModalUser, setTimeoutModalUser] = useState<Profile | null>(null);
 
   if (!isOpen) return null;
 
@@ -107,7 +115,18 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     }
   };
 
-  // Handle Toggle Verification Badge
+  // Handle Unban User
+  const handleUnbanUser = (targetUser: Profile) => {
+    const res = adminUnbanUser(targetUser.id, currentUser.email);
+    if (res.success) {
+      addToast('User Unbanned', `@${targetUser.username} account has been restored.`, 'success');
+      onRefreshData();
+    } else {
+      addToast('Unban Failed', res.message, 'info');
+    }
+  };
+
+  // Handle Toggle Standard Verification Badge (Blue)
   const handleToggleVerify = (targetUser: Profile) => {
     const updated = adminToggleVerifyUser(targetUser.id, currentUser.email);
     if (updated) {
@@ -116,6 +135,46 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         `@${updated.username} verification status updated to: ${updated.is_verified ? 'Verified' : 'Unverified'}`,
         'success'
       );
+      onRefreshData();
+    }
+  };
+
+  // Handle Toggle Golden Checkmark Badge (Gold VIP)
+  const handleToggleGoldenVerify = (targetUser: Profile) => {
+    const updated = adminToggleGoldenVerifyUser(targetUser.id, currentUser.email);
+    if (updated) {
+      addToast(
+        updated.is_golden_verified ? 'Golden Checkmark Granted' : 'Golden Checkmark Revoked',
+        `@${updated.username} now ${updated.is_golden_verified ? 'has' : 'no longer has'} Golden Checkmark & VIP Chat access.`,
+        'success'
+      );
+      onRefreshData();
+    }
+  };
+
+  // Handle Set Posting Timeout
+  const handleSetTimeout = (targetUser: Profile, duration: '24h' | '7d' | '30d' | 'indefinite' | 'clear') => {
+    let timeoutUntil: string | null = null;
+    if (duration === '24h') {
+      timeoutUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    } else if (duration === '7d') {
+      timeoutUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    } else if (duration === '30d') {
+      timeoutUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    } else if (duration === 'indefinite') {
+      timeoutUntil = 'indefinite';
+    } else {
+      timeoutUntil = null;
+    }
+
+    const updated = adminSetPostingTimeout(targetUser.id, timeoutUntil, currentUser.email);
+    if (updated) {
+      addToast(
+        timeoutUntil ? 'Posting Timeout Applied' : 'Posting Timeout Cleared',
+        `@${updated.username} posting status updated.`,
+        'success'
+      );
+      setTimeoutModalUser(null);
       onRefreshData();
     }
   };
@@ -328,9 +387,24 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                               <h4 className="text-xs sm:text-sm font-bold text-white truncate">
                                 {u.display_name}
                               </h4>
-                              {u.is_verified && (
+                              {u.is_golden_verified && (
+                                <span className="flex items-center gap-0.5 text-[10px] text-amber-300 font-extrabold px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 shadow-glow-sm">
+                                  <Sparkles className="w-3 h-3 text-amber-400" /> Golden Checkmark
+                                </span>
+                              )}
+                              {u.is_verified && !u.is_golden_verified && (
                                 <span className="flex items-center gap-0.5 text-[10px] text-blue-400 font-bold px-1.5 py-0.2 rounded bg-blue-950/50 border border-blue-500/30">
                                   <ShieldCheck className="w-3 h-3" /> Verified
+                                </span>
+                              )}
+                              {u.is_banned && (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-rose-600/30 text-rose-300 border border-rose-500/50 uppercase tracking-wider">
+                                  Banned
+                                </span>
+                              )}
+                              {u.posting_timeout_until && (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/40 flex items-center gap-1">
+                                  <Clock className="w-3 h-3" /> Timed Out
                                 </span>
                               )}
                               {isRootSuperAdmin && (
@@ -358,34 +432,74 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                         </div>
 
                         {/* Admin Actions */}
-                        <div className="flex items-center gap-2 w-full md:w-auto justify-end pt-2 md:pt-0 border-t md:border-t-0 border-[#334155]">
+                        <div className="flex items-center gap-2 w-full md:w-auto justify-end pt-2 md:pt-0 border-t md:border-t-0 border-[#334155] flex-wrap">
                           
-                          {/* Toggle Verified Badge */}
+                          {/* 1. Toggle Golden Checkmark (Gold VIP Badge) */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleGoldenVerify(u)}
+                            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                              u.is_golden_verified
+                                ? 'bg-amber-500/25 text-amber-300 border border-amber-500/60 shadow-[0_0_10px_rgba(251,191,36,0.3)]'
+                                : 'bg-[#1C2541] hover:bg-amber-950/30 text-slate-300 border border-[#334155] hover:border-amber-500/40'
+                            }`}
+                            title="Grant / Revoke Golden Checkmark (VIP Chat Access)"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                            <span>{u.is_golden_verified ? 'Golden VIP' : 'Give Golden'}</span>
+                          </button>
+
+                          {/* 2. Toggle Standard Blue Checkmark */}
                           <button
                             type="button"
                             onClick={() => handleToggleVerify(u)}
-                            className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                               u.is_verified
                                 ? 'bg-[#1C2541] hover:bg-slate-800 text-slate-300 border border-[#334155]'
                                 : 'bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 border border-blue-500/40'
                             }`}
-                            title="Toggle Verified Checkmark"
+                            title="Toggle Blue Verification"
                           >
                             {u.is_verified ? <ShieldX className="w-3.5 h-3.5 text-slate-400" /> : <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />}
-                            <span>{u.is_verified ? 'Remove Checkmark' : 'Verify'}</span>
+                            <span>{u.is_verified ? 'Blue Verified' : 'Verify Blue'}</span>
                           </button>
 
-                          {/* Ban / Wipe Scammer Button */}
+                          {/* 3. Posting Timeout Button */}
+                          <button
+                            type="button"
+                            onClick={() => setTimeoutModalUser(u)}
+                            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                              u.posting_timeout_until
+                                ? 'bg-orange-500/20 text-orange-300 border border-orange-500/50'
+                                : 'bg-[#1C2541] text-slate-300 border border-[#334155] hover:text-white'
+                            }`}
+                            title="Set Posting / Video Timeout"
+                          >
+                            <Clock className="w-3.5 h-3.5 text-orange-400" />
+                            <span>{u.posting_timeout_until ? 'Timeout Active' : 'Timeout'}</span>
+                          </button>
+
+                          {/* 4. Ban / Unban User Action */}
                           {!isRootSuperAdmin && (
                             <div>
-                              {banConfirmId !== u.id ? (
+                              {u.is_banned ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnbanUser(u)}
+                                  className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                  title="Unban and restore this user"
+                                >
+                                  <UserCheck className="w-3.5 h-3.5" />
+                                  <span>Unban User</span>
+                                </button>
+                              ) : banConfirmId !== u.id ? (
                                 <button
                                   type="button"
                                   onClick={() => setBanConfirmId(u.id)}
                                   className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
                                   title="Ban and delete this user completely"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <UserX className="w-3.5 h-3.5" />
                                   <span>Ban / Wipe</span>
                                 </button>
                               ) : (
@@ -395,7 +509,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                                     onClick={() => handleBanUser(u)}
                                     className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] font-bold cursor-pointer"
                                   >
-                                    Confirm Wipe
+                                    Confirm Ban
                                   </button>
                                   <button
                                     type="button"
@@ -686,7 +800,75 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
         </div>
 
+        {/* Posting Timeout Modal Dialog Overlay */}
+        {timeoutModalUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-[#1C2541] border border-orange-500/50 rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-[#334155] pb-3">
+                <div className="flex items-center gap-2 text-orange-400 font-bold text-sm">
+                  <Clock className="w-4 h-4" />
+                  <span>Posting Timeout</span>
+                </div>
+                <button
+                  onClick={() => setTimeoutModalUser(null)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-300">
+                Select posting restriction duration for <strong className="text-white">@{timeoutModalUser.username}</strong>:
+              </p>
+
+              <div className="space-y-2">
+                <button
+                  onClick={() => handleSetTimeout(timeoutModalUser, '24h')}
+                  className="w-full py-2 px-3 bg-[#0B132B] hover:bg-orange-600/30 border border-[#334155] hover:border-orange-500/50 text-slate-200 hover:text-white rounded-xl text-xs font-semibold text-left transition-colors cursor-pointer flex justify-between items-center"
+                >
+                  <span>24 Hours Timeout</span>
+                  <span className="text-[10px] text-slate-400 font-mono">1 Day</span>
+                </button>
+
+                <button
+                  onClick={() => handleSetTimeout(timeoutModalUser, '7d')}
+                  className="w-full py-2 px-3 bg-[#0B132B] hover:bg-orange-600/30 border border-[#334155] hover:border-orange-500/50 text-slate-200 hover:text-white rounded-xl text-xs font-semibold text-left transition-colors cursor-pointer flex justify-between items-center"
+                >
+                  <span>7 Days Timeout</span>
+                  <span className="text-[10px] text-slate-400 font-mono">1 Week</span>
+                </button>
+
+                <button
+                  onClick={() => handleSetTimeout(timeoutModalUser, '30d')}
+                  className="w-full py-2 px-3 bg-[#0B132B] hover:bg-orange-600/30 border border-[#334155] hover:border-orange-500/50 text-slate-200 hover:text-white rounded-xl text-xs font-semibold text-left transition-colors cursor-pointer flex justify-between items-center"
+                >
+                  <span>30 Days Timeout</span>
+                  <span className="text-[10px] text-slate-400 font-mono">1 Month</span>
+                </button>
+
+                <button
+                  onClick={() => handleSetTimeout(timeoutModalUser, 'indefinite')}
+                  className="w-full py-2 px-3 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 rounded-xl text-xs font-semibold text-left transition-colors cursor-pointer flex justify-between items-center"
+                >
+                  <span>Indefinite Restriction</span>
+                  <span className="text-[10px] text-rose-400 font-mono">Permanent</span>
+                </button>
+
+                {timeoutModalUser.posting_timeout_until && (
+                  <button
+                    onClick={() => handleSetTimeout(timeoutModalUser, 'clear')}
+                    className="w-full py-2 px-3 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 rounded-xl text-xs font-bold text-center transition-colors cursor-pointer"
+                  >
+                    Clear / Lift Timeout
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
 };
+
