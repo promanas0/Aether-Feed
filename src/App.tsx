@@ -156,10 +156,10 @@ export function App() {
       syncStateFromStorage();
     });
 
-    // 2. Responsive Periodic Background Sync (every 3.5s for seamless multi-device sync)
+    // 2. Responsive Periodic Background Sync (every 1.5s for seamless multi-device sync)
     const pollInterval = setInterval(() => {
       syncWithServer();
-    }, 3500);
+    }, 1500);
 
     const handleSync = () => {
       syncStateFromStorage();

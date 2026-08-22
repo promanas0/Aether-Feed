@@ -1142,34 +1142,32 @@ export const getRealPosts = (): Post[] => {
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const votes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(v => !deletedIds.has(v.post_id));
 
+  // Build O(1) Hash Maps for ultra-fast lookup
+  const userMap = new Map<string, Profile>();
+  users.forEach(u => userMap.set(u.id, u));
+
+  const votesMap = new Map<string, { up: number; down: number }>();
+  votes.forEach(v => {
+    let current = votesMap.get(v.post_id);
+    if (!current) {
+      current = { up: 0, down: 0 };
+      votesMap.set(v.post_id, current);
+    }
+    if (v.type === 'up') current.up++;
+    else if (v.type === 'down') current.down++;
+  });
+
   return posts.map(p => {
-    // Deterministically calculate votes from canonical votes list
-    const postVotes = votes.filter(v => v.post_id === p.id);
-    const votes_up = postVotes.filter(v => v.type === 'up').length;
-    const votes_down = postVotes.filter(v => v.type === 'down').length;
-    const net_votes = votes_up - votes_down;
+    const vCounts = votesMap.get(p.id) || { up: 0, down: 0 };
+    const net_votes = vCounts.up - vCounts.down;
+    const author = userMap.get(p.user_id);
 
     return {
       ...p,
-      votes_up,
-      votes_down,
+      votes_up: vCounts.up,
+      votes_down: vCounts.down,
       net_votes,
-      user: users.find(u => u.id === p.user_id) || {
-        id: p.user_id,
-        email: '',
-        first_name: 'Member',
-        last_name: '',
-        display_name: 'Aether Member',
-        username: 'member',
-        avatar_url: DEFAULT_DLICOM_AVATAR,
-        bio: '',
-        dlicom_address: '',
-        is_verified: true,
-        followers: [],
-        following: [],
-        total_votes_received: 0,
-        created_at: new Date().toISOString(),
-      }
+      user: author || p.user,
     };
   });
 };
