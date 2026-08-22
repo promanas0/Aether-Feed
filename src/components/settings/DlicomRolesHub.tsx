@@ -51,7 +51,7 @@ const ROLES_DATA: RoleThreadData[] = [
     title: 'Dliever',
     tag: 'ENTRY',
     tagColor: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
-    imageSrc: '/roles/dliever.jpg',
+    imageSrc: '/roles/dliever.png',
     shortDesc: 'Step in, explore the network, and start leaving a thoughtful trail behind you.',
     threadSteps: [
       {
@@ -93,7 +93,7 @@ const ROLES_DATA: RoleThreadData[] = [
     title: 'Dcoded',
     tag: 'CONSISTENT',
     tagColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-    imageSrc: '/roles/dcoded.jpg',
+    imageSrc: '/roles/dcoded.png',
     shortDesc: 'Show up with intent. Consistent, high-quality work turns your signal into reputation.',
     threadSteps: [
       {
@@ -135,7 +135,7 @@ const ROLES_DATA: RoleThreadData[] = [
     title: 'DCO',
     tag: 'CORE',
     tagColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-    imageSrc: '/roles/dco.jpg',
+    imageSrc: '/roles/dco.png',
     shortDesc: 'Shape culture, lead collaborations, and help the community decide what comes next.',
     threadSteps: [
       {
@@ -305,11 +305,11 @@ export const DlicomRolesHub: React.FC<DlicomRolesHubProps> = ({
                   </div>
 
                   {/* Character Pixel Mascot Card */}
-                  <div className="w-full aspect-square rounded-2xl overflow-hidden bg-[#0B132B] border border-[#334155]/80 relative mb-4 flex items-center justify-center group-hover:border-blue-500/50 transition-colors">
+                  <div className="w-full aspect-square rounded-2xl overflow-hidden bg-black border border-[#334155]/80 relative mb-4 flex items-center justify-center group-hover:border-blue-500/50 transition-colors p-2">
                     <img
                       src={role.imageSrc}
                       alt={role.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                     />
                     <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md text-[9px] font-mono text-slate-300 uppercase tracking-wider">
                       DLICOM ROLE / {role.number}
@@ -377,11 +377,13 @@ export const DlicomRolesHub: React.FC<DlicomRolesHubProps> = ({
 
             {/* Thread Header Card */}
             <div className="p-6 bg-[#141E33] border border-[#334155] rounded-3xl flex flex-col sm:flex-row items-center gap-6 shadow-xl">
-              <img
-                src={activeThreadRole.imageSrc}
-                alt={activeThreadRole.title}
-                className="w-28 h-28 rounded-2xl object-cover border-2 border-blue-500/40 shadow-glow-sm shrink-0"
-              />
+              <div className="w-28 h-28 rounded-2xl overflow-hidden bg-black border-2 border-blue-500/40 shadow-glow-sm shrink-0 flex items-center justify-center p-1.5">
+                <img
+                  src={activeThreadRole.imageSrc}
+                  alt={activeThreadRole.title}
+                  className="w-full h-full object-contain"
+                />
+              </div>
               <div className="space-y-2 text-center sm:text-left">
                 <div className="flex items-center justify-center sm:justify-start gap-2">
                   <h2 className="text-2xl sm:text-3xl font-black text-white">
