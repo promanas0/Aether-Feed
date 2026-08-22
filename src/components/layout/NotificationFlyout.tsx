@@ -19,7 +19,8 @@ import type { NotificationItem } from '../../types';
 import { 
   DEFAULT_DLICOM_AVATAR, 
   getPushNotificationPermissionStatus, 
-  requestPushNotificationPermission 
+  requestPushNotificationPermission,
+  markNotificationAsRead
 } from '../../lib/storage';
 
 interface NotificationFlyoutProps {
@@ -183,6 +184,9 @@ export const NotificationFlyout: React.FC<NotificationFlyoutProps> = ({
                 <div
                   key={n.id}
                   onClick={() => {
+                    if (!n.is_read) {
+                      markNotificationAsRead(n.id);
+                    }
                     if (n.post_id) {
                       onSelectPost(n.post_id);
                       onClose();

@@ -286,7 +286,13 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Notification Bell */}
           <div className="relative">
             <button
-              onClick={() => setIsNotifOpen(!isNotifOpen)}
+              onClick={() => {
+                const nextState = !isNotifOpen;
+                setIsNotifOpen(nextState);
+                if (nextState && unreadCount > 0) {
+                  onMarkAllNotificationsRead();
+                }
+              }}
               className={`relative p-2 rounded-xl border transition-all cursor-pointer ${
                 isNotifOpen 
                   ? 'bg-blue-600/20 border-blue-500 text-blue-300' 

@@ -21,6 +21,7 @@ const STORAGE_KEYS = {
   USER_PRESENCE: 'aether_user_presence_v4',
   DELETED_CHAT_MSG_IDS: 'aether_deleted_chat_msg_ids_v4',
   DELETED_DM_MSG_IDS: 'aether_deleted_dm_msg_ids_v4',
+  DELETED_NOTIFICATION_IDS: 'aether_deleted_notification_ids_v4',
   BANNED_USER_IDS: 'aether_banned_user_ids_v4',
 };
 
@@ -612,16 +613,32 @@ export const syncWithServer = async (): Promise<boolean> => {
           }
 
           // E. Pull live notifications from Supabase
+          const deletedNotifIds = new Set(getItem<string[]>(STORAGE_KEYS.DELETED_NOTIFICATION_IDS, []));
           const { data: supaNotifs } = await supabase
             .from('notifications')
             .select('*')
             .order('created_at', { ascending: false });
 
           if (supaNotifs && Array.isArray(supaNotifs)) {
+            const currentLocalNotifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []).filter(n => !deletedNotifIds.has(n.id));
             const notifMap = new Map<string, NotificationItem>();
-            supaNotifs.forEach((n: any) => notifMap.set(n.id, n));
-            localNotifs.forEach((n: any) => {
-              if (!notifMap.has(n.id)) notifMap.set(n.id, n);
+            
+            supaNotifs
+              .filter((n: any) => !deletedNotifIds.has(n.id))
+              .forEach((n: any) => notifMap.set(n.id, n));
+
+            currentLocalNotifs.forEach((localN: any) => {
+              if (deletedNotifIds.has(localN.id)) return;
+              const remote = notifMap.get(localN.id);
+              if (remote) {
+                // If marked read locally, preserve read status
+                notifMap.set(localN.id, {
+                  ...remote,
+                  is_read: localN.is_read || remote.is_read,
+                });
+              } else {
+                notifMap.set(localN.id, localN);
+              }
             });
             setItem(STORAGE_KEYS.NOTIFICATIONS, Array.from(notifMap.values()));
           }
@@ -1923,30 +1940,87 @@ export const getNotificationsForRealUser = (userId: string): NotificationItem[] 
     }));
 };
 
+export const markNotificationAsRead = (notifId: string): void => {
+  const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  const idx = notifs.findIndex(n => n.id === notifId);
+  if (idx !== -1) {
+    notifs[idx].is_read = true;
+    setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
+  }
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('notifications').update({ is_read: true }).eq('id', notifId).then(() => {}, () => {});
+  }
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+};
+
 export const markAllNotificationsRead = (userId: string): void => {
   const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  let changed = false;
   notifs.forEach(n => {
-    if (n.user_id === userId) n.is_read = true;
+    if (n.user_id === userId && !n.is_read) {
+      n.is_read = true;
+      changed = true;
+    }
   });
-  setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
-  syncWithServer();
+  if (changed) {
+    setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
+  }
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).then(() => {}, () => {});
+  }
   window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
 };
 
 export const clearReadNotifications = (userId: string): void => {
   const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
-  const remaining = notifs.filter(n => !(n.user_id === userId && n.is_read));
+  const clearedIds: string[] = [];
+  const remaining = notifs.filter(n => {
+    if (n.user_id === userId && n.is_read) {
+      clearedIds.push(n.id);
+      return false;
+    }
+    return true;
+  });
+
+  // Persist cleared IDs so Supabase background sync never restores them
+  const deletedList = getItem<string[]>(STORAGE_KEYS.DELETED_NOTIFICATION_IDS, []);
+  clearedIds.forEach(id => {
+    if (!deletedList.includes(id)) deletedList.push(id);
+  });
+  setItem(STORAGE_KEYS.DELETED_NOTIFICATION_IDS, deletedList);
   setItem(STORAGE_KEYS.NOTIFICATIONS, remaining);
-  syncWithServer();
+
+  const supabase = getSupabaseClient();
+  if (supabase && clearedIds.length > 0) {
+    supabase.from('notifications').delete().in('id', clearedIds).then(() => {}, () => {});
+  }
+
   window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
 };
 
 export const deleteNotification = (notifId: string): void => {
+  const deletedList = getItem<string[]>(STORAGE_KEYS.DELETED_NOTIFICATION_IDS, []);
+  if (!deletedList.includes(notifId)) {
+    deletedList.push(notifId);
+    setItem(STORAGE_KEYS.DELETED_NOTIFICATION_IDS, deletedList);
+  }
+
   const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
   const remaining = notifs.filter(n => n.id !== notifId);
   setItem(STORAGE_KEYS.NOTIFICATIONS, remaining);
-  syncWithServer();
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('notifications').delete().eq('id', notifId).then(() => {}, () => {});
+  }
+
   window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
 };
 
 /* ==========================================================================
