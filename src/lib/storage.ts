@@ -694,6 +694,38 @@ export const syncWithServer = async (): Promise<boolean> => {
   return currentSyncPromise;
 };
 
+let activeRealtimeChannel: any = null;
+
+export const broadcastRealtimeEvent = async (event: string, payload: any): Promise<void> => {
+  try {
+    if (activeRealtimeChannel) {
+      await activeRealtimeChannel.send({
+        type: 'broadcast',
+        event,
+        payload,
+      });
+    } else {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        const tempChannel = supabase.channel('aether_global_realtime_broadcast');
+        await tempChannel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            tempChannel.send({
+              type: 'broadcast',
+              event,
+              payload,
+            }).then(() => {
+              supabase.removeChannel(tempChannel);
+            });
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[Aether Broadcast Warning]:', err);
+  }
+};
+
 /**
  * Subscribe to Supabase Realtime Channel for instant cross-device live updates
  */
@@ -703,7 +735,12 @@ export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => vo
 
   try {
     const channel = supabase
-      .channel('public:aether_feed_realtime')
+      .channel('aether_global_realtime_broadcast', {
+        config: {
+          broadcast: { self: false },
+        },
+      })
+      // 1. Table Postgres changes
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'posts' },
@@ -732,10 +769,98 @@ export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => vo
           syncWithServer().then(() => onSyncNeeded());
         }
       )
-      .subscribe();
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'direct_messages' },
+        () => {
+          syncWithServer().then(() => onSyncNeeded());
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'vip_messages' },
+        () => {
+          syncWithServer().then(() => onSyncNeeded());
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'comments' },
+        () => {
+          syncWithServer().then(() => onSyncNeeded());
+        }
+      )
+      // 2. Instant Realtime Broadcast Events (sub-50ms message delivery across devices)
+      .on('broadcast', { event: 'new_direct_message' }, ({ payload }) => {
+        if (!payload || !payload.id) return;
+        const currentUserId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);
+        if (!currentUserId) return;
+
+        if (payload.receiver_id === currentUserId || payload.sender_id === currentUserId) {
+          const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
+          if (!dms.some(m => m.id === payload.id)) {
+            dms.push(payload);
+            setItem(STORAGE_KEYS.DIRECT_MESSAGES, dms);
+            window.dispatchEvent(new Event('aether_storage_sync'));
+            onSyncNeeded();
+          }
+        }
+      })
+      .on('broadcast', { event: 'read_direct_message' }, ({ payload }) => {
+        if (!payload) return;
+        const currentUserId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);
+        if (!currentUserId) return;
+
+        if (payload.senderId === currentUserId) {
+          const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
+          let modified = false;
+          dms.forEach(m => {
+            if (m.sender_id === currentUserId && m.receiver_id === payload.viewerId && !m.is_read) {
+              m.is_read = true;
+              modified = true;
+            }
+          });
+          if (modified) {
+            setItem(STORAGE_KEYS.DIRECT_MESSAGES, dms);
+            window.dispatchEvent(new Event('aether_storage_sync'));
+            onSyncNeeded();
+          }
+        }
+      })
+      .on('broadcast', { event: 'new_vip_message' }, ({ payload }) => {
+        if (!payload || !payload.id) return;
+        const chatMsgs = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
+        if (!chatMsgs.some(m => m.id === payload.id)) {
+          chatMsgs.push(payload);
+          if (chatMsgs.length > 300) chatMsgs.shift();
+          setItem(STORAGE_KEYS.VIP_CHAT, chatMsgs);
+          window.dispatchEvent(new Event('aether_storage_sync'));
+          onSyncNeeded();
+        }
+      })
+      .on('broadcast', { event: 'delete_message' }, ({ payload }) => {
+        if (!payload || !payload.message_id) return;
+        if (payload.type === 'dm') {
+          const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
+          const updated = dms.filter(m => m.id !== payload.message_id);
+          setItem(STORAGE_KEYS.DIRECT_MESSAGES, updated);
+        } else if (payload.type === 'vip') {
+          const vips = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
+          const updated = vips.filter(m => m.id !== payload.message_id);
+          setItem(STORAGE_KEYS.VIP_CHAT, updated);
+        }
+        window.dispatchEvent(new Event('aether_storage_sync'));
+        onSyncNeeded();
+      })
+      .subscribe((status) => {
+        console.log('[Supabase Realtime Channel Status]:', status);
+      });
+
+    activeRealtimeChannel = channel;
 
     return () => {
       supabase.removeChannel(channel);
+      activeRealtimeChannel = null;
     };
   } catch (err) {
     console.warn('[Aether Realtime] Subscription error:', err);
@@ -2081,6 +2206,7 @@ export const sendVipChatMessage = async (data: {
     image_data: data.image_data || undefined,
     code_snippet: data.code_snippet || undefined,
     created_at: new Date().toISOString(),
+    is_read: true,
     user,
   };
 
@@ -2091,9 +2217,13 @@ export const sendVipChatMessage = async (data: {
 
   setItem(STORAGE_KEYS.VIP_CHAT, messages);
 
+  // 1. Instant Realtime Broadcast to all connected clients
+  broadcastRealtimeEvent('new_vip_message', newMsg);
+
+  // 2. Persist to Supabase
   const supabase = getSupabaseClient();
   if (supabase) {
-    await supabase.from('vip_messages').upsert({
+    supabase.from('vip_messages').upsert({
       id: newMsg.id,
       user_id: newMsg.user_id,
       text: newMsg.text,
@@ -2103,7 +2233,6 @@ export const sendVipChatMessage = async (data: {
     }).then(() => {}, (err) => console.warn('[Supabase VIP Chat notice]', err));
   }
 
-  await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
   if (syncChannel) syncChannel.postMessage('sync');
   return newMsg;
@@ -2141,12 +2270,14 @@ export const deleteVipChatMessage = async (
   messages.splice(idx, 1);
   setItem(STORAGE_KEYS.VIP_CHAT, messages);
 
+  // Instant broadcast
+  broadcastRealtimeEvent('delete_message', { message_id: messageId, type: 'vip' });
+
   const supabase = getSupabaseClient();
   if (supabase) {
-    await supabase.from('vip_messages').delete().eq('id', messageId).then(() => {}, () => {});
+    supabase.from('vip_messages').delete().eq('id', messageId).then(() => {}, () => {});
   }
 
-  await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
   if (syncChannel) syncChannel.postMessage('sync');
   return true;
@@ -2383,27 +2514,65 @@ export const sendDirectMessage = async (
   dms.push(newDm);
   setItem(STORAGE_KEYS.DIRECT_MESSAGES, dms);
 
-  // Sync to Supabase Cloud DB
+  // 1. Instant Realtime Broadcast to receiver
+  broadcastRealtimeEvent('new_direct_message', newDm);
+
+  // 2. Sync to Supabase Cloud DB
   const supabase = getSupabaseClient();
   if (supabase) {
-    try {
-      await supabase.from('direct_messages').upsert({
-        id: newDm.id,
-        sender_id: newDm.sender_id,
-        receiver_id: newDm.receiver_id,
-        text: newDm.text,
-        created_at: newDm.created_at,
-        is_read: false,
-      }, { onConflict: 'id' });
-    } catch (err) {
+    supabase.from('direct_messages').upsert({
+      id: newDm.id,
+      sender_id: newDm.sender_id,
+      receiver_id: newDm.receiver_id,
+      text: newDm.text,
+      created_at: newDm.created_at,
+      is_read: false,
+    }, { onConflict: 'id' }).then(() => {}, (err) => {
       console.warn('[Aether Supabase] DM save notice:', err);
-    }
+    });
   }
 
-  await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
   if (syncChannel) syncChannel.postMessage('sync');
   return newDm;
+};
+
+export const markDirectMessagesAsRead = async (
+  currentUserId: string,
+  contactUserId: string
+): Promise<void> => {
+  const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
+  let hasChanges = false;
+
+  dms.forEach(m => {
+    if (m.receiver_id === currentUserId && m.sender_id === contactUserId && !m.is_read) {
+      m.is_read = true;
+      hasChanges = true;
+    }
+  });
+
+  if (hasChanges) {
+    setItem(STORAGE_KEYS.DIRECT_MESSAGES, dms);
+    window.dispatchEvent(new Event('aether_storage_sync'));
+    if (syncChannel) syncChannel.postMessage('sync');
+
+    // 1. Broadcast to sender that messages have been read (triggers double blue ticks)
+    broadcastRealtimeEvent('read_direct_message', {
+      viewerId: currentUserId,
+      senderId: contactUserId,
+    });
+
+    // 2. Persist to Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase
+        .from('direct_messages')
+        .update({ is_read: true })
+        .eq('receiver_id', currentUserId)
+        .eq('sender_id', contactUserId)
+        .then(() => {}, () => {});
+    }
+  }
 };
 
 export const deleteDirectMessage = async (
@@ -2438,12 +2607,14 @@ export const deleteDirectMessage = async (
   dms.splice(idx, 1);
   setItem(STORAGE_KEYS.DIRECT_MESSAGES, dms);
 
+  // Broadcast deletion
+  broadcastRealtimeEvent('delete_message', { message_id: messageId, type: 'dm' });
+
   const supabase = getSupabaseClient();
   if (supabase) {
-    await supabase.from('direct_messages').delete().eq('id', messageId);
+    supabase.from('direct_messages').delete().eq('id', messageId).then(() => {}, () => {});
   }
 
-  await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
   if (syncChannel) syncChannel.postMessage('sync');
   return true;

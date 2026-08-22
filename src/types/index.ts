@@ -81,6 +81,7 @@ export interface ChatMessage {
   image_data?: string;
   code_snippet?: string;
   created_at: string;
+  is_read?: boolean;
   is_deleted?: boolean;
   deleted_for_users?: string[];
   user?: Profile;

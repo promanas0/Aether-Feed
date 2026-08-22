@@ -7,7 +7,9 @@ import {
   EyeOff, 
   MoreVertical, 
   User, 
-  ChevronLeft
+  ChevronLeft,
+  Check,
+  CheckCheck
 } from 'lucide-react';
 import type { Profile, DirectMessage, ToastMessage } from '../../types';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
@@ -17,6 +19,8 @@ import {
   getDmConversations, 
   sendDirectMessage, 
   deleteDirectMessage,
+  markDirectMessagesAsRead,
+  syncWithServer,
   isUserAdmin 
 } from '../../lib/storage';
 
@@ -66,27 +70,38 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     }
   }, [initialRecipientId, allUsers, conversations, currentUser.id]);
 
-  // Load messages when selectedUser changes
+  // Load messages & mark as read when selectedUser changes
   useEffect(() => {
     if (selectedUser) {
+      markDirectMessagesAsRead(currentUser.id, selectedUser.id);
       setMessages(getDirectMessages(currentUser.id, selectedUser.id));
+      setConversations(getDmConversations(currentUser.id));
       scrollToBottom();
     } else {
       setMessages([]);
     }
   }, [selectedUser, currentUser.id]);
 
-  // Sync listener
+  // Sync listener & live polling
   useEffect(() => {
     const handleSync = () => {
       setConversations(getDmConversations(currentUser.id));
       if (selectedUser) {
+        markDirectMessagesAsRead(currentUser.id, selectedUser.id);
         setMessages(getDirectMessages(currentUser.id, selectedUser.id));
       }
     };
 
+    const pollInterval = setInterval(async () => {
+      await syncWithServer();
+      handleSync();
+    }, 1200);
+
     window.addEventListener('aether_storage_sync', handleSync);
-    return () => window.removeEventListener('aether_storage_sync', handleSync);
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('aether_storage_sync', handleSync);
+    };
   }, [currentUser.id, selectedUser]);
 
   useEffect(() => {
@@ -367,9 +382,22 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                         </div>
                       </div>
 
-                      <span className="text-[10px] text-slate-500 font-mono mt-1 px-1">
-                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                      <div className="flex items-center gap-1 mt-1 px-1 text-[10px] text-slate-400 font-mono">
+                        <span>
+                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {isMe && (
+                          msg.is_read ? (
+                            <span title="Read / Seen" className="inline-flex items-center">
+                              <CheckCheck className="w-3.5 h-3.5 text-blue-400 shrink-0 stroke-[2.5]" />
+                            </span>
+                          ) : (
+                            <span title="Delivered" className="inline-flex items-center">
+                              <CheckCheck className="w-3.5 h-3.5 text-slate-500 shrink-0 stroke-2" />
+                            </span>
+                          )
+                        )}
+                      </div>
                     </div>
                   );
                 })

@@ -39,13 +39,18 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onOpenAccountSwitcher,
   onOpenAdminPanel,
 }) => {
+  const isGolden = Boolean(currentUser.is_golden_verified || isUserAdmin(currentUser));
+
   const navItems: Array<{ id: ActiveView; label: string; icon: React.ComponentType<{ className?: string }> }> = [
     { id: 'feed', label: 'Home Feed', icon: Home },
     { id: 'following_feed', label: 'Following Feed', icon: Users },
-    { id: 'leaderboard', label: 'Top Leaderboard', icon: Trophy },
-    { id: 'chat', label: 'Aether Chat', icon: MessageSquare },
     { id: 'dms', label: 'Direct Messages', icon: UserCheck },
+    { id: 'leaderboard', label: 'Top Leaderboard', icon: Trophy },
   ];
+
+  if (isGolden) {
+    navItems.splice(3, 0, { id: 'chat', label: 'Aether Chat', icon: MessageSquare });
+  }
 
   return (
     <aside className="w-64 shrink-0 hidden lg:block sticky top-20 h-[calc(100vh-6rem)] space-y-3 select-none">

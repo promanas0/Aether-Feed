@@ -73,6 +73,43 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON public.notifications (user_id, is_read);
 
+-- 5. DIRECT MESSAGES TABLE (1-ON-1 DMS)
+CREATE TABLE IF NOT EXISTS public.direct_messages (
+    id TEXT PRIMARY KEY,
+    sender_id TEXT NOT NULL,
+    receiver_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT false,
+    is_deleted BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_participants ON public.direct_messages (sender_id, receiver_id, created_at);
+
+-- 6. VIP CHAT MESSAGES (AETHER LOUNGE)
+CREATE TABLE IF NOT EXISTS public.vip_messages (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    image_data TEXT,
+    code_snippet TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    is_deleted BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE INDEX IF NOT EXISTS idx_vip_messages_created_at ON public.vip_messages (created_at ASC);
+
+-- 7. POST COMMENTS TABLE
+CREATE TABLE IF NOT EXISTS public.comments (
+    id TEXT PRIMARY KEY,
+    post_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_comments_post_id ON public.comments (post_id, created_at ASC);
+
 -- ==========================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES FOR INSTANT ACCESS
 -- ==========================================================
@@ -81,6 +118,9 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.votes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.direct_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vip_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow all on profiles" ON public.profiles;
 CREATE POLICY "Allow all on profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
@@ -93,3 +133,12 @@ CREATE POLICY "Allow all on votes" ON public.votes FOR ALL USING (true) WITH CHE
 
 DROP POLICY IF EXISTS "Allow all on notifications" ON public.notifications;
 CREATE POLICY "Allow all on notifications" ON public.notifications FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all on direct_messages" ON public.direct_messages;
+CREATE POLICY "Allow all on direct_messages" ON public.direct_messages FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all on vip_messages" ON public.vip_messages;
+CREATE POLICY "Allow all on vip_messages" ON public.vip_messages FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all on comments" ON public.comments;
+CREATE POLICY "Allow all on comments" ON public.comments FOR ALL USING (true) WITH CHECK (true);

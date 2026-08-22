@@ -4,11 +4,12 @@ import {
   Image as ImageIcon, 
   Code, 
   Trash2, 
-  EyeOff,
-  MoreVertical,
-  X,
-  MessageSquare,
-  Lock
+  EyeOff, 
+  MoreVertical, 
+  X, 
+  MessageSquare, 
+  Lock,
+  CheckCheck
 } from 'lucide-react';
 import type { Profile, ChatMessage, ToastMessage } from '../../types';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
@@ -16,7 +17,8 @@ import {
   isUserAdmin, 
   getVipChatMessages, 
   sendVipChatMessage, 
-  deleteVipChatMessage 
+  deleteVipChatMessage,
+  syncWithServer 
 } from '../../lib/storage';
 import { compressPostImage } from '../../lib/imageUtils';
 
@@ -59,8 +61,14 @@ export const VipChatView: React.FC<VipChatViewProps> = ({
       setMessages(getVipChatMessages());
     };
 
+    const pollInterval = setInterval(async () => {
+      await syncWithServer();
+      handleSync();
+    }, 1200);
+
     window.addEventListener('aether_storage_sync', handleSync);
     return () => {
+      clearInterval(pollInterval);
       window.removeEventListener('aether_storage_sync', handleSync);
     };
   }, []);
@@ -211,8 +219,13 @@ export const VipChatView: React.FC<VipChatViewProps> = ({
                       isGoldenVerified={author.is_golden_verified}
                       size="xs"
                     />
-                    <span className="text-[10px] text-slate-500 font-mono">
+                    <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
                       {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {isMe && (
+                        <span title="Delivered to Aether" className="inline-flex items-center">
+                          <CheckCheck className="w-3.5 h-3.5 text-blue-300 stroke-[2.5]" />
+                        </span>
+                      )}
                     </span>
                   </div>
 

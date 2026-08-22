@@ -717,8 +717,8 @@ export function App() {
             </div>
           )}
 
-          {/* VIEW 4: Aether Chat */}
-          {activeView === 'chat' && (
+          {/* VIEW 4: Aether Chat (Golden Verified & Admins Only) */}
+          {activeView === 'chat' && (currentUser.is_golden_verified || currentUser.is_admin) && (
             <div className="view-transition">
               <VipChatView
                 currentUser={currentUser}
