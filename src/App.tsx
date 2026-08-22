@@ -421,354 +421,360 @@ export function App() {
       {/* Toast Alerts */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-      {/* Clean Top Header with Live Search Dropdown & Switch Account */}
-      <Header
-        currentUser={currentUser}
-        allUsers={users}
-        allPosts={posts}
-        notifications={notifications}
-        searchQuery={searchQuery}
-        themeMode={themeMode}
-        onGoHome={handleGoHome}
-        onOpenCreateModal={() => setIsCreateModalOpen(true)}
-        onSearchChange={setSearchQuery}
-        onThemeToggle={handleToggleTheme}
-        onOpenProfile={handleOpenProfile}
-        onOpenSettings={() => {
-          setActiveView('settings');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-        onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
-        onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
-        onSignOut={handleSignOut}
-        onMarkAllNotificationsRead={() => {
-          markAllNotificationsRead(currentUser.id);
-          syncStateFromStorage();
-          addToast('Notifications Cleared', 'Marked all as read.', 'success');
-        }}
-        onSelectPostFromNotif={(postId) => {
-          const target = posts.find(p => p.id === postId);
-          if (target) {
-            setSearchQuery(target.title || target.description);
-            setActiveView('feed');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }
-        }}
-        onSelectPostFromSearch={(post) => {
-          setDetailsPost(post);
-        }}
-      />
+      {/* If Settings is active, render Full-Page Settings & Privacy Hub (Facebook Layout & 3 Roles) */}
+      {activeView === 'settings' ? (
+        <div className="w-full flex-1 view-transition">
+          <SettingsView
+            currentUser={currentUser}
+            themeMode={themeMode}
+            onThemeChange={handleToggleTheme}
+            onUpdateProfile={handleUpdateProfile}
+            onSignOut={handleSignOut}
+            onBackToHome={() => {
+              setActiveView('feed');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
+            onSwitchAccount={(uid) => {
+              switchAccountSession(uid);
+              syncStateFromStorage();
+              addToast('Account Switched', 'Active profile updated.', 'success');
+            }}
+            onAddAccount={() => setIsAccountSwitcherOpen(true)}
+            addToast={addToast}
+          />
+        </div>
+      ) : (
+        <>
+          {/* Clean Top Header with Live Search Dropdown & Switch Account */}
+          <Header
+            currentUser={currentUser}
+            allUsers={users}
+            allPosts={posts}
+            notifications={notifications}
+            searchQuery={searchQuery}
+            themeMode={themeMode}
+            onGoHome={handleGoHome}
+            onOpenCreateModal={() => setIsCreateModalOpen(true)}
+            onSearchChange={setSearchQuery}
+            onThemeToggle={handleToggleTheme}
+            onOpenProfile={handleOpenProfile}
+            onOpenSettings={() => {
+              setActiveView('settings');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
+            onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
+            onSignOut={handleSignOut}
+            onMarkAllNotificationsRead={() => {
+              markAllNotificationsRead(currentUser.id);
+              syncStateFromStorage();
+              addToast('Notifications Cleared', 'Marked all as read.', 'success');
+            }}
+            onSelectPostFromNotif={(postId) => {
+              const target = posts.find(p => p.id === postId);
+              if (target) {
+                setSearchQuery(target.title || target.description);
+                setActiveView('feed');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }
+            }}
+            onSelectPostFromSearch={(post) => {
+              setDetailsPost(post);
+            }}
+          />
 
-      {/* Main Content Layout: Clean 2-Column Desktop Layout (Left Nav + Focused Main Stream) */}
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6 pb-24 lg:pb-8 flex justify-between gap-8 flex-1">
-        
-        {/* Left Column: Navigation Menu (Desktop) */}
-        <LeftSidebar
-          currentUser={currentUser}
-          activeView={activeView}
-          onViewChange={(v) => {
-            if (v === 'dms') {
-              setDmRecipientId(null);
-            }
-            setActiveView(v);
-            setSelectedProfile(null);
-            setSelectedTagFilter(null);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-          onOpenMyProfile={() => handleOpenProfile(currentUser)}
-          onOpenSettings={() => {
-            setActiveView('settings');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-          onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
-          onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
-          onSignOut={handleSignOut}
-        />
+          {/* Main Content Layout: Clean 2-Column Desktop Layout (Left Nav + Focused Main Stream) */}
+          <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6 pb-24 lg:pb-8 flex justify-between gap-8 flex-1">
+            
+            {/* Left Column: Navigation Menu (Desktop) */}
+            <LeftSidebar
+              currentUser={currentUser}
+              activeView={activeView}
+              onViewChange={(v) => {
+                if (v === 'dms') {
+                  setDmRecipientId(null);
+                }
+                setActiveView(v);
+                setSelectedProfile(null);
+                setSelectedTagFilter(null);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              onOpenMyProfile={() => handleOpenProfile(currentUser)}
+              onOpenSettings={() => {
+                setActiveView('settings');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
+              onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
+              onSignOut={handleSignOut}
+            />
 
-        {/* Center Main Column: Pure Focused Stream */}
-        <main className="flex-1 min-w-0 max-w-4xl w-full">
-          
-          {/* VIEW 1: Feed (Home or Following) */}
-          {(activeView === 'feed' || activeView === 'following_feed') && (
-            <div className="view-transition">
+            {/* Center Main Column: Pure Focused Stream */}
+            <main className="flex-1 min-w-0 max-w-4xl w-full">
               
-              {/* Post & Status Composer */}
-              {!searchQuery && (
-                <CreatePostBox
-                  currentUser={currentUser}
-                  allUsers={users}
-                  onSubmitPost={handleCreatePost}
-                  addToast={addToast}
-                />
-              )}
+              {/* VIEW 1: Feed (Home or Following) */}
+              {(activeView === 'feed' || activeView === 'following_feed') && (
+                <div className="view-transition">
+                  
+                  {/* Post & Status Composer */}
+                  {!searchQuery && (
+                    <CreatePostBox
+                      currentUser={currentUser}
+                      allUsers={users}
+                      onSubmitPost={handleCreatePost}
+                      addToast={addToast}
+                    />
+                  )}
 
-              {/* Matching Members Shelf */}
-              {searchQuery.trim() && matchingSearchMembers.length > 0 && (
-                <div className="mb-6 p-4 bg-[#1C2541] border border-[#334155] rounded-3xl animate-in fade-in">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-blue-400" />
-                      <span>Matching Members ({matchingSearchMembers.length})</span>
-                    </h3>
-                  </div>
+                  {/* Matching Members Shelf */}
+                  {searchQuery.trim() && matchingSearchMembers.length > 0 && (
+                    <div className="mb-6 p-4 bg-[#1C2541] border border-[#334155] rounded-3xl animate-in fade-in">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Matching Members ({matchingSearchMembers.length})</span>
+                        </h3>
+                      </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {matchingSearchMembers.map((member) => {
-                      const isSelf = member.id === currentUser.id;
-                      const isFollowing = currentUser.following.includes(member.id);
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {matchingSearchMembers.map((member) => {
+                          const isSelf = member.id === currentUser.id;
+                          const isFollowing = currentUser.following.includes(member.id);
 
-                      return (
-                        <div
-                          key={member.id}
-                          className="p-3 bg-[#1E293B] border border-[#334155] rounded-2xl flex items-center justify-between gap-3 hover:border-slate-500 transition-all cursor-pointer"
-                          onClick={() => handleOpenProfile(member)}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <img
-                              src={member.avatar_url}
-                              alt={member.display_name}
-                              className="w-9 h-9 rounded-xl object-cover border border-blue-500/30 shrink-0"
-                            />
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1">
-                                <span className="text-xs font-bold text-white truncate">
-                                  {member.display_name}
-                                </span>
-                                <VerifiedBadge user={member} />
-                              </div>
-                              <p className="text-[11px] text-slate-400 font-mono truncate">
-                                @{member.username}
-                              </p>
-                            </div>
-                          </div>
-
-                          {!isSelf && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggleFollow(member.id);
-                              }}
-                              className={`p-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 cursor-pointer ${
-                                isFollowing
-                                  ? 'bg-[#1C2541] text-slate-300 hover:text-rose-300'
-                                  : 'bg-blue-600 text-white shadow-glow-sm hover:bg-blue-500'
-                              }`}
+                          return (
+                            <div
+                              key={member.id}
+                              className="p-3 bg-[#1E293B] border border-[#334155] rounded-2xl flex items-center justify-between gap-3 hover:border-slate-500 transition-all cursor-pointer"
+                              onClick={() => handleOpenProfile(member)}
                             >
-                              {isFollowing ? (
-                                <UserCheck className="w-4 h-4" />
-                              ) : (
-                                <UserPlus className="w-4 h-4" />
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <img
+                                  src={member.avatar_url}
+                                  alt={member.display_name}
+                                  className="w-9 h-9 rounded-xl object-cover border border-blue-500/30 shrink-0"
+                                />
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-xs font-bold text-white truncate">
+                                      {member.display_name}
+                                    </span>
+                                    <VerifiedBadge user={member} />
+                                  </div>
+                                  <p className="text-[11px] text-slate-400 font-mono truncate">
+                                    @{member.username}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {!isSelf && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleFollow(member.id);
+                                  }}
+                                  className={`p-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 cursor-pointer ${
+                                    isFollowing
+                                      ? 'bg-[#1C2541] text-slate-300 hover:text-rose-300'
+                                      : 'bg-blue-600 text-white shadow-glow-sm hover:bg-blue-500'
+                                  }`}
+                                >
+                                  {isFollowing ? (
+                                    <UserCheck className="w-4 h-4" />
+                                  ) : (
+                                    <UserPlus className="w-4 h-4" />
+                                  )}
+                                </button>
                               )}
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
-              {/* Feed Filter Tabs (Trending, Latest, Top Voted) & Tag Clear */}
-              <div className="flex items-center justify-between gap-2 mb-4 bg-[#1C2541] border border-[#334155] p-1.5 rounded-2xl">
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setFeedFilter('latest')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                      feedFilter === 'latest'
-                        ? 'bg-blue-600 text-white shadow-glow-sm'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Latest</span>
-                  </button>
-
-                  <button
-                    onClick={() => setFeedFilter('trending')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                      feedFilter === 'trending'
-                        ? 'bg-blue-600 text-white shadow-glow-sm'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <Flame className="w-3.5 h-3.5" />
-                    <span>Trending</span>
-                  </button>
-
-                  <button
-                    onClick={() => setFeedFilter('top_voted')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                      feedFilter === 'top_voted'
-                        ? 'bg-blue-600 text-white shadow-glow-sm'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <Award className="w-3.5 h-3.5" />
-                    <span>Top Voted</span>
-                  </button>
-                </div>
-
-                {/* Active Tag Filter Pill */}
-                {selectedTagFilter && (
-                  <div className="flex items-center gap-1 bg-blue-950/60 border border-blue-500/40 px-2.5 py-1 rounded-xl text-xs text-blue-300 font-mono">
-                    <span>#{selectedTagFilter}</span>
-                    <button
-                      onClick={() => setSelectedTagFilter(null)}
-                      className="text-blue-400 hover:text-white cursor-pointer ml-1"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Posts Stream */}
-              <div className="space-y-4">
-                {displayedPosts.length === 0 ? (
-                  <div className="p-12 text-center bg-[#1C2541] border border-[#334155] rounded-3xl">
-                    <FileText className="w-10 h-10 text-slate-500 mx-auto mb-3" />
-                    <h3 className="text-sm font-bold text-white mb-1">
-                      No Posts in Stream
-                    </h3>
-                    <p className="text-xs text-slate-400 max-w-sm mx-auto mb-4">
-                      {searchQuery
-                        ? `No results matching "${searchQuery}". Try a different term or hashtag.`
-                        : activeView === 'following_feed'
-                        ? 'You are not following anyone with posts yet. Check the Home Feed or Leaderboard!'
-                        : 'Be the first creator to share a post or photo.'}
-                    </p>
-                    {activeView === 'following_feed' && (
+                  {/* Feed Filter Tabs (Trending, Latest, Top Voted) & Tag Clear */}
+                  <div className="flex items-center justify-between gap-2 mb-4 bg-[#1C2541] border border-[#334155] p-1.5 rounded-2xl">
+                    <div className="flex items-center gap-1">
                       <button
-                        onClick={() => setActiveView('feed')}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                        onClick={() => setFeedFilter('latest')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                          feedFilter === 'latest'
+                            ? 'bg-blue-600 text-white shadow-glow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
                       >
-                        Explore Home Feed
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>Latest</span>
                       </button>
+
+                      <button
+                        onClick={() => setFeedFilter('trending')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                          feedFilter === 'trending'
+                            ? 'bg-blue-600 text-white shadow-glow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <Flame className="w-3.5 h-3.5" />
+                        <span>Trending</span>
+                      </button>
+
+                      <button
+                        onClick={() => setFeedFilter('top_voted')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                          feedFilter === 'top_voted'
+                            ? 'bg-blue-600 text-white shadow-glow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <Award className="w-3.5 h-3.5" />
+                        <span>Top Voted</span>
+                      </button>
+                    </div>
+
+                    {/* Active Tag Filter Pill */}
+                    {selectedTagFilter && (
+                      <div className="flex items-center gap-1 bg-blue-950/60 border border-blue-500/40 px-2.5 py-1 rounded-xl text-xs text-blue-300 font-mono">
+                        <span>#{selectedTagFilter}</span>
+                        <button
+                          onClick={() => setSelectedTagFilter(null)}
+                          className="text-blue-400 hover:text-white cursor-pointer ml-1"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
                     )}
                   </div>
-                ) : (
-                  displayedPosts.map((post) => {
-                    const userVoteRecord = votes.find(
-                      v => v.post_id === post.id && v.user_id === currentUser.id
-                    );
-                    const userVote = userVoteRecord ? userVoteRecord.type : null;
 
-                    return (
-                      <PostCard
-                        key={post.id}
-                        post={post}
-                        currentUser={currentUser}
-                        allUsers={users}
-                        userVote={userVote}
-                        onVote={handleVote}
-                        onDelete={handleDeletePost}
-                        onEdit={(p: Post) => setEditingPost(p)}
-                        onViewDetails={(p: Post) => setDetailsPost(p)}
-                        onOpenLightbox={(url: string, title: string) => setLightboxData({ isOpen: true, url, title })}
-                        onOpenProfile={handleOpenProfile}
-                        onShare={(p: Post) => setShareModalPost(p)}
-                        onSelectTag={(tag: string) => setSelectedTagFilter(tag)}
-                      />
-                    );
-                  })
-                )}
-              </div>
+                  {/* Posts Stream */}
+                  <div className="space-y-4">
+                    {displayedPosts.length === 0 ? (
+                      <div className="p-12 text-center bg-[#1C2541] border border-[#334155] rounded-3xl">
+                        <FileText className="w-10 h-10 text-slate-500 mx-auto mb-3" />
+                        <h3 className="text-sm font-bold text-white mb-1">
+                          No Posts in Stream
+                        </h3>
+                        <p className="text-xs text-slate-400 max-w-sm mx-auto mb-4">
+                          {searchQuery
+                            ? `No results matching "${searchQuery}". Try a different term or hashtag.`
+                            : activeView === 'following_feed'
+                            ? 'You are not following anyone with posts yet. Check the Home Feed or Leaderboard!'
+                            : 'Be the first creator to share a post or photo.'}
+                        </p>
+                        {activeView === 'following_feed' && (
+                          <button
+                            onClick={() => setActiveView('feed')}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                          >
+                            Explore Home Feed
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      displayedPosts.map((post) => {
+                        const userVoteRecord = votes.find(
+                          v => v.post_id === post.id && v.user_id === currentUser.id
+                        );
+                        const userVote = userVoteRecord ? userVoteRecord.type : null;
 
-            </div>
-          )}
+                        return (
+                          <PostCard
+                            key={post.id}
+                            post={post}
+                            currentUser={currentUser}
+                            allUsers={users}
+                            userVote={userVote}
+                            onVote={handleVote}
+                            onDelete={handleDeletePost}
+                            onEdit={(p: Post) => setEditingPost(p)}
+                            onViewDetails={(p: Post) => setDetailsPost(p)}
+                            onOpenLightbox={(url: string, title: string) => setLightboxData({ isOpen: true, url, title })}
+                            onOpenProfile={handleOpenProfile}
+                            onShare={(p: Post) => setShareModalPost(p)}
+                            onSelectTag={(tag: string) => setSelectedTagFilter(tag)}
+                          />
+                        );
+                      })
+                    )}
+                  </div>
 
-          {/* VIEW 2: User Profile Page */}
-          {activeView === 'profile' && (
-            <div className="view-transition">
-              <UserProfileView
-                profile={(selectedProfile && selectedProfile.id === currentUser.id) ? currentUser : (selectedProfile || currentUser)}
-                currentUser={currentUser}
-                allUsers={users}
-                posts={posts}
-                votesList={votes}
-                onBack={() => setActiveView('feed')}
-                onToggleFollow={handleToggleFollow}
-                onVote={handleVote}
-                onDeletePost={handleDeletePost}
-                onEditPost={(p) => setEditingPost(p)}
-                onViewPostDetails={(p) => setDetailsPost(p)}
-                onOpenLightbox={(url, title) => setLightboxData({ isOpen: true, url, title })}
-                onOpenProfile={handleOpenProfile}
-                onShare={(p) => setShareModalPost(p)}
-                onOpenSettings={() => {
-                  setActiveView('settings');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                onSendMessage={(uid) => {
-                  setDmRecipientId(uid);
-                  setActiveView('dms');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-              />
-            </div>
-          )}
+                </div>
+              )}
 
-          {/* VIEW 3: Clean Real Leaderboard */}
-          {activeView === 'leaderboard' && (
-            <div className="view-transition">
-              <RealLeaderboardView
-                leaderboard={leaderboard}
-                currentUser={currentUser}
-                onSelectUser={handleOpenProfile}
-                onToggleFollow={handleToggleFollow}
-              />
-            </div>
-          )}
+              {/* VIEW 2: Member Profile View */}
+              {activeView === 'profile' && selectedProfile && (
+                <div className="view-transition">
+                  <UserProfileView
+                    profile={selectedProfile}
+                    currentUser={currentUser}
+                    allUsers={users}
+                    posts={posts.filter(p => p.user_id === selectedProfile.id)}
+                    votesList={votes}
+                    onBack={() => setActiveView('feed')}
+                    onToggleFollow={handleToggleFollow}
+                    onVote={handleVote}
+                    onDeletePost={handleDeletePost}
+                    onEditPost={(p) => setEditingPost(p)}
+                    onViewPostDetails={(p) => setDetailsPost(p)}
+                    onOpenLightbox={(url, title) => setLightboxData({ isOpen: true, url, title })}
+                    onOpenProfile={handleOpenProfile}
+                    onShare={(p) => setShareModalPost(p)}
+                    onOpenSettings={() => {
+                      setActiveView('settings');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    onSendMessage={(uid) => {
+                      setDmRecipientId(uid);
+                      setActiveView('dms');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                  />
+                </div>
+              )}
 
-          {/* VIEW 4: Aether Chat (Golden Verified & Admins Only) */}
-          {activeView === 'chat' && (currentUser.is_golden_verified || currentUser.is_admin) && (
-            <div className="view-transition">
-              <VipChatView
-                currentUser={currentUser}
-                allUsers={users}
-                addToast={addToast}
-                onOpenProfile={handleOpenProfile}
-              />
-            </div>
-          )}
+              {/* VIEW 3: Clean Real Leaderboard */}
+              {activeView === 'leaderboard' && (
+                <div className="view-transition">
+                  <RealLeaderboardView
+                    leaderboard={leaderboard}
+                    currentUser={currentUser}
+                    onSelectUser={handleOpenProfile}
+                    onToggleFollow={handleToggleFollow}
+                  />
+                </div>
+              )}
 
-          {/* VIEW 5: Direct Messages (1-on-1 Live DMs) */}
-          {activeView === 'dms' && (
-            <div className="view-transition">
-              <DirectMessagesView
-                currentUser={currentUser}
-                allUsers={users}
-                initialRecipientId={dmRecipientId}
-                addToast={addToast}
-                onOpenProfile={handleOpenProfile}
-              />
-            </div>
-          )}
+              {/* VIEW 4: Aether Chat (Golden Verified & Admins Only) */}
+              {activeView === 'chat' && (currentUser.is_golden_verified || currentUser.is_admin) && (
+                <div className="view-transition">
+                  <VipChatView
+                    currentUser={currentUser}
+                    allUsers={users}
+                    addToast={addToast}
+                    onOpenProfile={handleOpenProfile}
+                  />
+                </div>
+              )}
 
-          {/* VIEW 6: Settings Page (Left Sidebar & Accordion Rules) */}
-          {activeView === 'settings' && (
-            <div className="view-transition">
-              <SettingsView
-                currentUser={currentUser}
-                themeMode={themeMode}
-                onThemeChange={handleToggleTheme}
-                onUpdateProfile={handleUpdateProfile}
-                onSignOut={handleSignOut}
-                onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
-                onSwitchAccount={(uid) => {
-                  switchAccountSession(uid);
-                  syncStateFromStorage();
-                  addToast('Account Switched', 'Active profile updated.', 'success');
-                }}
-                onAddAccount={() => setIsAccountSwitcherOpen(true)}
-                addToast={addToast}
-              />
-            </div>
-          )}
+              {/* VIEW 5: Direct Messages (1-on-1 Live DMs) */}
+              {activeView === 'dms' && (
+                <div className="view-transition">
+                  <DirectMessagesView
+                    currentUser={currentUser}
+                    allUsers={users}
+                    initialRecipientId={dmRecipientId}
+                    addToast={addToast}
+                    onOpenProfile={handleOpenProfile}
+                  />
+                </div>
+              )}
 
-        </main>
+            </main>
 
-      </div>
+          </div>
+        </>
+      )}
 
       {/* Mobile Bottom Navigation Bar (Appears on Mobile & Tablet) */}
       <MobileBottomNav
