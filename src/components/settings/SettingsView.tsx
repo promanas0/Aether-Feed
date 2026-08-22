@@ -274,16 +274,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
   const handleDeleteAccount = async () => {
-    if (deleteConfirmText !== currentUser.username) {
+    if (deleteConfirmText.trim().toLowerCase() !== currentUser.username.toLowerCase()) {
       addToast('Confirmation Error', `Type "${currentUser.username}" exactly to confirm deletion.`, 'info');
       return;
     }
 
-    const success = await deleteUserAccount(currentUser.id);
-    if (success) {
-      addToast('Account Deleted', 'Your account has been deleted.', 'info');
-      onSignOut();
+    setIsDeletingAccount(true);
+    try {
+      const success = await deleteUserAccount(currentUser.id);
+      if (success) {
+        addToast('Account Deleted', 'Your account has been deleted permanently.', 'info');
+        onSignOut();
+        // Auto refresh instantly to wipe memory, clear sessions, and show Landing Page
+        setTimeout(() => {
+          window.location.reload();
+        }, 120);
+      }
+    } catch (err: any) {
+      addToast('Error', err?.message || 'Could not delete account.', 'info');
+      setIsDeletingAccount(false);
     }
   };
 
@@ -1089,10 +1101,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <button
                     type="button"
                     onClick={handleDeleteAccount}
-                    disabled={deleteConfirmText !== currentUser.username}
-                    className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-30 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    disabled={deleteConfirmText.trim().toLowerCase() !== currentUser.username.toLowerCase() || isDeletingAccount}
+                    className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-30 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 min-w-[120px]"
                   >
-                    Delete Forever
+                    {isDeletingAccount ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Deleting...</span>
+                      </>
+                    ) : (
+                      <span>Delete Forever</span>
+                    )}
                   </button>
                 </div>
               </div>

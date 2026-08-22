@@ -1310,31 +1310,61 @@ export const updateProfileData = async (userId: string, updates: Partial<Profile
 };
 
 export const deleteUserAccount = async (userId: string): Promise<boolean> => {
+  // 1. Remove from local registered users
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => u.id !== userId);
   setItem(STORAGE_KEYS.REAL_USERS, users);
 
+  // 2. Remove from multi-account switcher
   removeSavedAccount(userId);
 
+  // 3. Remove user posts
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []).filter(p => p.user_id !== userId);
   setItem(STORAGE_KEYS.POSTS, posts);
 
+  // 4. Remove user votes
   const votes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(v => v.user_id !== userId);
   setItem(STORAGE_KEYS.VOTES, votes);
 
+  // 5. Remove user comments
+  const comments = getItem<PostComment[]>(STORAGE_KEYS.POST_COMMENTS, []).filter(c => c.user_id !== userId);
+  setItem(STORAGE_KEYS.POST_COMMENTS, comments);
+
+  // 6. Remove user VIP chat messages
+  const vipChat = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []).filter(m => m.user_id !== userId);
+  setItem(STORAGE_KEYS.VIP_CHAT, vipChat);
+
+  // 7. Remove user direct messages
+  const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []).filter(
+    m => m.sender_id !== userId && m.receiver_id !== userId
+  );
+  setItem(STORAGE_KEYS.DIRECT_MESSAGES, dms);
+
+  // 8. Remove user notifications
   const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []).filter(
     n => n.user_id !== userId && n.actor_id !== userId
   );
   setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
 
-  setItem(STORAGE_KEYS.CURRENT_USER_ID, null);
+  // 9. Clear active session if it belongs to this user
+  const currentId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);
+  if (currentId === userId || !currentId) {
+    setItem(STORAGE_KEYS.CURRENT_USER_ID, null);
+  }
 
+  // 10. Purge from Supabase Cloud DB
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
-      await supabase.from('profiles').delete().eq('id', userId);
-      await supabase.from('posts').delete().eq('user_id', userId);
-      await supabase.from('votes').delete().eq('user_id', userId);
-      await supabase.from('notifications').delete().eq('user_id', userId);
+      await Promise.all([
+        supabase.from('profiles').delete().eq('id', userId),
+        supabase.from('posts').delete().eq('user_id', userId),
+        supabase.from('votes').delete().eq('user_id', userId),
+        supabase.from('comments').delete().eq('user_id', userId),
+        supabase.from('vip_messages').delete().eq('user_id', userId),
+        supabase.from('notifications').delete().eq('user_id', userId),
+        supabase.from('direct_messages').delete().eq('sender_id', userId),
+        supabase.from('direct_messages').delete().eq('receiver_id', userId),
+      ]);
     } catch (err) {
       console.warn('[Aether Supabase] Delete user error:', err);
     }
@@ -1342,6 +1372,7 @@ export const deleteUserAccount = async (userId: string): Promise<boolean> => {
 
   await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
   return true;
 };
 

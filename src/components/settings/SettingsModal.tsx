@@ -149,9 +149,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       addToast('Account Deleted', 'Your profile and data have been permanently removed.', 'info');
       onClose();
       onSignOut();
+      setTimeout(() => {
+        window.location.reload();
+      }, 120);
     } catch (e) {
       addToast('Delete Failed', 'Could not delete account. Please try again.', 'info');
-    } finally {
       setIsDeletingAccount(false);
     }
   };
