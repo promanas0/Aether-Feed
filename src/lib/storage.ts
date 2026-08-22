@@ -160,26 +160,22 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
   if (!supabase) return false;
 
   try {
-    // Attempt 1: Direct Update on existing row
-    const { error: updateErr } = await supabase
+    // Attempt 1: Full profile upsert (Inserts row if missing, Updates row if existing)
+    const { data: upData, error: upsertErr } = await supabase
       .from('profiles')
-      .update(cleanData)
-      .eq('id', profile.id);
+      .upsert(cleanData, { onConflict: 'id' })
+      .select();
 
-    if (!updateErr) return true;
+    if (!upsertErr && upData && upData.length > 0) {
+      console.log('[Aether Supabase] Profile updated/inserted in Cloud DB for user:', profile.username);
+      return true;
+    }
 
-    console.warn('[Aether Supabase] Profile update notice, trying upsert:', updateErr.message);
+    if (upsertErr) {
+      console.warn('[Aether Supabase] Full profile upsert error:', upsertErr.message);
+    }
 
-    // Attempt 2: Upsert by Primary Key ID
-    const { error: upsertErr } = await supabase
-      .from('profiles')
-      .upsert(cleanData, { onConflict: 'id' });
-
-    if (!upsertErr) return true;
-
-    console.warn('[Aether Supabase] Profile upsert notice, trying essential columns:', upsertErr.message);
-
-    // Attempt 3: Core essential columns only (safest against schema mismatches)
+    // Attempt 2: Core essential columns only (safest against schema column mismatches)
     const essentialData = {
       id: profile.id,
       email: profile.email,
@@ -198,18 +194,20 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
       created_at: profile.created_at,
     };
 
-    const { error: essErr } = await supabase
+    const { data: essData, error: essErr } = await supabase
       .from('profiles')
-      .upsert(essentialData, { onConflict: 'id' });
+      .upsert(essentialData, { onConflict: 'id' })
+      .select();
 
     if (essErr) {
       console.error('[Aether Supabase] Essential profile upsert error:', essErr.message);
       return false;
     }
 
+    console.log('[Aether Supabase] Essential profile saved to Cloud DB:', profile.username);
     return true;
   } catch (err) {
-    console.error('[Aether Supabase] Critical saveProfileToCloud error:', err);
+    console.error('[Aether Supabase] Critical saveProfileToCloud exception:', err);
     return false;
   }
 };
