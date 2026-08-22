@@ -230,7 +230,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-[#070D1F]/90 backdrop-blur-md animate-in fade-in duration-200">
+    <div 
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-[#070D1F]/90 backdrop-blur-md animate-in fade-in duration-200"
+    >
       <div className="relative w-full max-w-5xl bg-[#0F172A] border-2 border-rose-500/40 rounded-3xl shadow-[0_0_50px_rgba(244,63,94,0.15)] overflow-hidden flex flex-col max-h-[92vh]">
         
         {/* Top Header with Cyber Admin Badge */}

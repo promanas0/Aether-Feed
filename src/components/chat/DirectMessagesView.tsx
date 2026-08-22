@@ -364,10 +364,18 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
                           {/* Options Menu */}
                           {activeMenuMsgId === msg.id && (
-                            <div 
-                              className={`absolute ${isMe ? 'right-0' : 'left-0'} mt-1 w-44 bg-[#0F172A] border border-[#334155] rounded-xl shadow-2xl py-1 z-30 flex flex-col text-xs`}
-                              onClick={(e) => e.stopPropagation()}
-                            >
+                            <>
+                              <div 
+                                className="fixed inset-0 z-20" 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveMenuMsgId(null);
+                                }} 
+                              />
+                              <div 
+                                className={`absolute ${isMe ? 'right-0' : 'left-0'} mt-1 w-44 bg-[#0F172A] border border-[#334155] rounded-xl shadow-2xl py-1 z-30 flex flex-col text-xs`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
                               {canDeleteEveryone && (
                                 <button
                                   onClick={() => handleDeleteForEveryone(msg.id)}
@@ -385,6 +393,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                                 <span>Delete for Me</span>
                               </button>
                             </div>
+                          </>
                           )}
                         </div>
                       </div>

@@ -1774,6 +1774,71 @@ export const getRealLeaderboard = (): Array<Profile & { rank: number; posts_coun
    NOTIFICATIONS ENGINE
    ========================================================================== */
 
+/* ==========================================================================
+   WEB & MOBILE PUSH NOTIFICATIONS ENGINE
+   ========================================================================== */
+
+export const getPushNotificationPermissionStatus = (): 'granted' | 'denied' | 'default' | 'unsupported' => {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return 'unsupported';
+  }
+  return Notification.permission;
+};
+
+export const requestPushNotificationPermission = async (): Promise<boolean> => {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return false;
+  }
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      sendNativePushNotification(
+        'Aether Notifications Active',
+        'You will now receive direct real-time alerts on your device for posts, replies, upvotes, and messages.',
+        '/logo.jpg'
+      );
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('[Push Notification Permission Error]', err);
+    return false;
+  }
+};
+
+export const sendNativePushNotification = (
+  title: string,
+  body: string,
+  icon: string = '/logo.jpg',
+  tag?: string
+): void => {
+  if (typeof window === 'undefined' || !('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+
+  try {
+    const options: NotificationOptions = {
+      body,
+      icon,
+      badge: '/logo.jpg',
+      tag: tag || `aether-${Date.now()}`,
+      silent: false,
+    };
+
+    if ('vibrate' in navigator) {
+      // @ts-ignore
+      options.vibrate = [200, 100, 200];
+    }
+
+    const n = new Notification(title, options);
+    n.onclick = () => {
+      window.focus();
+      n.close();
+    };
+  } catch (err) {
+    console.warn('[Native Push Notification Error]', err);
+  }
+};
+
 export const addNotification = (item: {
   user_id: string;
   actor_id: string;
@@ -1793,6 +1858,36 @@ export const addNotification = (item: {
 
   list.unshift(newNotif);
   setItem(STORAGE_KEYS.NOTIFICATIONS, list);
+
+  // Send native mobile / browser push notification if recipient is active or logged in
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const actor = users.find(u => u.id === item.actor_id);
+  const currentUser = getCurrentUser();
+
+  if (currentUser && currentUser.id === item.user_id && item.actor_id !== currentUser.id) {
+    const actorName = actor?.display_name || 'Someone';
+    let notifTitle = 'Aether Feed';
+    let notifBody = 'You have a new update';
+
+    if (item.type === 'vote_up') {
+      notifTitle = 'New Upvote! ▲';
+      notifBody = `${actorName} upvoted your artwork.`;
+    } else if (item.type === 'vote_down') {
+      notifTitle = 'Vote Update ▼';
+      notifBody = `${actorName} voted on your artwork.`;
+    } else if (item.type === 'comment') {
+      notifTitle = 'New Comment / Reply 💬';
+      notifBody = `${actorName} commented on your post.`;
+    } else if (item.type === 'follow') {
+      notifTitle = 'New Follower 🌟';
+      notifBody = `${actorName} started following your profile.`;
+    } else if (item.type === 'new_post') {
+      notifTitle = 'New Artwork Broadcast 🎨';
+      notifBody = `${actorName} shared a new post.`;
+    }
+
+    sendNativePushNotification(notifTitle, notifBody, actor?.avatar_url || '/logo.jpg');
+  }
 
   // Send to Supabase Cloud
   const supabase = getSupabaseClient();
@@ -1832,6 +1927,23 @@ export const markAllNotificationsRead = (userId: string): void => {
   });
   setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
   syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+};
+
+export const clearReadNotifications = (userId: string): void => {
+  const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  const remaining = notifs.filter(n => !(n.user_id === userId && n.is_read));
+  setItem(STORAGE_KEYS.NOTIFICATIONS, remaining);
+  syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+};
+
+export const deleteNotification = (notifId: string): void => {
+  const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  const remaining = notifs.filter(n => n.id !== notifId);
+  setItem(STORAGE_KEYS.NOTIFICATIONS, remaining);
+  syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
 };
 
 /* ==========================================================================
@@ -2298,6 +2410,7 @@ export const getPostComments = (postId: string): PostComment[] => {
     .map(c => ({
       ...c,
       user: userMap.get(c.user_id) || c.user,
+      reply_to_user: c.reply_to_user_id ? userMap.get(c.reply_to_user_id) : undefined,
     }))
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 };
@@ -2305,7 +2418,10 @@ export const getPostComments = (postId: string): PostComment[] => {
 export const addPostComment = async (
   postId: string,
   userId: string,
-  text: string
+  text: string,
+  parentCommentId?: string | null,
+  replyToUserId?: string | null,
+  replyToUsername?: string
 ): Promise<PostComment | null> => {
   const cleanText = text.trim();
   if (!cleanText) return null;
@@ -2317,6 +2433,8 @@ export const addPostComment = async (
   const comments = getItem<PostComment[]>(STORAGE_KEYS.POST_COMMENTS, []);
   const commentId = `comment_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
+  const replyUser = replyToUserId ? users.find(u => u.id === replyToUserId) : undefined;
+
   const newComment: PostComment = {
     id: commentId,
     post_id: postId,
@@ -2324,6 +2442,10 @@ export const addPostComment = async (
     text: cleanText,
     created_at: new Date().toISOString(),
     user: author,
+    parent_comment_id: parentCommentId || null,
+    reply_to_user_id: replyToUserId || null,
+    reply_to_username: replyToUsername || (replyUser ? replyUser.username : undefined),
+    reply_to_user: replyUser,
   };
 
   comments.push(newComment);
@@ -2345,6 +2467,16 @@ export const addPostComment = async (
         type: 'comment',
       });
     }
+
+    // If this is a reply to another comment author and they are different from post author and current user, notify them too!
+    if (replyToUserId && replyToUserId !== userId && replyToUserId !== posts[pIdx].user_id) {
+      addNotification({
+        user_id: replyToUserId,
+        actor_id: userId,
+        post_id: postId,
+        type: 'comment',
+      });
+    }
   }
 
   // Sync to Supabase Cloud DB
@@ -2356,6 +2488,7 @@ export const addPostComment = async (
         post_id: newComment.post_id,
         user_id: newComment.user_id,
         text: newComment.text,
+        parent_comment_id: newComment.parent_comment_id || null,
         created_at: newComment.created_at,
       }, { onConflict: 'id' });
     } catch (err) {

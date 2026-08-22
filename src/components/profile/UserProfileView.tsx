@@ -12,9 +12,10 @@ import {
   Users,
   MessageSquare
 } from 'lucide-react';
-import type { Profile, Post } from '../../types';
+import type { Profile, Post, ToastMessage } from '../../types';
 import { PostCard } from '../feed/PostCard';
 import { FollowersListModal } from './FollowersListModal';
+import { EditProfileModal } from './EditProfileModal';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
 
 interface UserProfileViewProps {
@@ -33,7 +34,9 @@ interface UserProfileViewProps {
   onOpenProfile: (profile: Profile) => void;
   onShare: (post: Post) => void;
   onOpenSettings: () => void;
+  onUpdateProfile?: (updates: Partial<Profile>) => Promise<void> | void;
   onSendMessage?: (userId: string) => void;
+  addToast?: (title: string, desc?: string, type?: ToastMessage['type']) => void;
 }
 
 export const UserProfileView: React.FC<UserProfileViewProps> = ({
@@ -52,9 +55,12 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onOpenProfile,
   onShare,
   onOpenSettings,
+  onUpdateProfile,
   onSendMessage,
+  addToast,
 }) => {
   const [activeTab, setActiveTab] = useState<'posts' | 'upvoted' | 'about'>('posts');
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [followersModal, setFollowersModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -139,10 +145,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             <div className="flex items-center gap-2">
               {isCurrentUser ? (
                 <button
-                  onClick={onOpenSettings}
-                  className="px-4 py-2 bg-[#1C2541] hover:bg-[#2A3756] border border-[#334155] rounded-xl text-xs font-semibold text-white transition-colors cursor-pointer"
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white shadow-glow-sm rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
                 >
-                  Edit Profile
+                  <span>Edit Profile</span>
                 </button>
               ) : (
                 <>
@@ -401,6 +407,21 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         onSelectUser={onOpenProfile}
         onToggleFollow={onToggleFollow}
       />
+
+      {/* Mobile-Friendly Dedicated Edit Profile Modal */}
+      {isCurrentUser && (
+        <EditProfileModal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          currentUser={currentUser}
+          onUpdateProfile={async (updates) => {
+            if (onUpdateProfile) {
+              await onUpdateProfile(updates);
+            }
+          }}
+          addToast={addToast || (() => {})}
+        />
+      )}
 
     </div>
   );

@@ -15,6 +15,7 @@ import {
   getRealLeaderboard, 
   getNotificationsForRealUser, 
   markAllNotificationsRead, 
+  clearReadNotifications,
   getThemeMode, 
   setThemeMode,
   syncWithServer,
@@ -471,6 +472,11 @@ export function App() {
               syncStateFromStorage();
               addToast('Notifications Cleared', 'Marked all as read.', 'success');
             }}
+            onClearReadNotifications={() => {
+              clearReadNotifications(currentUser.id);
+              syncStateFromStorage();
+              addToast('Notifications Cleared', 'Checked notifications removed.', 'info');
+            }}
             onSelectPostFromNotif={(postId) => {
               const target = posts.find(p => p.id === postId);
               if (target) {
@@ -484,8 +490,8 @@ export function App() {
             }}
           />
 
-          {/* Main Content Layout: Clean 2-Column Desktop Layout (Left Nav + Focused Main Stream) */}
-          <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6 pb-24 lg:pb-8 flex justify-between gap-8 flex-1">
+          {/* Main Content Layout: Modern Edge-to-Edge Desktop Layout (Left Nav on side + Expansive Focused Stream) */}
+          <div className="w-full max-w-[1720px] mx-auto px-3 sm:px-6 lg:px-8 xl:px-10 py-5 pb-24 lg:pb-8 flex gap-6 lg:gap-8 flex-1">
             
             {/* Left Column: Navigation Menu (Desktop) */}
             <LeftSidebar
@@ -511,7 +517,7 @@ export function App() {
             />
 
             {/* Center Main Column: Pure Focused Stream */}
-            <main className="flex-1 min-w-0 max-w-4xl w-full">
+            <main className="flex-1 min-w-0 max-w-5xl w-full">
               
               {/* VIEW 1: Feed (Home or Following) */}
               {(activeView === 'feed' || activeView === 'following_feed') && (
@@ -724,6 +730,8 @@ export function App() {
                       setActiveView('settings');
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
+                    onUpdateProfile={handleUpdateProfile}
+                    addToast={addToast}
                     onSendMessage={(uid) => {
                       setDmRecipientId(uid);
                       setActiveView('dms');

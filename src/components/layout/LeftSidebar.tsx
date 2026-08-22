@@ -53,7 +53,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   }
 
   return (
-    <aside className="w-64 shrink-0 hidden lg:block sticky top-20 h-[calc(100vh-6rem)] space-y-3 select-none">
+    <aside className="w-64 xl:w-72 shrink-0 hidden lg:block sticky top-20 h-[calc(100vh-6rem)] space-y-3 select-none">
       
       {/* Current User Card */}
       <div className="p-3 bg-[#1C2541] border border-[#334155] rounded-2xl space-y-2.5">

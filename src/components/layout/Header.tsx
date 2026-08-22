@@ -39,6 +39,7 @@ interface HeaderProps {
   onOpenAccountSwitcher?: () => void;
   onOpenAdminPanel?: () => void;
   onMarkAllNotificationsRead: () => void;
+  onClearReadNotifications?: () => void;
   onSelectPostFromNotif: (postId: string) => void;
   onSelectPostFromSearch?: (post: Post) => void;
 }
@@ -60,6 +61,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAccountSwitcher,
   onOpenAdminPanel,
   onMarkAllNotificationsRead,
+  onClearReadNotifications,
   onSelectPostFromNotif,
   onSelectPostFromSearch,
 }) => {
@@ -110,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="sticky top-0 z-30 w-full glass-header-dark border-b border-[#334155]/80 bg-[#0B132B]/95 backdrop-blur-md">
-      <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 h-16 flex items-center justify-between gap-4">
+      <div className="w-full max-w-[1720px] mx-auto px-3 sm:px-6 lg:px-8 xl:px-10 h-16 flex items-center justify-between gap-4">
         
         {/* Left: Brand Logo & Home Button */}
         <div className="flex items-center gap-3 shrink-0">
@@ -305,6 +307,7 @@ export const Header: React.FC<HeaderProps> = ({
               isOpen={isNotifOpen}
               onClose={() => setIsNotifOpen(false)}
               onMarkAllRead={onMarkAllNotificationsRead}
+              onClearRead={onClearReadNotifications}
               onSelectPost={onSelectPostFromNotif}
             />
           </div>
