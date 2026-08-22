@@ -62,7 +62,11 @@ export const sendRealVerificationEmail = async (params: {
         to_name: toName,
         to_email: toEmail,
         otp_code: otpCode,
-        app_name: 'Aether Feed (by Dlicom)',
+        from_name: 'Aether Feed',
+        app_name: 'Aether Feed',
+        logo_url: 'https://raw.githubusercontent.com/promanas0/Aether-Feed/main/public/logo.jpg',
+        company_name: 'Dlicom',
+        support_email: 'support@dlicom.com',
         message: `Your 6-digit Aether Feed verification code is: ${otpCode}. Valid for 10 minutes.`,
       };
 
