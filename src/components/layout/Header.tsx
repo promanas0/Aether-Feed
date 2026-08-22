@@ -110,7 +110,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="sticky top-0 z-30 w-full glass-header-dark border-b border-[#334155]/80 bg-[#0B132B]/95 backdrop-blur-md">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+      <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 h-16 flex items-center justify-between gap-4">
         
         {/* Left: Brand Logo & Home Button */}
         <div className="flex items-center gap-3 shrink-0">

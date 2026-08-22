@@ -460,7 +460,7 @@ export function App() {
       />
 
       {/* Main Content Layout: Clean 2-Column Desktop Layout (Left Nav + Focused Main Stream) */}
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-8 flex justify-center gap-6 flex-1">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6 pb-24 lg:pb-8 flex justify-between gap-8 flex-1">
         
         {/* Left Column: Navigation Menu (Desktop) */}
         <LeftSidebar
@@ -483,7 +483,7 @@ export function App() {
         />
 
         {/* Center Main Column: Pure Focused Stream */}
-        <main className="flex-1 min-w-0 max-w-3xl w-full">
+        <main className="flex-1 min-w-0 max-w-4xl w-full">
           
           {/* VIEW 1: Feed (Home or Following) */}
           {(activeView === 'feed' || activeView === 'following_feed') && (
