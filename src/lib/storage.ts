@@ -18,6 +18,7 @@ const STORAGE_KEYS = {
   DIRECT_MESSAGES: 'aether_direct_messages_v4',
   PINNED_VIP_CHAT_MSG_ID: 'aether_pinned_vip_chat_msg_id_v4',
   PINNED_DM_MSG_IDS: 'aether_pinned_dm_msg_ids_v4',
+  USER_PRESENCE: 'aether_user_presence_v4',
   DELETED_CHAT_MSG_IDS: 'aether_deleted_chat_msg_ids_v4',
   DELETED_DM_MSG_IDS: 'aether_deleted_dm_msg_ids_v4',
   BANNED_USER_IDS: 'aether_banned_user_ids_v4',
@@ -2618,6 +2619,32 @@ export const togglePinDirectMessage = (messageId: string, userA: string, userB: 
   window.dispatchEvent(new Event('aether_storage_sync'));
   if (syncChannel) syncChannel.postMessage('sync');
   return isNowPinned;
+};
+
+/**
+ * Update active presence heartbeat for a user
+ */
+export const updateUserPresence = (userId: string): void => {
+  if (!userId) return;
+  const presenceMap = getItem<Record<string, number>>(STORAGE_KEYS.USER_PRESENCE, {});
+  presenceMap[userId] = Date.now();
+  setItem(STORAGE_KEYS.USER_PRESENCE, presenceMap);
+  broadcastRealtimeEvent('presence_heartbeat', { user_id: userId, timestamp: Date.now() });
+};
+
+/**
+ * Check whether a user is online (active within last 3 minutes or current session user)
+ */
+export const isUserOnline = (userId: string, currentUserId?: string): boolean => {
+  if (!userId) return false;
+  if (currentUserId && userId === currentUserId) return true;
+  const presenceMap = getItem<Record<string, number>>(STORAGE_KEYS.USER_PRESENCE, {});
+  const lastActive = presenceMap[userId];
+  if (!lastActive) {
+    return false;
+  }
+  // Online threshold: 3 minutes (180,000 ms)
+  return Date.now() - lastActive < 180000;
 };
 
 export const getDmConversations = (currentUserId: string): Array<{

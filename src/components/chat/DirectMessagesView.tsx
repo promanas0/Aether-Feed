@@ -25,7 +25,9 @@ import {
   deleteDirectMessage,
   markDirectMessagesAsRead,
   syncWithServer,
-  isUserAdmin 
+  isUserAdmin,
+  isUserOnline,
+  updateUserPresence
 } from '../../lib/storage';
 
 interface DirectMessagesViewProps {
@@ -119,6 +121,15 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     };
   }, [currentUser.id, selectedUser]);
 
+  // Online presence heartbeat updater
+  useEffect(() => {
+    updateUserPresence(currentUser.id);
+    const heartbeatTimer = setInterval(() => {
+      updateUserPresence(currentUser.id);
+    }, 25000);
+    return () => clearInterval(heartbeatTimer);
+  }, [currentUser.id]);
+
   useEffect(() => {
     scrollToBottom('smooth');
   }, [messages.length]);
@@ -207,31 +218,48 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
               {filteredUsers.length === 0 ? (
                 <p className="text-xs text-slate-500 p-4 text-center">No members found.</p>
               ) : (
-                filteredUsers.map((user) => (
-                  <button
-                    key={user.id}
-                    onClick={() => {
-                      setSelectedUser(user);
-                      setSearchQuery('');
-                    }}
-                    className={`w-full p-2.5 rounded-2xl flex items-center gap-3 text-left transition-colors cursor-pointer ${
-                      selectedUser?.id === user.id ? 'bg-blue-600/20 text-white' : 'hover:bg-[#1E293B] text-slate-300'
-                    }`}
-                  >
-                    <img
-                      src={user.avatar_url || DEFAULT_DLICOM_AVATAR}
-                      alt={user.display_name}
-                      className="w-9 h-9 rounded-full object-cover border border-slate-700"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-semibold text-xs text-white truncate">{user.display_name}</span>
-                        <VerifiedBadge isVerified={user.is_verified} isGoldenVerified={user.is_golden_verified} size="xs" />
+                filteredUsers.map((user) => {
+                  const online = isUserOnline(user.id, currentUser.id);
+                  return (
+                    <button
+                      key={user.id}
+                      onClick={() => {
+                        setSelectedUser(user);
+                        setSearchQuery('');
+                      }}
+                      className={`w-full p-2.5 rounded-2xl flex items-center gap-3 text-left transition-colors cursor-pointer ${
+                        selectedUser?.id === user.id ? 'bg-blue-600/20 text-white' : 'hover:bg-[#1E293B] text-slate-300'
+                      }`}
+                    >
+                      <div className="relative shrink-0">
+                        <img
+                          src={user.avatar_url || DEFAULT_DLICOM_AVATAR}
+                          alt={user.display_name}
+                          className="w-9 h-9 rounded-full object-cover border border-slate-700"
+                        />
+                        <span 
+                          className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[#0B132B] ${
+                            online ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-white shadow-[0_0_4px_rgba(255,255,255,0.4)]'
+                          }`}
+                          title={online ? 'Online' : 'Offline'}
+                        />
                       </div>
-                      <p className="text-[11px] text-slate-400 truncate">@{user.username}</p>
-                    </div>
-                  </button>
-                ))
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-xs text-white truncate">{user.display_name}</span>
+                          <VerifiedBadge isVerified={user.is_verified} isGoldenVerified={user.is_golden_verified} size="xs" />
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400 truncate">
+                          <span>@{user.username}</span>
+                          <span className="text-slate-600">•</span>
+                          <span className={online ? 'text-emerald-400 font-mono text-[10px]' : 'text-slate-300 font-mono text-[10px]'}>
+                            {online ? 'Online' : 'Offline'}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
               )}
             </div>
           ) : (
@@ -242,40 +270,51 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                   <p className="text-xs">No conversations yet. Use the search bar above to start a message.</p>
                 </div>
               ) : (
-                conversations.map(({ contact, lastMessage, unreadCount }) => (
-                  <button
-                    key={contact.id}
-                    onClick={() => setSelectedUser(contact)}
-                    className={`w-full p-3 rounded-2xl flex items-center gap-3 text-left transition-colors cursor-pointer ${
-                      selectedUser?.id === contact.id ? 'bg-blue-600/20 text-white border border-blue-500/30' : 'hover:bg-[#1E293B] text-slate-300'
-                    }`}
-                  >
-                    <img
-                      src={contact.avatar_url || DEFAULT_DLICOM_AVATAR}
-                      alt={contact.display_name}
-                      className="w-10 h-10 rounded-full object-cover border border-slate-700 flex-shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1">
-                        <div className="flex items-center gap-1 min-w-0">
-                          <span className="font-bold text-xs text-white truncate">{contact.display_name}</span>
-                          <VerifiedBadge isVerified={contact.is_verified} isGoldenVerified={contact.is_golden_verified} size="xs" />
-                        </div>
-                        <span className="text-[10px] text-slate-500 font-mono shrink-0">
-                          {new Date(lastMessage.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
+                conversations.map(({ contact, lastMessage, unreadCount }) => {
+                  const online = isUserOnline(contact.id, currentUser.id);
+                  return (
+                    <button
+                      key={contact.id}
+                      onClick={() => setSelectedUser(contact)}
+                      className={`w-full p-3 rounded-2xl flex items-center gap-3 text-left transition-colors cursor-pointer ${
+                        selectedUser?.id === contact.id ? 'bg-blue-600/20 text-white border border-blue-500/30' : 'hover:bg-[#1E293B] text-slate-300'
+                      }`}
+                    >
+                      <div className="relative shrink-0">
+                        <img
+                          src={contact.avatar_url || DEFAULT_DLICOM_AVATAR}
+                          alt={contact.display_name}
+                          className="w-10 h-10 rounded-full object-cover border border-slate-700 flex-shrink-0"
+                        />
+                        <span 
+                          className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#0B132B] ${
+                            online ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-white shadow-[0_0_4px_rgba(255,255,255,0.4)]'
+                          }`}
+                          title={online ? 'Online' : 'Offline'}
+                        />
                       </div>
-                      <div className="flex items-center justify-between gap-2 mt-0.5">
-                        <p className="text-xs text-slate-400 truncate">{lastMessage.text}</p>
-                        {unreadCount > 0 && (
-                          <span className="px-1.5 py-0.2 bg-blue-600 text-white text-[10px] font-bold rounded-full">
-                            {unreadCount}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="flex items-center gap-1 min-w-0">
+                            <span className="font-bold text-xs text-white truncate">{contact.display_name}</span>
+                            <VerifiedBadge isVerified={contact.is_verified} isGoldenVerified={contact.is_golden_verified} size="xs" />
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                            {new Date(lastMessage.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
-                        )}
+                        </div>
+                        <div className="flex items-center justify-between gap-2 mt-0.5">
+                          <p className="text-xs text-slate-400 truncate">{lastMessage.text}</p>
+                          {unreadCount > 0 && (
+                            <span className="px-1.5 py-0.2 bg-blue-600 text-white text-[10px] font-bold rounded-full">
+                              {unreadCount}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                ))
+                    </button>
+                  );
+                })
               )}
             </div>
           )}
@@ -296,12 +335,22 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                 >
                   <ChevronLeft className="w-5 h-5" />
                 </button>
-                <img
-                  src={selectedUser.avatar_url || DEFAULT_DLICOM_AVATAR}
-                  alt={selectedUser.display_name}
-                  onClick={() => onOpenProfile(selectedUser)}
-                  className="w-9 h-9 rounded-full object-cover border border-slate-700 cursor-pointer"
-                />
+                <div className="relative shrink-0">
+                  <img
+                    src={selectedUser.avatar_url || DEFAULT_DLICOM_AVATAR}
+                    alt={selectedUser.display_name}
+                    onClick={() => onOpenProfile(selectedUser)}
+                    className="w-9 h-9 rounded-full object-cover border border-slate-700 cursor-pointer"
+                  />
+                  <span 
+                    className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[#0B132B] ${
+                      isUserOnline(selectedUser.id, currentUser.id)
+                        ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]'
+                        : 'bg-white shadow-[0_0_4px_rgba(255,255,255,0.4)]'
+                    }`}
+                    title={isUserOnline(selectedUser.id, currentUser.id) ? 'Online' : 'Offline'}
+                  />
+                </div>
                 <div>
                   <div className="flex items-center gap-1.5">
                     <span 
@@ -312,7 +361,21 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                     </span>
                     <VerifiedBadge isVerified={selectedUser.is_verified} isGoldenVerified={selectedUser.is_golden_verified} size="xs" />
                   </div>
-                  <p className="text-[11px] text-slate-400">@{selectedUser.username}</p>
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className="text-slate-400">@{selectedUser.username}</span>
+                    <span className="text-slate-600">•</span>
+                    {isUserOnline(selectedUser.id, currentUser.id) ? (
+                      <span className="flex items-center gap-1 text-emerald-400 font-medium font-mono text-[10px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        Online
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-slate-300 font-medium font-mono text-[10px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                        Offline
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
