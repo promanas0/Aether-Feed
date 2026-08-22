@@ -218,9 +218,9 @@ export function App() {
   };
 
   // Handle Dual Upvote / Downvote Action
-  const handleVote = (postId: string, type: 'up' | 'down') => {
+  const handleVote = async (postId: string, type: 'up' | 'down') => {
     if (!currentUser) return;
-    const res = votePostAction(postId, currentUser.id, type);
+    const res = await votePostAction(postId, currentUser.id, type);
     syncStateFromStorage();
 
     if (res.userVote === 'up') {
@@ -233,7 +233,7 @@ export function App() {
   };
 
   // Handle Create Post / Status
-  const handleCreatePost = (data: {
+  const handleCreatePost = async (data: {
     title: string;
     description: string;
     image_data: string;
@@ -243,7 +243,7 @@ export function App() {
     tags: string[];
   }) => {
     if (!currentUser) return;
-    createRealPost({
+    await createRealPost({
       ...data,
       authorId: currentUser.id,
     });
@@ -252,9 +252,9 @@ export function App() {
   };
 
   // Handle Delete Post Action
-  const handleDeletePost = (postId: string) => {
+  const handleDeletePost = async (postId: string) => {
     if (!currentUser) return;
-    const ok = deleteRealPost(postId, currentUser.id);
+    const ok = await deleteRealPost(postId, currentUser.id);
     if (ok) {
       syncStateFromStorage();
       addToast('Post Deleted', 'Your post has been permanently removed.', 'info');
@@ -262,9 +262,9 @@ export function App() {
   };
 
   // Handle Save Edited Post (Text Only)
-  const handleSaveEditedPost = (postId: string, description: string, title?: string) => {
+  const handleSaveEditedPost = async (postId: string, description: string, title?: string) => {
     if (!currentUser) return;
-    const updated = updateRealPostText(postId, currentUser.id, description, title);
+    const updated = await updateRealPostText(postId, currentUser.id, description, title);
     if (updated) {
       syncStateFromStorage();
       addToast('Post Updated', 'Post text has been saved successfully.', 'success');
@@ -272,9 +272,9 @@ export function App() {
   };
 
   // Handle Follow / Unfollow
-  const handleToggleFollow = (targetUserId: string) => {
+  const handleToggleFollow = async (targetUserId: string) => {
     if (!currentUser) return;
-    const res = toggleFollowUser(targetUserId, currentUser.id);
+    const res = await toggleFollowUser(targetUserId, currentUser.id);
     syncStateFromStorage();
 
     if (selectedProfile && selectedProfile.id === targetUserId) {

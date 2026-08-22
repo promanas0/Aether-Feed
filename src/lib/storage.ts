@@ -1143,7 +1143,7 @@ export const deleteUserAccount = async (userId: string): Promise<boolean> => {
    FOLLOW / UNFOLLOW ENGINE
    ========================================================================== */
 
-export const toggleFollowUser = (targetUserId: string, currentUserId: string): { isFollowing: boolean; targetUser: Profile } => {
+export const toggleFollowUser = async (targetUserId: string, currentUserId: string): Promise<{ isFollowing: boolean; targetUser: Profile }> => {
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const currentIdx = users.findIndex(u => u.id === currentUserId);
   const targetIdx = users.findIndex(u => u.id === targetUserId);
@@ -1179,17 +1179,11 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
 
   addOrUpdateSavedAccount(updatedCurrent);
 
-  // Update Supabase Cloud DB
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    supabase
-      .from('profiles')
-      .upsert([
-        sanitizeProfileForSupabase(updatedCurrent),
-        sanitizeProfileForSupabase(updatedTarget),
-      ])
-      .then(() => {}, (err) => console.warn('[Supabase Follow Upsert Error]', err));
-  }
+  // Update Supabase Cloud DB with schema fallback
+  await Promise.all([
+    saveProfileToCloud(updatedCurrent),
+    saveProfileToCloud(updatedTarget),
+  ]);
 
   // Update Local Server API
   try {
@@ -1205,7 +1199,9 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
     }).catch(() => {});
   } catch {}
 
+  await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
   return { isFollowing: !isCurrentlyFollowing, targetUser: updatedTarget };
 };
 
@@ -1244,38 +1240,35 @@ export const getRealPosts = (): Post[] => {
       votes_up: vCounts.up,
       votes_down: vCounts.down,
       net_votes,
-      user: author || p.user,
+    user: author || p.user,
     };
   });
 };
 
-export const createRealPost = (data: {
-  title?: string;
+export const createRealPost = async (data: {
+  title: string;
   description: string;
-  image_data?: string;
+  image_data: string;
   video_data?: string;
   media_type?: 'image' | 'video' | 'text';
+  authorId: string;
   tagged_users?: string[];
   tags?: string[];
-  authorId: string;
-}): Post => {
+}): Promise<Post> => {
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
-  const postId = `post_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const author = getRealUsers().find(u => u.id === data.authorId);
 
-  const determinedType: 'image' | 'video' | 'text' = data.video_data 
-    ? 'video' 
-    : data.image_data 
-    ? 'image' 
-    : 'text';
+  const postId = `post_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   const newPost: Post = {
     id: postId,
     user_id: data.authorId,
-    title: data.title || '',
-    description: data.description,
-    image_data: data.image_data || '',
-    video_data: data.video_data || '',
-    media_type: data.media_type || determinedType,
+    user: author,
+    title: data.title.trim(),
+    description: data.description.trim(),
+    image_data: data.image_data,
+    video_data: data.video_data,
+    media_type: data.media_type || (data.video_data ? 'video' : 'image'),
     tagged_users: data.tagged_users || [],
     tags: data.tags || [],
     votes_up: 0,
@@ -1312,7 +1305,8 @@ export const createRealPost = (data: {
   } catch {}
 
   // Send to Supabase Cloud with schema fallback
-  savePostToCloud(newPost);
+  await savePostToCloud(newPost);
+  await syncWithServer();
 
   window.dispatchEvent(
     new CustomEvent('aether_post_broadcast', {
@@ -1321,10 +1315,11 @@ export const createRealPost = (data: {
   );
 
   window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
   return newPost;
 };
 
-export const deleteRealPost = (postId: string, userId?: string): boolean => {
+export const deleteRealPost = async (postId: string, userId?: string): Promise<boolean> => {
   // 1. Mark as deleted in tombstone set so sync never restores it
   const deletedList = getItem<string[]>(STORAGE_KEYS.DELETED_POST_IDS, []);
   if (!deletedList.includes(postId)) {
@@ -1362,14 +1357,14 @@ export const deleteRealPost = (postId: string, userId?: string): boolean => {
   const supabase = getSupabaseClient();
   if (supabase) {
     // Soft mark post as deleted in description field so all devices filter it out even if SQL DELETE is blocked by RLS
-    supabase.from('posts').update({
+    await supabase.from('posts').update({
       title: '[DELETED]',
       description: '[DELETED]',
     }).eq('id', postId).then(() => {}, () => {});
 
-    supabase.from('posts').delete().eq('id', postId).then(() => {}, (err) => console.warn('[Supabase Delete Post]', err));
-    supabase.from('votes').delete().eq('post_id', postId).then(() => {}, () => {});
-    supabase.from('notifications').delete().eq('post_id', postId).then(() => {}, () => {});
+    await supabase.from('posts').delete().eq('id', postId).then(() => {}, (err) => console.warn('[Supabase Delete Post]', err));
+    await supabase.from('votes').delete().eq('post_id', postId).then(() => {}, () => {});
+    await supabase.from('notifications').delete().eq('post_id', postId).then(() => {}, () => {});
   }
 
   // 6. Delete from local server storage
@@ -1379,16 +1374,18 @@ export const deleteRealPost = (postId: string, userId?: string): boolean => {
     }).catch(() => {});
   } catch {}
 
-  syncWithServer();
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
   return true;
 };
 
-export const updateRealPostText = (
+export const updateRealPostText = async (
   postId: string, 
   userId: string, 
   description: string, 
   title?: string
-): Post | null => {
+): Promise<Post | null> => {
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
   const idx = posts.findIndex(p => p.id === postId && (p.user_id === userId || isUserAdmin(userId)));
   if (idx === -1) return null;
@@ -1402,13 +1399,10 @@ export const updateRealPostText = (
   };
 
   setItem(STORAGE_KEYS.POSTS, posts);
-
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    supabase.from('posts').upsert(sanitizePostForSupabase(posts[idx]), { onConflict: 'id' }).select().then(() => {}, () => {});
-  }
-
-  syncWithServer();
+  await savePostToCloud(posts[idx]);
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
   return posts[idx];
 };
 
@@ -1420,11 +1414,16 @@ export const getVotesList = (): VoteRecord[] => {
   return getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []);
 };
 
-export const votePostAction = (
+export const votePostAction = async (
   postId: string,
   userId: string,
   voteType: 'up' | 'down'
-): { userVote: 'up' | 'down' | null; netVotes: number; votesUp: number; votesDown: number } => {
+): Promise<{
+  userVote: 'up' | 'down' | null;
+  netVotes: number;
+  votesUp: number;
+  votesDown: number;
+}> => {
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
   const votes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []);
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
@@ -1435,9 +1434,8 @@ export const votePostAction = (
   }
 
   const canonicalVoteId = `vote_${userId}_${postId}`;
-  const existingVoteIdx = votes.findIndex(
-    v => (v.post_id === postId && v.user_id === userId) || v.id === canonicalVoteId
-  );
+  const existingVoteIdx = votes.findIndex(v => (v.user_id === userId && v.post_id === postId) || v.id === canonicalVoteId);
+
   let finalUserVote: 'up' | 'down' | null = null;
 
   if (existingVoteIdx !== -1) {
@@ -1519,21 +1517,20 @@ export const votePostAction = (
   // Supabase Cloud DB sync
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase
+    await supabase
       .from('posts')
       .update({
         votes_up: posts[postIdx].votes_up,
         votes_down: posts[postIdx].votes_down,
         net_votes: posts[postIdx].net_votes,
       })
-      .eq('id', postId)
-      .then(() => {}, (err: any) => console.warn('[Aether Supabase] Post vote update error:', err));
+      .eq('id', postId).then(() => {}, (err: any) => console.warn('[Aether Supabase] Post vote update error:', err));
 
     if (finalUserVote === null) {
-      supabase.from('votes').delete().eq('id', canonicalVoteId).then(() => {}, () => {});
-      supabase.from('votes').delete().match({ user_id: userId, post_id: postId }).then(() => {}, () => {});
+      await supabase.from('votes').delete().eq('id', canonicalVoteId).then(() => {}, () => {});
+      await supabase.from('votes').delete().match({ user_id: userId, post_id: postId }).then(() => {}, () => {});
     } else {
-      supabase.from('votes').upsert({
+      await supabase.from('votes').upsert({
         id: canonicalVoteId,
         user_id: userId,
         post_id: postId,
@@ -1542,14 +1539,16 @@ export const votePostAction = (
       }).then(() => {}, (err: any) => console.warn('[Aether Supabase] Vote record upsert error:', err));
     }
 
-    supabase
+    await supabase
       .from('profiles')
       .update({ total_votes_received: totalVotesReceived })
       .eq('id', authorId)
       .then(() => {}, () => {});
   }
 
-  syncWithServer();
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
 
   return {
     userVote: finalUserVote,
