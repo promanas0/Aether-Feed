@@ -44,6 +44,51 @@ export const DLICOM_DEFAULT_AVATARS = [
 
 export const DEFAULT_DLICOM_AVATAR = '/avatars/dlicom_default_1.jpg';
 
+export const reconcileFollowGraph = (users: Profile[]): Profile[] => {
+  const parseArray = (arr: any): string[] => {
+    if (Array.isArray(arr)) return arr.map(String);
+    if (typeof arr === 'string') {
+      try {
+        const parsed = JSON.parse(arr);
+        if (Array.isArray(parsed)) return parsed.map(String);
+      } catch {}
+    }
+    return [];
+  };
+
+  // Map: userId -> Set of follower user IDs
+  const followerMap = new Map<string, Set<string>>();
+  users.forEach(u => {
+    followerMap.set(u.id, new Set<string>());
+  });
+
+  // Populate from each user's following list (which is the source of truth for who they follow)
+  users.forEach(u => {
+    const followingList = parseArray(u.following);
+    followingList.forEach(targetId => {
+      if (followerMap.has(targetId)) {
+        followerMap.get(targetId)!.add(u.id);
+      } else {
+        followerMap.set(targetId, new Set<string>([u.id]));
+      }
+    });
+
+    // Also include any explicit followers if present
+    const explicitFollowers = parseArray(u.followers);
+    explicitFollowers.forEach(followerId => {
+      if (followerMap.has(u.id)) {
+        followerMap.get(u.id)!.add(followerId);
+      }
+    });
+  });
+
+  return users.map(u => ({
+    ...u,
+    following: parseArray(u.following),
+    followers: Array.from(followerMap.get(u.id) || []),
+  }));
+};
+
 export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
   const parseArray = (arr: any): string[] => {
     if (Array.isArray(arr)) return arr.map(String);
@@ -233,7 +278,8 @@ export const syncWithServer = async (): Promise<boolean> => {
                   followers: Array.isArray(currentUser.followers) ? currentUser.followers : existing.followers || [],
                 } as Profile);
               }
-              setItem(STORAGE_KEYS.REAL_USERS, Array.from(mergedUserMap.values()));
+              const finalLocalUsers = reconcileFollowGraph(Array.from(mergedUserMap.values()));
+              setItem(STORAGE_KEYS.REAL_USERS, finalLocalUsers);
             }
 
             if (Array.isArray(votes)) {
@@ -268,7 +314,7 @@ export const syncWithServer = async (): Promise<boolean> => {
       const supabase = getSupabaseClient();
       if (supabase) {
         try {
-          // A. Push ONLY Current User's Profile (Never bulk-push other users to prevent stale overwrites!)
+          // A. Push ONLY Current User's Profile
           if (currentUser) {
             await supabase.from('profiles').upsert(sanitizeProfileForSupabase(currentUser));
           }
@@ -292,23 +338,17 @@ export const syncWithServer = async (): Promise<boolean> => {
 
               const localU = localUserMap.get(suProfile.id);
               if (localU) {
-                // If this is currentUser, preserve local following/followers
+                // If this is currentUser, preserve local uncommitted following list
                 if (currentUser && suProfile.id === currentUser.id) {
                   mergedUserMap.set(suProfile.id, {
                     ...suProfile,
                     ...localU,
                     following: Array.isArray(localU.following) ? localU.following : suProfile.following,
-                    followers: Array.isArray(localU.followers) ? localU.followers : suProfile.followers,
                   });
                 } else {
-                  // For other users, preserve local follower relationship if we just followed them
-                  const localFollowers = Array.isArray(localU.followers) ? localU.followers : [];
-                  const supaFollowers = Array.isArray(suProfile.followers) ? suProfile.followers : [];
-                  const combinedFollowers = Array.from(new Set([...supaFollowers, ...localFollowers]));
-
                   mergedUserMap.set(suProfile.id, {
+                    ...localU,
                     ...suProfile,
-                    followers: combinedFollowers,
                   });
                 }
               } else {
@@ -323,7 +363,8 @@ export const syncWithServer = async (): Promise<boolean> => {
               }
             });
 
-            const finalUsers = Array.from(mergedUserMap.values());
+            // Reconcile complete bidirectional follow graph across all users
+            const finalUsers = reconcileFollowGraph(Array.from(mergedUserMap.values()));
             setItem(STORAGE_KEYS.REAL_USERS, finalUsers);
 
             // Update saved accounts if current profile changed
@@ -385,6 +426,21 @@ export const syncWithServer = async (): Promise<boolean> => {
               });
 
             setItem(STORAGE_KEYS.POSTS, validSupaPosts);
+          }
+
+          // E. Pull live notifications from Supabase
+          const { data: supaNotifs } = await supabase
+            .from('notifications')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (supaNotifs && Array.isArray(supaNotifs)) {
+            const notifMap = new Map<string, NotificationItem>();
+            supaNotifs.forEach((n: any) => notifMap.set(n.id, n));
+            localNotifs.forEach((n: any) => {
+              if (!notifMap.has(n.id)) notifMap.set(n.id, n);
+            });
+            setItem(STORAGE_KEYS.NOTIFICATIONS, Array.from(notifMap.values()));
           }
         } catch (supaErr) {
           console.warn('[Aether Supabase] Sync notice:', supaErr);
@@ -736,7 +792,7 @@ export const authenticateUser = async (
 export const getCurrentUser = (): Profile | null => {
   const currentId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);
   if (!currentId) return null;
-  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const users = getRealUsers();
   return users.find(u => u.id === currentId) || null;
 };
 
@@ -751,7 +807,8 @@ export const setCurrentUserSession = (userId: string | null): void => {
 
 export const getRealUsers = (): Profile[] => {
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-  return users.filter(u => !FAKE_MOCK_IDS.includes(u.id));
+  const clean = users.filter(u => !FAKE_MOCK_IDS.includes(u.id));
+  return reconcileFollowGraph(clean);
 };
 
 export const createPasswordChangeOtp = (userId: string, email: string): { otp_code: string } => {
@@ -899,20 +956,12 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
   }
 
   const currentFollowing = Array.isArray(users[currentIdx].following) ? [...users[currentIdx].following] : [];
-  const targetFollowers = Array.isArray(users[targetIdx].followers) ? [...users[targetIdx].followers] : [];
-
   const isCurrentlyFollowing = currentFollowing.includes(targetUserId);
 
   if (isCurrentlyFollowing) {
     users[currentIdx].following = currentFollowing.filter(id => id !== targetUserId);
-    users[targetIdx].followers = targetFollowers.filter(id => id !== currentUserId);
   } else {
-    if (!currentFollowing.includes(targetUserId)) {
-      users[currentIdx].following = [...currentFollowing, targetUserId];
-    }
-    if (!targetFollowers.includes(currentUserId)) {
-      users[targetIdx].followers = [...targetFollowers, currentUserId];
-    }
+    users[currentIdx].following = Array.from(new Set([...currentFollowing, targetUserId]));
 
     addNotification({
       user_id: targetUserId,
@@ -923,10 +972,15 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
 
   const now = new Date().toISOString();
   users[currentIdx].updated_at = now;
-  users[targetIdx].updated_at = now;
 
-  setItem(STORAGE_KEYS.REAL_USERS, users);
-  addOrUpdateSavedAccount(users[currentIdx]);
+  // Reconcile complete follow graph across all users
+  const reconciledUsers = reconcileFollowGraph(users);
+  setItem(STORAGE_KEYS.REAL_USERS, reconciledUsers);
+
+  const updatedCurrent = reconciledUsers.find(u => u.id === currentUserId) || reconciledUsers[currentIdx];
+  const updatedTarget = reconciledUsers.find(u => u.id === targetUserId) || reconciledUsers[targetIdx];
+
+  addOrUpdateSavedAccount(updatedCurrent);
 
   // Update Supabase Cloud DB
   const supabase = getSupabaseClient();
@@ -934,8 +988,8 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
     supabase
       .from('profiles')
       .upsert([
-        sanitizeProfileForSupabase(users[currentIdx]),
-        sanitizeProfileForSupabase(users[targetIdx]),
+        sanitizeProfileForSupabase(updatedCurrent),
+        sanitizeProfileForSupabase(updatedTarget),
       ])
       .then(() => {}, (err) => console.warn('[Supabase Follow Upsert Error]', err));
   }
@@ -945,17 +999,17 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
     fetch('/api/users/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user: sanitizeProfileForSupabase(users[currentIdx]) }),
+      body: JSON.stringify({ user: sanitizeProfileForSupabase(updatedCurrent) }),
     }).catch(() => {});
     fetch('/api/users/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user: sanitizeProfileForSupabase(users[targetIdx]) }),
+      body: JSON.stringify({ user: sanitizeProfileForSupabase(updatedTarget) }),
     }).catch(() => {});
   } catch {}
 
   window.dispatchEvent(new Event('aether_storage_sync'));
-  return { isFollowing: !isCurrentlyFollowing, targetUser: users[targetIdx] };
+  return { isFollowing: !isCurrentlyFollowing, targetUser: updatedTarget };
 };
 
 /* ==========================================================================
@@ -1353,7 +1407,7 @@ export const addNotification = (item: {
     id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     user_id: item.user_id,
     actor_id: item.actor_id,
-    post_id: item.post_id,
+    post_id: item.post_id || undefined,
     type: item.type,
     is_read: false,
     created_at: new Date().toISOString(),
@@ -1361,7 +1415,22 @@ export const addNotification = (item: {
 
   list.unshift(newNotif);
   setItem(STORAGE_KEYS.NOTIFICATIONS, list);
-  syncWithServer();
+
+  // Send to Supabase Cloud
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('notifications').upsert({
+      id: newNotif.id,
+      user_id: newNotif.user_id,
+      actor_id: newNotif.actor_id,
+      post_id: newNotif.post_id || null,
+      type: newNotif.type,
+      is_read: newNotif.is_read,
+      created_at: newNotif.created_at,
+    }).then(() => {}, (err) => console.warn('[Supabase Notification Upsert Error]', err));
+  }
+
+  window.dispatchEvent(new Event('aether_storage_sync'));
 };
 
 export const getNotificationsForRealUser = (userId: string): NotificationItem[] => {
