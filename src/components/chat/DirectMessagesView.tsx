@@ -58,17 +58,23 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Set initial selected user if provided via prop
+  const desktopAutoSelectedRef = useRef(false);
+
+  // Set initial selected user if provided via prop OR only once on desktop on mount
   useEffect(() => {
     if (initialRecipientId) {
       const target = allUsers.find(u => u.id === initialRecipientId);
       if (target && target.id !== currentUser.id) {
         setSelectedUser(target);
       }
-    } else if (!selectedUser && conversations.length > 0) {
-      setSelectedUser(conversations[0].contact);
+    } else if (!desktopAutoSelectedRef.current && typeof window !== 'undefined' && window.innerWidth >= 768) {
+      const initialConvs = getDmConversations(currentUser.id);
+      if (initialConvs.length > 0) {
+        desktopAutoSelectedRef.current = true;
+        setSelectedUser(initialConvs[0].contact);
+      }
     }
-  }, [initialRecipientId, allUsers, conversations, currentUser.id]);
+  }, [initialRecipientId, allUsers, currentUser.id]);
 
   // Load messages & mark as read when selectedUser changes
   useEffect(() => {
@@ -79,6 +85,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
       scrollToBottom();
     } else {
       setMessages([]);
+      setConversations(getDmConversations(currentUser.id));
     }
   }, [selectedUser, currentUser.id]);
 

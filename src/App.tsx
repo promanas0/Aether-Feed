@@ -467,6 +467,9 @@ export function App() {
           currentUser={currentUser}
           activeView={activeView}
           onViewChange={(v) => {
+            if (v === 'dms') {
+              setDmRecipientId(null);
+            }
             setActiveView(v);
             setSelectedProfile(null);
             setSelectedTagFilter(null);
@@ -772,6 +775,9 @@ export function App() {
         currentUser={currentUser}
         activeView={activeView}
         onViewChange={(v) => {
+          if (v === 'dms') {
+            setDmRecipientId(null);
+          }
           setActiveView(v);
           setSelectedProfile(null);
           setSelectedTagFilter(null);
