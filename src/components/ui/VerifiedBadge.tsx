@@ -4,7 +4,7 @@ import type { Profile } from '../../types';
 import { isUserAdmin } from '../../lib/storage';
 
 interface VerifiedBadgeProps {
-  user?: Profile | { email?: string; is_verified?: boolean; [key: string]: any } | null;
+  user?: Profile | { email?: string; is_verified?: boolean;[key: string]: any } | null;
   isVerified?: boolean;
   className?: string;
   size?: 'xs' | 'sm' | 'md' | 'lg';
@@ -32,24 +32,24 @@ export const VerifiedBadge: React.FC<VerifiedBadgeProps> = ({
 
   if (isAdmin) {
     return (
-      <span 
-        className={`inline-flex items-center shrink-0 ${className}`} 
+      <span
+        className={`inline-flex items-center shrink-0 ${className}`}
         title="Verified Admin / Team"
       >
-        <ShieldCheck 
-          className={`${sizeClasses} text-amber-400 fill-amber-400/20 drop-shadow-[0_0_8px_rgba(251,191,36,0.85)] animate-pulse`} 
+        <ShieldCheck
+          className={`${sizeClasses} text-amber-400 fill-amber-400/20 drop-shadow-[0_0_8px_rgba(251,191,36,0.85)] animate-pulse`}
         />
       </span>
     );
   }
 
   return (
-    <span 
-      className={`inline-flex items-center shrink-0 ${className}`} 
+    <span
+      className={`inline-flex items-center shrink-0 ${className}`}
       title="Verified Member"
     >
-      <ShieldCheck 
-        className={`${sizeClasses} text-blue-400 fill-blue-400/20 drop-shadow-[0_0_6px_rgba(96,165,250,0.6)]`} 
+      <ShieldCheck
+        className={`${sizeClasses} text-blue-400 fill-blue-400/20 drop-shadow-[0_0_6px_rgba(96,165,250,0.6)]`}
       />
     </span>
   );

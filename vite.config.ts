@@ -9,6 +9,7 @@ function databaseApiPlugin(): Plugin {
   const postsFile = path.resolve(storageDir, 'posts.json');
   const votesFile = path.resolve(storageDir, 'votes.json');
   const otpsFile = path.resolve(storageDir, 'otps.json');
+  const deletedPostsFile = path.resolve(storageDir, 'deleted_posts.json');
 
   const ensureStorageDir = () => {
     if (!fs.existsSync(storageDir)) {
@@ -63,9 +64,10 @@ function databaseApiPlugin(): Plugin {
           const posts = readJson(postsFile, []);
           const votes = readJson(votesFile, []);
           const otps = readJson(otpsFile, []);
+          const deletedIds = readJson(deletedPostsFile, []);
           res.setHeader('Content-Type', 'application/json');
           res.statusCode = 200;
-          res.end(JSON.stringify({ users, posts, votes, notifications: [], pending_otps: otps }));
+          res.end(JSON.stringify({ users, posts, votes, notifications: [], pending_otps: otps, deleted_post_ids: deletedIds }));
           return;
         }
 
@@ -79,9 +81,55 @@ function databaseApiPlugin(): Plugin {
           return;
         }
 
+        // POST /api/users/update or PUT /api/users
+        if ((pathname === '/api/users/update' || pathname === '/api/users') && (req.method === 'POST' || req.method === 'PUT')) {
+          let body = '';
+          req.on('data', (chunk) => (body += chunk));
+          req.on('end', () => {
+            try {
+              const incoming = JSON.parse(body || '{}');
+              const userUpdates = incoming.user || incoming;
+              if (!userUpdates || (!userUpdates.id && !userUpdates.email)) {
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 400;
+                res.end(JSON.stringify({ success: false, message: 'Invalid user data for update' }));
+                return;
+              }
+
+              const users = readJson(usersFile, []);
+              const userEmail = (userUpdates.email || '').toLowerCase().trim();
+              const idx = users.findIndex((u: any) => 
+                (userUpdates.id && u.id === userUpdates.id) || 
+                (userEmail && (u.email || '').toLowerCase().trim() === userEmail)
+              );
+
+              let updatedUser;
+              if (idx !== -1) {
+                users[idx] = { ...users[idx], ...userUpdates, updated_at: new Date().toISOString() };
+                updatedUser = users[idx];
+              } else {
+                updatedUser = { ...userUpdates, updated_at: new Date().toISOString() };
+                users.unshift(updatedUser);
+              }
+
+              writeJson(usersFile, users);
+
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, user: updatedUser, message: 'Profile updated successfully.' }));
+            } catch (e: any) {
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 400;
+              res.end(JSON.stringify({ success: false, message: e.message }));
+            }
+          });
+          return;
+        }
+
         // GET /api/posts
         if (pathname === '/api/posts' && req.method === 'GET') {
-          const posts = readJson(postsFile, []);
+          const deletedIds = new Set(readJson(deletedPostsFile, []));
+          const posts = readJson(postsFile, []).filter((p: any) => !deletedIds.has(p.id));
           res.setHeader('Content-Type', 'application/json');
           res.statusCode = 200;
           res.end(JSON.stringify({ success: true, posts }));
@@ -104,6 +152,13 @@ function databaseApiPlugin(): Plugin {
               }
 
               if (targetId) {
+                // Record in persistent deleted posts list
+                const deletedList = readJson(deletedPostsFile, []);
+                if (!deletedList.includes(targetId)) {
+                  deletedList.push(targetId);
+                  writeJson(deletedPostsFile, deletedList);
+                }
+
                 const currentPosts = readJson(postsFile, []);
                 const filteredPosts = currentPosts.filter((p: any) => p.id !== targetId);
                 writeJson(postsFile, filteredPosts);
@@ -133,9 +188,10 @@ function databaseApiPlugin(): Plugin {
             try {
               const incoming = JSON.parse(body || '{}');
               const post = incoming.post || incoming;
-              const posts = readJson(postsFile, []);
+              const deletedIds = new Set(readJson(deletedPostsFile, []));
 
-              if (post && post.id) {
+              if (post && post.id && !deletedIds.has(post.id)) {
+                const posts = readJson(postsFile, []);
                 const existingIdx = posts.findIndex((p: any) => p.id === post.id);
                 if (existingIdx !== -1) {
                   posts[existingIdx] = { ...posts[existingIdx], ...post };
@@ -164,7 +220,8 @@ function databaseApiPlugin(): Plugin {
           req.on('end', () => {
             try {
               const vote = JSON.parse(body || '{}');
-              if (vote.user_id && vote.post_id && vote.type) {
+              const deletedIds = new Set(readJson(deletedPostsFile, []));
+              if (vote.user_id && vote.post_id && vote.type && !deletedIds.has(vote.post_id)) {
                 const votes = readJson(votesFile, []);
                 const key = `${vote.user_id}_${vote.post_id}`;
                 const voteId = vote.id || `vote_${key}`;
@@ -339,13 +396,20 @@ function databaseApiPlugin(): Plugin {
               const currentPosts = readJson(postsFile, []);
               const currentVotes = readJson(votesFile, []);
               const currentOtps = readJson(otpsFile, []);
+              const serverDeletedList: string[] = readJson(deletedPostsFile, []);
 
-              const deletedPostIds = new Set<string>(incoming.deleted_post_ids || []);
+              // Combine server deleted IDs with any incoming client deletion tombstones
+              const incomingDeleted = incoming.deleted_post_ids || [];
+              const combinedDeletedSet = new Set<string>([...serverDeletedList, ...incomingDeleted]);
+              const combinedDeletedArray = Array.from(combinedDeletedSet);
+              if (combinedDeletedArray.length !== serverDeletedList.length) {
+                writeJson(deletedPostsFile, combinedDeletedArray);
+              }
 
               const FAKE_MOCK_IDS = ['usr_manas_01', 'usr_elena_02', 'usr_marcus_03'];
               const filteredCurrentUsers = currentUsers.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
-              const incomingUsers = (incoming.users || []).filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
-
+              
+              // If incoming specific user sent, merge it
               const userMap = new Map<string, any>();
               const emailMap = new Map<string, string>();
 
@@ -358,8 +422,9 @@ function databaseApiPlugin(): Plugin {
                 }
               });
 
-              incomingUsers.forEach((u: any) => {
-                if (!u) return;
+              // Process single user update or users list if provided
+              const incomingUsers = incoming.user ? [incoming.user] : (incoming.users || []);
+              incomingUsers.filter((u: any) => u && !FAKE_MOCK_IDS.includes(u.id)).forEach((u: any) => {
                 const userEmail = (u.email || '').toLowerCase().trim();
                 if (userEmail && emailMap.has(userEmail)) {
                   const existingId = emailMap.get(userEmail)!;
@@ -375,12 +440,15 @@ function databaseApiPlugin(): Plugin {
 
               const postMap = new Map<string, any>();
               currentPosts.forEach((p: any) => {
-                if (!deletedPostIds.has(p.id)) {
+                if (!combinedDeletedSet.has(p.id)) {
                   postMap.set(p.id, p);
                 }
               });
-              (incoming.posts || []).forEach((p: any) => {
-                if (!deletedPostIds.has(p.id)) {
+
+              // Only accept incoming posts that have NOT been deleted
+              const incomingPosts = incoming.post ? [incoming.post] : (incoming.posts || []);
+              incomingPosts.forEach((p: any) => {
+                if (p && p.id && !combinedDeletedSet.has(p.id)) {
                   if (postMap.has(p.id)) {
                     postMap.set(p.id, { ...postMap.get(p.id), ...p });
                   } else {
@@ -391,13 +459,15 @@ function databaseApiPlugin(): Plugin {
 
               const voteMap = new Map<string, any>();
               currentVotes.forEach((v: any) => {
-                if (!deletedPostIds.has(v.post_id) && v.user_id && v.post_id) {
+                if (!combinedDeletedSet.has(v.post_id) && v.user_id && v.post_id) {
                   const key = `${v.user_id}_${v.post_id}`;
                   voteMap.set(key, { ...v, id: `vote_${key}` });
                 }
               });
-              (incoming.votes || []).forEach((v: any) => {
-                if (!deletedPostIds.has(v.post_id) && v.user_id && v.post_id) {
+
+              const incomingVotes = incoming.vote ? [incoming.vote] : (incoming.votes || []);
+              incomingVotes.forEach((v: any) => {
+                if (v && !combinedDeletedSet.has(v.post_id) && v.user_id && v.post_id) {
                   const key = `${v.user_id}_${v.post_id}`;
                   voteMap.set(key, { ...v, id: `vote_${key}` });
                 }
@@ -407,7 +477,7 @@ function databaseApiPlugin(): Plugin {
               const mergedVotes = Array.from(voteMap.values());
 
               const mergedPosts = Array.from(postMap.values())
-                .filter((p: any) => !deletedPostIds.has(p.id))
+                .filter((p: any) => !combinedDeletedSet.has(p.id))
                 .map((p: any) => {
                   const postVotes = mergedVotes.filter((v: any) => v.post_id === p.id);
                   const up = postVotes.filter((v: any) => v.type === 'up').length;
@@ -438,6 +508,7 @@ function databaseApiPlugin(): Plugin {
                     votes: mergedVotes,
                     notifications: incoming.notifications || [],
                     pending_otps: incoming.pending_otps || currentOtps,
+                    deleted_post_ids: combinedDeletedArray,
                   },
                 })
               );

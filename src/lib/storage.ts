@@ -173,20 +173,20 @@ export const syncWithServer = async (): Promise<boolean> => {
   currentSyncPromise = (async () => {
     try {
       const deletedIds = getDeletedPostIds();
+      const currentUserId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);
       const localUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
-      const localPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []).filter(p => !deletedIds.has(p.id));
+      const currentUser = currentUserId ? localUsers.find(u => u.id === currentUserId) || null : null;
       const localVotes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(v => !deletedIds.has(v.post_id));
       const localNotifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
       const localOtps = getItem<any[]>(STORAGE_KEYS.PENDING_OTPS, []);
 
-      // 1. Local Vite / API Sync (if available on network)
+      // 1. Local Vite / API Sync (if available on local network)
       try {
         const response = await fetch('/api/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            users: localUsers,
-            posts: localPosts,
+            user: currentUser ? sanitizeProfileForSupabase(currentUser) : undefined,
             votes: localVotes,
             notifications: localNotifs,
             pending_otps: localOtps,
@@ -197,28 +197,26 @@ export const syncWithServer = async (): Promise<boolean> => {
         if (response.ok) {
           const result = await response.json();
           if (result.success && result.data) {
-            const { users, posts, votes, notifications, pending_otps } = result.data;
-            const currentUserId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);
+            const { users, posts, votes, notifications, pending_otps, deleted_post_ids } = result.data;
+
+            // Merge server-reported deleted IDs
+            if (Array.isArray(deleted_post_ids) && deleted_post_ids.length > 0) {
+              const currentDeleted = getItem<string[]>(STORAGE_KEYS.DELETED_POST_IDS, []);
+              const updatedDeleted = Array.from(new Set([...currentDeleted, ...deleted_post_ids]));
+              if (updatedDeleted.length !== currentDeleted.length) {
+                setItem(STORAGE_KEYS.DELETED_POST_IDS, updatedDeleted);
+                deleted_post_ids.forEach(id => deletedIds.add(id));
+              }
+            }
 
             if (Array.isArray(users)) {
               const cleanUsers = users.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
-              // Merge local and server users based on update timestamps
               const mergedUserMap = new Map<string, Profile>();
               cleanUsers.forEach((u: Profile) => mergedUserMap.set(u.id, u));
-              localUsers.forEach((lu: Profile) => {
-                const existing = mergedUserMap.get(lu.id);
-                if (!existing) {
-                  mergedUserMap.set(lu.id, lu);
-                } else {
-                  // If local was updated more recently, keep local
-                  const localTime = new Date(lu.updated_at || lu.created_at || 0).getTime();
-                  const serverTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
-                  if (localTime >= serverTime) {
-                    mergedUserMap.set(lu.id, { ...existing, ...lu });
-                  }
-                }
-              });
-              localStorage.setItem(STORAGE_KEYS.REAL_USERS, JSON.stringify(Array.from(mergedUserMap.values())));
+              if (currentUser) {
+                mergedUserMap.set(currentUser.id, { ...(mergedUserMap.get(currentUser.id) || {}), ...currentUser });
+              }
+              setItem(STORAGE_KEYS.REAL_USERS, Array.from(mergedUserMap.values()));
             }
 
             if (Array.isArray(votes)) {
@@ -229,138 +227,105 @@ export const syncWithServer = async (): Promise<boolean> => {
                   voteMap.set(key, { ...v, id: `vote_${key}` });
                 }
               });
-              const cleanLocalVotes = Array.from(voteMap.values());
-              localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(cleanLocalVotes));
-
-              if (Array.isArray(posts)) {
-                const cleanPosts = posts
-                  .filter(p => !deletedIds.has(p.id))
-                  .map(p => {
-                    const pVotes = cleanLocalVotes.filter(v => v.post_id === p.id);
-                    const up = pVotes.filter(v => v.type === 'up').length;
-                    const down = pVotes.filter(v => v.type === 'down').length;
-                    return {
-                      ...p,
-                      votes_up: up,
-                      votes_down: down,
-                      net_votes: up - down,
-                    };
-                  });
-                const oldPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
-                const oldPostIds = new Set(oldPosts.map(p => p.id));
-                const newForeignPosts = cleanPosts.filter(p => !oldPostIds.has(p.id) && p.user_id !== currentUserId);
-
-                localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(cleanPosts));
-
-                if (newForeignPosts.length > 0) {
-                  const latestNew = newForeignPosts[0];
-                  const author = Array.isArray(users) ? users.find((u: any) => u.id === latestNew.user_id) : undefined;
-                  window.dispatchEvent(
-                    new CustomEvent('aether_post_broadcast', {
-                      detail: { post: { ...latestNew, user: author }, authorId: latestNew.user_id }
-                    })
-                  );
-                }
-              }
+              setItem(STORAGE_KEYS.VOTES, Array.from(voteMap.values()));
             }
+
+            if (Array.isArray(posts)) {
+              const cleanPosts = posts.filter(p => !deletedIds.has(p.id));
+              setItem(STORAGE_KEYS.POSTS, cleanPosts);
+            }
+
             if (Array.isArray(notifications)) {
-              localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
+              setItem(STORAGE_KEYS.NOTIFICATIONS, notifications);
             }
             if (Array.isArray(pending_otps)) {
-              localStorage.setItem(STORAGE_KEYS.PENDING_OTPS, JSON.stringify(pending_otps));
+              setItem(STORAGE_KEYS.PENDING_OTPS, pending_otps);
             }
           }
         }
       } catch {
-        // API server fallback
+        // Local API fallback
       }
 
-      // 2. Supabase Cloud DB Synchronization (Global Cross-Device Sync)
+      // 2. Supabase Cloud DB Synchronization (Global Cross-Device Source of Truth)
       const supabase = getSupabaseClient();
       if (supabase) {
         try {
-          const freshLocalUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
-          if (freshLocalUsers.length > 0) {
-            await supabase.from('profiles').upsert(freshLocalUsers.map(sanitizeProfileForSupabase));
+          // A. Push ONLY Current User's Profile (Never bulk-push other users to prevent stale overwrites!)
+          if (currentUser) {
+            await supabase.from('profiles').upsert(sanitizeProfileForSupabase(currentUser));
           }
 
-          const freshLocalPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []).filter(p => !deletedIds.has(p.id));
-          if (freshLocalPosts.length > 0) {
-            await supabase.from('posts').upsert(freshLocalPosts.map(sanitizePostForSupabase));
-          }
-
-          const freshLocalVotes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(v => !deletedIds.has(v.post_id));
-          if (freshLocalVotes.length > 0) {
-            await supabase.from('votes').upsert(freshLocalVotes);
-          }
-
-          // A. Pull all profiles from Supabase
-          const { data: supaProfiles } = await supabase.from('profiles').select('*');
-          if (supaProfiles && supaProfiles.length > 0) {
+          // B. Pull ALL live profiles from Supabase
+          const { data: supaProfiles, error: profError } = await supabase.from('profiles').select('*');
+          if (!profError && supaProfiles && supaProfiles.length > 0) {
             const cleanSupaUsers = supaProfiles.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
             const userMap = new Map<string, Profile>();
             cleanSupaUsers.forEach((u: Profile) => userMap.set(u.id, u));
 
-            freshLocalUsers.forEach((lu: Profile) => {
-              const supaUser = userMap.get(lu.id);
-              if (!supaUser) {
-                userMap.set(lu.id, lu);
+            // Preserve local currentUser if present
+            if (currentUser) {
+              const supaCurrent = userMap.get(currentUser.id);
+              if (supaCurrent) {
+                userMap.set(currentUser.id, { ...supaCurrent, ...currentUser });
               } else {
-                const localTime = new Date(lu.updated_at || lu.created_at || 0).getTime();
-                const supaTime = new Date(supaUser.updated_at || supaUser.created_at || 0).getTime();
-                if (localTime > supaTime) {
-                  userMap.set(lu.id, { ...supaUser, ...lu });
-                }
-              }
-            });
-
-            localStorage.setItem(STORAGE_KEYS.REAL_USERS, JSON.stringify(Array.from(userMap.values())));
-          }
-
-          // C. Pull all votes from Supabase & deduplicate with local votes
-          const { data: supaVotes } = await supabase.from('votes').select('*');
-          const combinedVotes = [...(supaVotes || []), ...freshLocalVotes];
-          const voteMap = new Map<string, VoteRecord>();
-          combinedVotes.forEach((v: any) => {
-            if (v && v.user_id && v.post_id && !deletedIds.has(v.post_id)) {
-              const key = `${v.user_id}_${v.post_id}`;
-              const canonicalId = `vote_${key}`;
-              const existing = voteMap.get(key);
-              if (!existing) {
-                voteMap.set(key, { ...v, id: canonicalId });
-              } else {
-                const existingTime = new Date(existing.created_at || 0).getTime();
-                const newTime = new Date(v.created_at || 0).getTime();
-                if (newTime >= existingTime) {
-                  voteMap.set(key, { ...v, id: canonicalId });
-                }
+                userMap.set(currentUser.id, currentUser);
               }
             }
-          });
-          const validVotes = Array.from(voteMap.values());
-          localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(validVotes));
 
-          // B. Pull all posts from Supabase (excluding deleted ones) and recompute exact vote counts
-          const { data: supaPosts } = await supabase
+            const finalUsers = Array.from(userMap.values());
+            setItem(STORAGE_KEYS.REAL_USERS, finalUsers);
+
+            // Update saved accounts if current profile changed
+            if (currentUser) {
+              const freshActive = finalUsers.find(u => u.id === currentUser.id);
+              if (freshActive) {
+                addOrUpdateSavedAccount(freshActive);
+              }
+            }
+          }
+
+          // C. Pull ALL live votes from Supabase
+          const { data: supaVotes } = await supabase.from('votes').select('*');
+          let validVotes: VoteRecord[] = [];
+          if (supaVotes && Array.isArray(supaVotes)) {
+            const voteMap = new Map<string, VoteRecord>();
+            supaVotes.forEach((v: any) => {
+              if (v && v.user_id && v.post_id && !deletedIds.has(v.post_id)) {
+                const key = `${v.user_id}_${v.post_id}`;
+                voteMap.set(key, { ...v, id: `vote_${key}` });
+              }
+            });
+            validVotes = Array.from(voteMap.values());
+            setItem(STORAGE_KEYS.VOTES, validVotes);
+          } else {
+            validVotes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(v => !deletedIds.has(v.post_id));
+          }
+
+          // D. Pull ALL live posts from Supabase (Supabase is authoritative for active posts)
+          const { data: supaPosts, error: postsError } = await supabase
             .from('posts')
             .select('*')
             .order('created_at', { ascending: false });
 
-          const basePosts = (supaPosts && supaPosts.length > 0) ? supaPosts : freshLocalPosts;
-          const validSupaPosts = basePosts
-            .filter((p: any) => !deletedIds.has(p.id))
-            .map((p: any) => {
-              const pVotes = validVotes.filter(v => v.post_id === p.id);
-              const up = pVotes.filter(v => v.type === 'up').length;
-              const down = pVotes.filter(v => v.type === 'down').length;
-              return {
-                ...p,
-                votes_up: up,
-                votes_down: down,
-                net_votes: up - down,
-              };
-            });
-          localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(validSupaPosts));
+          if (!postsError && supaPosts) {
+            // Any post NOT in Supabase has been deleted; update local posts to match Supabase exactly
+            const validSupaPosts = supaPosts
+              .filter((p: any) => !deletedIds.has(p.id))
+              .map((p: any) => {
+                const pVotes = validVotes.filter(v => v.post_id === p.id);
+                const up = pVotes.filter(v => v.type === 'up').length;
+                const down = pVotes.filter(v => v.type === 'down').length;
+                return {
+                  ...p,
+                  votes_up: up,
+                  votes_down: down,
+                  net_votes: up - down,
+                };
+              });
+
+            setItem(STORAGE_KEYS.POSTS, validSupaPosts);
+          }
         } catch (supaErr) {
           console.warn('[Aether Supabase] Sync notice:', supaErr);
         }
@@ -406,6 +371,13 @@ export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => vo
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'votes' },
+        () => {
+          syncWithServer().then(() => onSyncNeeded());
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications' },
         () => {
           syncWithServer().then(() => onSyncNeeded());
         }
@@ -803,16 +775,17 @@ export const updateProfileData = (userId: string, updates: Partial<Profile>): Pr
     );
   }
 
-  // Push to local server
+  // Push to local server API
   try {
-    fetch('/api/auth/register', {
+    fetch('/api/users/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user: users[idx] }),
+      body: JSON.stringify({ user: sanitizeProfileForSupabase(users[idx]) }),
     }).catch(() => {});
   } catch {}
 
   syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
   return users[idx];
 };
 
@@ -889,7 +862,13 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
 
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('profiles').upsert([users[currentIdx], users[targetIdx]]).then(() => {}, () => {});
+    supabase
+      .from('profiles')
+      .upsert([
+        sanitizeProfileForSupabase(users[currentIdx]),
+        sanitizeProfileForSupabase(users[targetIdx]),
+      ])
+      .then(() => {}, (err) => console.warn('[Supabase Follow Upsert Error]', err));
   }
 
   syncWithServer();

@@ -124,9 +124,10 @@ export function App() {
   // Sync state from storage cleanly
   const syncStateFromStorage = useCallback(() => {
     const user = getCurrentUser();
+    const freshUsers = getRealUsers();
     setCurrentUser(user);
     setSavedAccounts(getSavedAccounts());
-    setUsers(getRealUsers());
+    setUsers(freshUsers);
     setPosts(getRealPosts());
     setVotes(getVotesList());
     setLeaderboard(getRealLeaderboard());
@@ -136,6 +137,12 @@ export function App() {
     } else {
       setNotifications([]);
     }
+    // Keep selectedProfile in sync with latest user data if viewing a profile
+    setSelectedProfile((prev) => {
+      if (!prev) return null;
+      const match = freshUsers.find(u => u.id === prev.id);
+      return match || prev;
+    });
   }, []);
 
   useEffect(() => {
@@ -147,10 +154,10 @@ export function App() {
       syncStateFromStorage();
     });
 
-    // 2. Gentle Periodic Background Sync (every 10s)
+    // 2. Responsive Periodic Background Sync (every 3.5s for seamless multi-device sync)
     const pollInterval = setInterval(() => {
       syncWithServer();
-    }, 10000);
+    }, 3500);
 
     const handleSync = () => {
       syncStateFromStorage();
