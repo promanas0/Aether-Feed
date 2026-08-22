@@ -499,12 +499,7 @@ export const syncWithServer = async (): Promise<boolean> => {
       const supabase = getSupabaseClient();
       if (supabase) {
         try {
-          // A. Push ONLY Current User's Profile
-          if (currentUser) {
-            await saveProfileToCloud(currentUser);
-          }
-
-          // B. Pull ALL live profiles from Supabase
+          // Pull ALL live profiles from Supabase
           const { data: supaProfiles, error: profError } = await supabase.from('profiles').select('*');
           let finalUsers: Profile[] = [];
           if (!profError && supaProfiles && supaProfiles.length > 0) {
@@ -518,35 +513,16 @@ export const syncWithServer = async (): Promise<boolean> => {
             cleanSupaUsers.forEach((su: any) => {
               const localU = localUserMap.get(su.id);
               const suProfile: Profile = {
+                ...localU,
                 ...su,
-                followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : [],
-                following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : [],
+                followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : localU?.followers || [],
+                following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : localU?.following || [],
                 is_golden_verified: su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : (localU?.is_golden_verified ?? false),
                 is_admin: su.is_admin !== undefined ? Boolean(su.is_admin) : (localU?.is_admin ?? false),
                 is_verified: su.is_verified !== undefined ? Boolean(su.is_verified) : (localU?.is_verified ?? true),
               };
 
-              if (localU) {
-                const localTime = localU.updated_at ? new Date(localU.updated_at).getTime() : 0;
-                const supaTime = suProfile.updated_at ? new Date(suProfile.updated_at).getTime() : 0;
-
-                if (localTime > supaTime) {
-                  // Local edit is newer! Preserve local profile edits and sync to cloud!
-                  const merged = { 
-                    ...suProfile, 
-                    ...localU,
-                    is_golden_verified: localU.is_golden_verified ?? suProfile.is_golden_verified ?? false,
-                    is_admin: localU.is_admin ?? suProfile.is_admin ?? false,
-                  };
-                  mergedUserMap.set(suProfile.id, merged);
-                  saveProfileToCloud(merged);
-                } else {
-                  // Cloud profile is newer or equal! Use cloud profile.
-                  mergedUserMap.set(suProfile.id, suProfile);
-                }
-              } else {
-                mergedUserMap.set(suProfile.id, suProfile);
-              }
+              mergedUserMap.set(suProfile.id, suProfile);
             });
 
             // Preserve any local users not yet in Supabase
