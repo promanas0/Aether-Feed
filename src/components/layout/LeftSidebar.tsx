@@ -41,12 +41,15 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
 }) => {
   const isGolden = Boolean(currentUser.is_golden_verified || isUserAdmin(currentUser));
 
-  const navItems: Array<{ id: ActiveView; label: string; icon: React.ComponentType<{ className?: string }>; badge?: string }> = [
+  const navItems: Array<{ id: ActiveView; label: string; icon: React.ComponentType<{ className?: string }> }> = [
     { id: 'feed', label: 'Home Feed', icon: Home },
     { id: 'following_feed', label: 'Following Feed', icon: Users },
     { id: 'leaderboard', label: 'Top Leaderboard', icon: Trophy },
-    { id: 'chat', label: 'VIP Golden Chat', icon: MessageSquare, badge: isGolden ? 'VIP' : '🔒' },
   ];
+
+  if (isGolden) {
+    navItems.push({ id: 'chat', label: 'Aether Chat', icon: MessageSquare });
+  }
 
   return (
     <aside className="w-64 shrink-0 hidden lg:block sticky top-20 h-[calc(100vh-6rem)] space-y-3 select-none">
@@ -108,17 +111,6 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
             >
               <Icon className={`w-4 h-4 shrink-0 ${isChat && isActive ? 'text-slate-950' : isChat ? 'text-amber-400' : ''}`} />
               <span className="flex-1">{item.label}</span>
-              {item.badge && (
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase ${
-                  isActive
-                    ? 'bg-slate-950 text-amber-300'
-                    : isGolden
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                    : 'bg-slate-800 text-slate-400'
-                }`}>
-                  {item.badge}
-                </span>
-              )}
             </button>
           );
         })}

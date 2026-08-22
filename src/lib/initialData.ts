@@ -1,11 +1,8 @@
 import type { Profile, Post } from '../types';
+import { DLICOM_MASCOT_AVATARS } from './storage';
 
 // Curated official Dlicom character avatars for selection
-export const AVATAR_PRESETS = [
-  '/avatars/dlicom_default_1.jpg',
-  '/avatars/dlicom_default_2.jpg',
-  '/avatars/dlicom_default_3.jpg',
-];
+export const AVATAR_PRESETS = DLICOM_MASCOT_AVATARS;
 
 // Seed Real Verified Profiles
 export const INITIAL_PROFILES: Profile[] = [
@@ -16,7 +13,7 @@ export const INITIAL_PROFILES: Profile[] = [
     last_name: 'Dlicom',
     display_name: 'Manas Dlicom',
     username: 'manas_dlicom',
-    avatar_url: '/avatars/dlicom_default_1.jpg',
+    avatar_url: DLICOM_MASCOT_AVATARS[0],
     banner_url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&auto=format&fit=crop&q=80',
     bio: 'Founder & Lead Architect @ Dlicom App Ecosystem. Building decentralized visual social networks.',
     dlicom_address: '0x71C4B892Ea81B6D19fB23490Ad51E1a293F498A2',
@@ -35,7 +32,7 @@ export const INITIAL_PROFILES: Profile[] = [
     last_name: 'Rostova',
     display_name: 'Elena Rostova',
     username: 'elena_rostova',
-    avatar_url: '/avatars/dlicom_default_3.jpg',
+    avatar_url: DLICOM_MASCOT_AVATARS[1],
     banner_url: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=1200&auto=format&fit=crop&q=80',
     bio: 'Lead Interface Designer & 3D Vector Specialist. Exploring cobalt spatial UI systems.',
     dlicom_address: '0x99A1C54F11E2a849C9842F19E37B02A8841B9201',
@@ -54,7 +51,7 @@ export const INITIAL_PROFILES: Profile[] = [
     last_name: 'Vance',
     display_name: 'Marcus Vance',
     username: 'marcus_vance',
-    avatar_url: '/avatars/dlicom_default_2.jpg',
+    avatar_url: DLICOM_MASCOT_AVATARS[2],
     banner_url: 'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=1200&auto=format&fit=crop&q=80',
     bio: 'Brutalist architecture photographer and Web3 node validator.',
     dlicom_address: '0x33F890A92C1E418A984D120B883C7E991823AA41',

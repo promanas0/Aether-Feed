@@ -54,13 +54,16 @@ const setItem = <T>(key: string, value: T): void => {
 
 const FAKE_MOCK_IDS = ['usr_manas_01', 'usr_elena_02', 'usr_marcus_03'];
 
-export const DLICOM_DEFAULT_AVATARS = [
-  '/avatars/dlicom_default_1.jpg',
-  '/avatars/dlicom_default_2.jpg',
-  '/avatars/dlicom_default_3.jpg',
+export const DLICOM_MASCOT_AVATARS = [
+  `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none"><rect width="120" height="120" rx="28" fill="url(%23bg1)"/><circle cx="60" cy="45" r="22" fill="%231E293B" stroke="%233B82F6" stroke-width="3"/><path d="M42 45C42 35.0589 50.0589 27 60 27C69.9411 27 78 35.0589 78 45V48H42V45Z" fill="%233B82F6" fill-opacity="0.3"/><rect x="46" y="40" width="28" height="8" rx="4" fill="%2360A5FA"/><circle cx="60" cy="44" r="2" fill="%23FFFFFF"/><path d="M26 100C26 81.2223 41.2223 66 60 66C78.7777 66 94 81.2223 94 100V104H26V100Z" fill="%231E293B" stroke="%233B82F6" stroke-width="3"/><path d="M48 66L60 78L72 66" stroke="%2360A5FA" stroke-width="3" stroke-linecap="round"/><circle cx="60" cy="90" r="6" fill="%233B82F6"/><defs><linearGradient id="bg1" x1="0" y1="0" x2="120" y2="120" gradientUnits="userSpaceOnUse"><stop stop-color="%230F172A"/><stop offset="1" stop-color="%231E3A8A"/></linearGradient></defs></svg>`,
+
+  `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none"><rect width="120" height="120" rx="28" fill="url(%23bg2)"/><circle cx="60" cy="45" r="22" fill="%231E293B" stroke="%23F59E0B" stroke-width="3"/><rect x="44" y="38" width="32" height="10" rx="5" fill="%23FBBF24"/><path d="M26 100C26 81.2223 41.2223 66 60 66C78.7777 66 94 81.2223 94 100V104H26V100Z" fill="%231E293B" stroke="%23F59E0B" stroke-width="3"/><path d="M60 66V82" stroke="%23FBBF24" stroke-width="3" stroke-linecap="round"/><defs><linearGradient id="bg2" x1="0" y1="0" x2="120" y2="120" gradientUnits="userSpaceOnUse"><stop stop-color="%231E1B4B"/><stop offset="1" stop-color="%2378350F"/></linearGradient></defs></svg>`,
+
+  `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none"><rect width="120" height="120" rx="28" fill="url(%23bg3)"/><circle cx="60" cy="45" r="22" fill="%231E293B" stroke="%2310B981" stroke-width="3"/><rect x="46" y="40" width="28" height="8" rx="4" fill="%2334D399"/><path d="M26 100C26 81.2223 41.2223 66 60 66C78.7777 66 94 81.2223 94 100V104H26V100Z" fill="%231E293B" stroke="%2310B981" stroke-width="3"/><defs><linearGradient id="bg3" x1="0" y1="0" x2="120" y2="120" gradientUnits="userSpaceOnUse"><stop stop-color="%23064E3B"/><stop offset="1" stop-color="%230F172A"/></linearGradient></defs></svg>`
 ];
 
-export const DEFAULT_DLICOM_AVATAR = '/avatars/dlicom_default_1.jpg';
+export const DLICOM_DEFAULT_AVATARS = DLICOM_MASCOT_AVATARS;
+export const DEFAULT_DLICOM_AVATAR = DLICOM_MASCOT_AVATARS[0];
 
 export const reconcileFollowGraph = (users: Profile[]): Profile[] => {
   const parseArray = (arr: any): string[] => {

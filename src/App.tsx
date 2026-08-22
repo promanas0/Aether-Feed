@@ -451,8 +451,8 @@ export function App() {
         }}
       />
 
-      {/* Main Content Layout: Balanced 3-Column Desktop Layout */}
-      <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-8 flex gap-6 flex-1 justify-center">
+      {/* Main Content Layout: Edge-to-Edge Desktop 3-Column Layout */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 py-6 pb-24 lg:pb-8 flex justify-between gap-6 flex-1">
         
         {/* Left Column: Navigation Menu (Desktop) */}
         <LeftSidebar

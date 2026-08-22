@@ -18,7 +18,17 @@ import {
   Trash2,
   AlertTriangle,
   Users,
-  UserPlus
+  UserPlus,
+  BookOpen,
+  Globe,
+  Award,
+  Sparkles,
+  ExternalLink,
+  ShieldCheck,
+  Terminal,
+  Cpu,
+  Layers,
+  Compass
 } from 'lucide-react';
 import type { Profile, ThemeMode, ToastMessage } from '../../types';
 import { 
@@ -59,7 +69,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onAddAccount,
   addToast,
 }) => {
-  const [tab, setTab] = useState<'info' | 'security' | 'appearance' | 'account'>('info');
+  const [tab, setTab] = useState<'info' | 'rules' | 'resources' | 'security' | 'appearance' | 'account'>('info');
 
   // Profile Info State
   const [firstName, setFirstName] = useState(currentUser.first_name || '');
@@ -252,8 +262,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        {/* 4 Tabs Bar */}
-        <div className="grid grid-cols-4 border-b border-[#334155] bg-[#1C2541] text-xs font-semibold">
+        {/* 6 Tabs Bar */}
+        <div className="grid grid-cols-3 sm:grid-cols-6 border-b border-[#334155] bg-[#1C2541] text-xs font-semibold">
           <button
             onClick={() => setTab('info')}
             className={`py-3 text-center border-b-2 transition-all ${
@@ -261,6 +271,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }`}
           >
             Profile Info
+          </button>
+          <button
+            onClick={() => setTab('rules')}
+            className={`py-3 text-center border-b-2 transition-all ${
+              tab === 'rules' ? 'border-amber-500 text-amber-300 bg-[#1E293B]' : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            Rules & Roles
+          </button>
+          <button
+            onClick={() => setTab('resources')}
+            className={`py-3 text-center border-b-2 transition-all ${
+              tab === 'resources' ? 'border-blue-500 text-white bg-[#1E293B]' : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            Resources
           </button>
           <button
             onClick={() => setTab('security')}
@@ -439,6 +465,302 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
             </form>
+          )}
+
+          {/* TAB: Rules & Ecosystem Roles */}
+          {tab === 'rules' && (
+            <div className="space-y-6 text-xs animate-in fade-in duration-200">
+              
+              {/* Section 1: DApp Usage Guidelines */}
+              <div className="p-4 bg-[#0B132B] border border-[#334155] rounded-2xl space-y-3">
+                <div className="flex items-center gap-2 text-blue-400 font-bold text-sm">
+                  <BookOpen className="w-4 h-4 text-blue-400" />
+                  <span>How to Use Aether Feed DApp</span>
+                </div>
+                <p className="text-slate-300 leading-relaxed">
+                  Aether Feed is Dlicom’s visual social telemetry network. Follow these core principles to maximize your experience:
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="p-3 bg-[#1C2541] border border-[#334155] rounded-xl space-y-1">
+                    <div className="font-bold text-white flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                      <span>High-Quality Content</span>
+                    </div>
+                    <p className="text-slate-400 text-[11px]">
+                      Share clean images, technical code snippets, and original insights. Avoid spam or low-effort duplicate posts.
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-[#1C2541] border border-[#334155] rounded-xl space-y-1">
+                    <div className="font-bold text-white flex items-center gap-1.5">
+                      <Award className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Upvote & Curate</span>
+                    </div>
+                    <p className="text-slate-400 text-[11px]">
+                      Upvote valuable posts to boost creator rank on the Global Leaderboard. Downvote off-topic or misleading content.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: How to Earn Golden Checkmark */}
+              <div className="p-4 bg-[#0B132B] border border-amber-500/40 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+                    <ShieldCheck className="w-4 h-4 text-amber-400" />
+                    <span>How to Earn Golden Checkmark</span>
+                  </div>
+                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-extrabold rounded-md">
+                    VIP Badge
+                  </span>
+                </div>
+                <p className="text-slate-300 leading-relaxed">
+                  The <strong className="text-amber-300">Golden Checkmark</strong> is a prestigious community distinction awarded to active contributors and verified leaders.
+                </p>
+                <ul className="space-y-2 text-slate-300 pl-1">
+                  <li className="flex items-start gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+                    <span><strong>Build Upvote Reputation:</strong> Maintain high engagement and earn votes from community members.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+                    <span><strong>Provide Ecosystem Value:</strong> Share Dlicom development updates, technical guides, or node telemetry.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+                    <span><strong>Admin Review:</strong> Dlicom Admins evaluate top contributors and activate Golden Checkmarks directly from the Admin Panel.</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Section 3: Dlicom Ecosystem Roles */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-blue-400" />
+                  <span>Dlicom Ecosystem Community Roles</span>
+                </h3>
+
+                <div className="grid grid-cols-1 gap-3">
+                  
+                  {/* DLIVER Role */}
+                  <div className="p-4 bg-gradient-to-r from-[#0B132B] to-[#1C2541] border border-emerald-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/50 flex items-center justify-center shrink-0">
+                        <Compass className="w-6 h-6 text-emerald-400" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-extrabold text-white">DLIVER Role</h4>
+                          <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold rounded">
+                            Deliverer & Contributor
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                          Assigned to active network deliverers who distribute content, run telemetry nodes, and complete ecosystem tasks.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-3 py-1.5 rounded-xl font-mono shrink-0">
+                      Earn by: Node Delivery & Content Tasks
+                    </div>
+                  </div>
+
+                  {/* DECODED Role */}
+                  <div className="p-4 bg-gradient-to-r from-[#0B132B] to-[#1C2541] border border-cyan-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-500/50 flex items-center justify-center shrink-0">
+                        <Terminal className="w-6 h-6 text-cyan-400" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-extrabold text-white">DECODED Role</h4>
+                          <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10px] font-bold rounded">
+                            Tech Analyst & Dev
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                          Assigned to developers, protocol analysts, and smart contract decoders building tools on Dlicom infrastructure.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-cyan-400 bg-cyan-950/60 border border-cyan-500/30 px-3 py-1.5 rounded-xl font-mono shrink-0">
+                      Earn by: Code Audits & Tech Content
+                    </div>
+                  </div>
+
+                  {/* DCO Role */}
+                  <div className="p-4 bg-gradient-to-r from-[#0B132B] to-[#1C2541] border border-amber-500/50 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/50 flex items-center justify-center shrink-0">
+                        <Shield className="w-6 h-6 text-amber-400" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-extrabold text-white">DCO Role</h4>
+                          <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold rounded">
+                            Dlicom Community Officer
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                          Dlicom Community Officer rank held by node operators, moderators, and ecosystem leaders governing network consensus.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-amber-300 bg-amber-950/60 border border-amber-500/30 px-3 py-1.5 rounded-xl font-mono shrink-0">
+                      Earn by: Community Leadership & Governance
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB: Dlicom Resources */}
+          {tab === 'resources' && (
+            <div className="space-y-5 text-xs animate-in fade-in duration-200">
+              <div className="p-4 bg-[#0B132B] border border-[#334155] rounded-2xl flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-blue-400" />
+                    <span>Official Dlicom Ecosystem Directory</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Access official Dlicom platforms, documentation, GitHub repositories, and community channels.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                
+                <a
+                  href="https://dlicom.id"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3.5 bg-[#0B132B] hover:bg-[#1E293B] border border-[#334155] hover:border-blue-500 rounded-2xl flex items-center justify-between group transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+                      <Globe className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white group-hover:text-blue-300 transition-colors">
+                        Official Website
+                      </h4>
+                      <p className="text-[11px] text-slate-400 font-mono">dlicom.id</p>
+                    </div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                </a>
+
+                <a
+                  href="https://id.dlicom.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3.5 bg-[#0B132B] hover:bg-[#1E293B] border border-[#334155] hover:border-blue-500 rounded-2xl flex items-center justify-between group transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+                      <Shield className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white group-hover:text-blue-300 transition-colors">
+                        Dlicom ID Portal
+                      </h4>
+                      <p className="text-[11px] text-slate-400 font-mono">id.dlicom.org</p>
+                    </div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                </a>
+
+                <a
+                  href="https://github.com/promanas0/Aether-Feed"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3.5 bg-[#0B132B] hover:bg-[#1E293B] border border-[#334155] hover:border-blue-500 rounded-2xl flex items-center justify-between group transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
+                      <Terminal className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white group-hover:text-purple-300 transition-colors">
+                        GitHub Repository
+                      </h4>
+                      <p className="text-[11px] text-slate-400 font-mono">Aether-Feed Repository</p>
+                    </div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                </a>
+
+                <a
+                  href="https://docs.dlicom.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3.5 bg-[#0B132B] hover:bg-[#1E293B] border border-[#334155] hover:border-blue-500 rounded-2xl flex items-center justify-between group transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                      <BookOpen className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors">
+                        Documentation & Guides
+                      </h4>
+                      <p className="text-[11px] text-slate-400 font-mono">docs.dlicom.org</p>
+                    </div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                </a>
+
+                <a
+                  href="https://t.me/dlicom_official"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3.5 bg-[#0B132B] hover:bg-[#1E293B] border border-[#334155] hover:border-blue-500 rounded-2xl flex items-center justify-between group transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-cyan-600/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+                      <Send className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors">
+                        Telegram Community
+                      </h4>
+                      <p className="text-[11px] text-slate-400 font-mono">@dlicom_official</p>
+                    </div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                </a>
+
+                <a
+                  href="https://explorer.dlicom.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3.5 bg-[#0B132B] hover:bg-[#1E293B] border border-[#334155] hover:border-blue-500 rounded-2xl flex items-center justify-between group transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-amber-600/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                      <Cpu className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors">
+                        Telemetry Explorer
+                      </h4>
+                      <p className="text-[11px] text-slate-400 font-mono">explorer.dlicom.org</p>
+                    </div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                </a>
+
+              </div>
+
+              <div className="p-3 bg-[#0B132B]/60 border border-[#334155] rounded-xl text-center text-slate-400 text-[11px]">
+                💡 More official ecosystem links can be added by contacting Dlicom Admins.
+              </div>
+
+            </div>
           )}
 
           {/* TAB 2: Security (Email & OTP Password Change) */}
