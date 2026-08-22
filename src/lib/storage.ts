@@ -46,23 +46,23 @@ export const DEFAULT_DLICOM_AVATAR = '/avatars/dlicom_default_1.jpg';
 
 export const reconcileFollowGraph = (users: Profile[]): Profile[] => {
   const parseArray = (arr: any): string[] => {
-    if (Array.isArray(arr)) return arr.map(String);
+    if (Array.isArray(arr)) return arr.map(String).filter(Boolean);
     if (typeof arr === 'string') {
       try {
         const parsed = JSON.parse(arr);
-        if (Array.isArray(parsed)) return parsed.map(String);
+        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
       } catch {}
     }
     return [];
   };
 
-  // Map: userId -> Set of follower user IDs
+  // Map: targetUserId -> Set of follower user IDs
   const followerMap = new Map<string, Set<string>>();
   users.forEach(u => {
     followerMap.set(u.id, new Set<string>());
   });
 
-  // Populate from each user's following list (which is the source of truth for who they follow)
+  // Populate strictly from each user's `following` list
   users.forEach(u => {
     const followingList = parseArray(u.following);
     followingList.forEach(targetId => {
@@ -70,14 +70,6 @@ export const reconcileFollowGraph = (users: Profile[]): Profile[] => {
         followerMap.get(targetId)!.add(u.id);
       } else {
         followerMap.set(targetId, new Set<string>([u.id]));
-      }
-    });
-
-    // Also include any explicit followers if present
-    const explicitFollowers = parseArray(u.followers);
-    explicitFollowers.forEach(followerId => {
-      if (followerMap.has(u.id)) {
-        followerMap.get(u.id)!.add(followerId);
       }
     });
   });
@@ -337,21 +329,15 @@ export const syncWithServer = async (): Promise<boolean> => {
               };
 
               const localU = localUserMap.get(suProfile.id);
-              if (localU) {
+              if (localU && currentUser && suProfile.id === currentUser.id) {
                 // If this is currentUser, preserve local uncommitted following list
-                if (currentUser && suProfile.id === currentUser.id) {
-                  mergedUserMap.set(suProfile.id, {
-                    ...suProfile,
-                    ...localU,
-                    following: Array.isArray(localU.following) ? localU.following : suProfile.following,
-                  });
-                } else {
-                  mergedUserMap.set(suProfile.id, {
-                    ...localU,
-                    ...suProfile,
-                  });
-                }
+                mergedUserMap.set(suProfile.id, {
+                  ...suProfile,
+                  ...localU,
+                  following: Array.isArray(localU.following) ? localU.following : suProfile.following,
+                });
               } else {
+                // For all other users, live Supabase is canonical source
                 mergedUserMap.set(suProfile.id, suProfile);
               }
             });
