@@ -334,6 +334,68 @@ export const savePostToCloud = async (post: Post): Promise<boolean> => {
   }
 };
 
+/**
+ * Robustly save comments and replies to Supabase Cloud DB with schema fallback
+ */
+export const saveCommentToCloud = async (comment: PostComment): Promise<boolean> => {
+  const supabase = getSupabaseClient();
+  if (!supabase) return false;
+
+  try {
+    // Attempt 1: Full payload (including parent_comment_id and reply metadata)
+    const { error: fullErr } = await supabase.from('comments').upsert({
+      id: comment.id,
+      post_id: comment.post_id,
+      user_id: comment.user_id,
+      text: comment.text,
+      parent_comment_id: comment.parent_comment_id || null,
+      reply_to_user_id: comment.reply_to_user_id || null,
+      reply_to_username: comment.reply_to_username || null,
+      created_at: comment.created_at,
+    }, { onConflict: 'id' });
+
+    if (!fullErr) {
+      console.log('[Aether Supabase] Comment & reply saved to Cloud DB:', comment.id);
+      return true;
+    }
+
+    // Attempt 2: With parent_comment_id
+    const { error: pErr } = await supabase.from('comments').upsert({
+      id: comment.id,
+      post_id: comment.post_id,
+      user_id: comment.user_id,
+      text: comment.text,
+      parent_comment_id: comment.parent_comment_id || null,
+      created_at: comment.created_at,
+    }, { onConflict: 'id' });
+
+    if (!pErr) {
+      console.log('[Aether Supabase] Threaded comment saved to Cloud DB:', comment.id);
+      return true;
+    }
+
+    // Attempt 3: Core minimal columns only
+    const { error: minErr } = await supabase.from('comments').upsert({
+      id: comment.id,
+      post_id: comment.post_id,
+      user_id: comment.user_id,
+      text: comment.text,
+      created_at: comment.created_at,
+    }, { onConflict: 'id' });
+
+    if (!minErr) {
+      console.log('[Aether Supabase] Standard comment saved to Cloud DB:', comment.id);
+      return true;
+    }
+
+    console.warn('[Aether Supabase] Comment save notice:', minErr.message);
+    return false;
+  } catch (err) {
+    console.warn('[Aether Supabase] Comment cloud save exception:', err);
+    return false;
+  }
+};
+
 /* ==========================================================================
    MULTI-ACCOUNT SWITCHER ENGINE
    ========================================================================== */
@@ -653,10 +715,24 @@ export const syncWithServer = async (): Promise<boolean> => {
             if (supaComments && Array.isArray(supaComments)) {
               const localComments = getItem<PostComment[]>(STORAGE_KEYS.POST_COMMENTS, []);
               const cMap = new Map<string, PostComment>();
-              supaComments.forEach((c: any) => cMap.set(c.id, c));
+
+              supaComments.forEach((c: any) => {
+                cMap.set(c.id, {
+                  id: c.id,
+                  post_id: c.post_id,
+                  user_id: c.user_id,
+                  text: c.text,
+                  created_at: c.created_at,
+                  parent_comment_id: c.parent_comment_id || null,
+                  reply_to_user_id: c.reply_to_user_id || null,
+                  reply_to_username: c.reply_to_username || undefined,
+                });
+              });
+
               localComments.forEach(c => {
                 if (!cMap.has(c.id)) cMap.set(c.id, c);
               });
+
               setItem(STORAGE_KEYS.POST_COMMENTS, Array.from(cMap.values()));
             }
           } catch {}
@@ -869,6 +945,43 @@ export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => vo
           const updated = vips.filter(m => m.id !== payload.message_id);
           setItem(STORAGE_KEYS.VIP_CHAT, updated);
         }
+        window.dispatchEvent(new Event('aether_storage_sync'));
+        onSyncNeeded();
+      })
+      .on('broadcast', { event: 'new_comment' }, ({ payload }) => {
+        if (!payload || !payload.id) return;
+        const comments = getItem<PostComment[]>(STORAGE_KEYS.POST_COMMENTS, []);
+        if (!comments.some(c => c.id === payload.id)) {
+          comments.push(payload);
+          setItem(STORAGE_KEYS.POST_COMMENTS, comments);
+
+          // Update post comments count if exists
+          const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+          const pIdx = posts.findIndex(p => p.id === payload.post_id);
+          if (pIdx !== -1) {
+            posts[pIdx].comments_count = (posts[pIdx].comments_count || 0) + 1;
+            setItem(STORAGE_KEYS.POSTS, posts);
+          }
+
+          window.dispatchEvent(new Event('aether_storage_sync'));
+          onSyncNeeded();
+        }
+      })
+      .on('broadcast', { event: 'delete_comment' }, ({ payload }) => {
+        if (!payload || !payload.comment_id) return;
+        const comments = getItem<PostComment[]>(STORAGE_KEYS.POST_COMMENTS, []);
+        const updated = comments.filter(c => c.id !== payload.comment_id);
+        setItem(STORAGE_KEYS.POST_COMMENTS, updated);
+
+        if (payload.post_id) {
+          const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+          const pIdx = posts.findIndex(p => p.id === payload.post_id);
+          if (pIdx !== -1) {
+            posts[pIdx].comments_count = Math.max(0, (posts[pIdx].comments_count || 1) - 1);
+            setItem(STORAGE_KEYS.POSTS, posts);
+          }
+        }
+
         window.dispatchEvent(new Event('aether_storage_sync'));
         onSyncNeeded();
       })
@@ -2607,22 +2720,11 @@ export const addPostComment = async (
     }
   }
 
-  // Sync to Supabase Cloud DB
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      await supabase.from('comments').upsert({
-        id: newComment.id,
-        post_id: newComment.post_id,
-        user_id: newComment.user_id,
-        text: newComment.text,
-        parent_comment_id: newComment.parent_comment_id || null,
-        created_at: newComment.created_at,
-      }, { onConflict: 'id' });
-    } catch (err) {
-      console.warn('[Aether Supabase] Comment save notice:', err);
-    }
-  }
+  // 1. Instant Realtime Broadcast to all connected clients & tabs
+  broadcastRealtimeEvent('new_comment', newComment);
+
+  // 2. Persist to Supabase Cloud DB with multi-level schema fallback
+  await saveCommentToCloud(newComment);
 
   await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
@@ -2658,7 +2760,10 @@ export const deletePostComment = async (
     setItem(STORAGE_KEYS.POSTS, posts);
   }
 
-  // Supabase delete
+  // 1. Instant Realtime Broadcast
+  broadcastRealtimeEvent('delete_comment', { comment_id: commentId, post_id: targetComment.post_id });
+
+  // 2. Supabase delete
   const supabase = getSupabaseClient();
   if (supabase) {
     await supabase.from('comments').delete().eq('id', commentId);
