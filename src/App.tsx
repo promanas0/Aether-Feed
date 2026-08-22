@@ -157,21 +157,24 @@ export function App() {
     });
 
     // 2. Responsive Periodic Background Sync (every 1.5s for seamless multi-device sync)
-    const pollInterval = setInterval(() => {
-      syncWithServer();
+    const pollInterval = setInterval(async () => {
+      await syncWithServer();
+      syncStateFromStorage();
     }, 1500);
 
     const handleSync = () => {
       syncStateFromStorage();
     };
 
-    const handleWindowFocus = () => {
-      syncWithServer();
+    const handleWindowFocus = async () => {
+      await syncWithServer();
+      syncStateFromStorage();
     };
 
-    const handleVisibilityChange = () => {
+    const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
-        syncWithServer();
+        await syncWithServer();
+        syncStateFromStorage();
       }
     };
 
