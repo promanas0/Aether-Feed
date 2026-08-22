@@ -9,13 +9,17 @@ import {
   X, 
   MessageSquare, 
   Lock,
-  CheckCheck
+  CheckCheck,
+  Pin,
+  PinOff
 } from 'lucide-react';
 import type { Profile, ChatMessage, ToastMessage } from '../../types';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
 import { 
   isUserAdmin, 
   getVipChatMessages, 
+  getPinnedVipChatMessage,
+  togglePinVipChatMessage,
   sendVipChatMessage, 
   deleteVipChatMessage,
   syncWithServer 
@@ -39,6 +43,7 @@ export const VipChatView: React.FC<VipChatViewProps> = ({
   const isGolden = Boolean(currentUser.is_golden_verified || isAdmin);
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => getVipChatMessages());
+  const [pinnedMessage, setPinnedMessage] = useState<ChatMessage | null>(() => getPinnedVipChatMessage());
   const [textInput, setTextInput] = useState('');
   const [imageData, setImageData] = useState<string | null>(null);
   const [showCodeInput, setShowCodeInput] = useState(false);
@@ -49,16 +54,18 @@ export const VipChatView: React.FC<VipChatViewProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
   };
 
   useEffect(() => {
     setMessages(getVipChatMessages());
-    scrollToBottom();
+    setPinnedMessage(getPinnedVipChatMessage());
+    setTimeout(() => scrollToBottom('auto'), 50);
 
     const handleSync = () => {
       setMessages(getVipChatMessages());
+      setPinnedMessage(getPinnedVipChatMessage());
     };
 
     const pollInterval = setInterval(async () => {
@@ -176,6 +183,50 @@ export const VipChatView: React.FC<VipChatViewProps> = ({
         </div>
       </div>
 
+      {/* Top Pinned Message Banner */}
+      {pinnedMessage && (
+        <div className="px-4 py-2.5 bg-[#0B132B] border-b border-amber-500/30 flex items-center justify-between gap-3 text-xs z-10 shadow-sm animate-in fade-in duration-150">
+          <div 
+            onClick={() => {
+              const el = document.getElementById(`vip_msg_${pinnedMessage.id}`);
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.add('ring-2', 'ring-amber-400', 'rounded-2xl');
+                setTimeout(() => el.classList.remove('ring-2', 'ring-amber-400', 'rounded-2xl'), 2200);
+              }
+            }}
+            className="flex items-center gap-2.5 min-w-0 cursor-pointer group flex-1"
+            title="Click to jump to pinned message"
+          >
+            <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/40">
+              <Pin className="w-3.5 h-3.5 fill-amber-400/40" />
+            </div>
+            <div className="truncate min-w-0">
+              <div className="flex items-center gap-1.5 font-bold text-amber-300 text-[11px]">
+                <span>Pinned Message</span>
+                <span className="text-slate-400 font-normal truncate">• {pinnedMessage.user?.display_name || 'Member'}</span>
+              </div>
+              <p className="text-slate-200 truncate text-xs">
+                {pinnedMessage.text || (pinnedMessage.image_data ? '📷 Image Attachment' : '💻 Code Snippet')}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              togglePinVipChatMessage(pinnedMessage.id);
+              setPinnedMessage(getPinnedVipChatMessage());
+              setMessages(getVipChatMessages());
+              addToast('Message Unpinned', 'Pinned message removed.', 'info');
+            }}
+            className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-[#1E293B] rounded-lg transition-colors cursor-pointer shrink-0"
+            title="Unpin Message"
+          >
+            <PinOff className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Messages Stream Container */}
       <div 
         className="flex-1 p-4 overflow-y-auto space-y-4 bg-[#0F172A]/50"
@@ -197,7 +248,8 @@ export const VipChatView: React.FC<VipChatViewProps> = ({
             return (
               <div
                 key={msg.id}
-                className={`flex gap-3 max-w-xl ${isMe ? 'ml-auto flex-row-reverse' : ''}`}
+                id={`vip_msg_${msg.id}`}
+                className={`flex gap-3 max-w-xl transition-all duration-300 ${isMe ? 'ml-auto flex-row-reverse' : ''}`}
               >
                 <img
                   src={author.avatar_url}
@@ -234,8 +286,16 @@ export const VipChatView: React.FC<VipChatViewProps> = ({
                       isMe
                         ? 'bg-blue-600 text-white rounded-tr-none'
                         : 'bg-[#1E293B] text-slate-200 border border-[#334155] rounded-tl-none'
-                    }`}
+                    } ${msg.is_pinned ? 'border-amber-400/50 ring-1 ring-amber-400/40' : ''}`}
                   >
+                    {/* Pinned Indicator on Bubble */}
+                    {msg.is_pinned && (
+                      <div className={`flex items-center gap-1 text-[10px] text-amber-300 font-bold mb-1.5 ${isMe ? 'justify-end' : ''}`}>
+                        <Pin className="w-3 h-3 fill-amber-400/50" />
+                        <span>Pinned</span>
+                      </div>
+                    )}
+
                     {/* Message Text */}
                     {msg.text && <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>}
 
@@ -270,27 +330,64 @@ export const VipChatView: React.FC<VipChatViewProps> = ({
 
                       {/* Message Options Dropdown */}
                       {activeMenuMsgId === msg.id && (
-                        <div 
-                          className={`absolute ${isMe ? 'right-0' : 'left-0'} mt-1 w-44 bg-[#0F172A] border border-[#334155] rounded-xl shadow-2xl py-1 z-30 flex flex-col text-xs`}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {canDeleteEveryone && (
-                            <button
-                              onClick={() => handleDeleteForEveryone(msg.id)}
-                              className="flex items-center gap-2 px-3 py-2 text-rose-400 hover:bg-rose-500/10 text-left transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Delete for Everyone</span>
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleDeleteForMe(msg.id)}
-                            className="flex items-center gap-2 px-3 py-2 text-slate-300 hover:bg-slate-800 text-left transition-colors cursor-pointer"
+                        <>
+                          <div 
+                            className="fixed inset-0 z-20"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveMenuMsgId(null);
+                            }}
+                          />
+                          <div 
+                            className={`absolute ${isMe ? 'right-0' : 'left-0'} mt-1 w-44 bg-[#0F172A] border border-[#334155] rounded-xl shadow-2xl py-1 z-30 flex flex-col text-xs`}
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            <EyeOff className="w-3.5 h-3.5" />
-                            <span>Delete for Me</span>
-                          </button>
-                        </div>
+                            {/* Pin / Unpin Button */}
+                            <button
+                              onClick={() => {
+                                setActiveMenuMsgId(null);
+                                const isNowPinned = togglePinVipChatMessage(msg.id);
+                                setPinnedMessage(getPinnedVipChatMessage());
+                                setMessages(getVipChatMessages());
+                                addToast(
+                                  isNowPinned ? 'Message Pinned' : 'Message Unpinned',
+                                  isNowPinned ? 'Message is pinned to top of chat.' : 'Message unpinned.',
+                                  'success'
+                                );
+                              }}
+                              className="flex items-center gap-2 px-3 py-2 text-amber-300 hover:bg-amber-500/10 text-left transition-colors cursor-pointer"
+                            >
+                              {msg.is_pinned ? (
+                                <>
+                                  <PinOff className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>Unpin Message</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Pin className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>Pin Message</span>
+                                </>
+                              )}
+                            </button>
+
+                            {canDeleteEveryone && (
+                              <button
+                                onClick={() => handleDeleteForEveryone(msg.id)}
+                                className="flex items-center gap-2 px-3 py-2 text-rose-400 hover:bg-rose-500/10 text-left transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete for Everyone</span>
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteForMe(msg.id)}
+                              className="flex items-center gap-2 px-3 py-2 text-slate-300 hover:bg-slate-800 text-left transition-colors cursor-pointer"
+                            >
+                              <EyeOff className="w-3.5 h-3.5" />
+                              <span>Delete for Me</span>
+                            </button>
+                          </div>
+                        </>
                       )}
                     </div>
                   </div>

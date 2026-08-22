@@ -86,6 +86,7 @@ export interface ChatMessage {
   code_snippet?: string;
   created_at: string;
   is_read?: boolean;
+  is_pinned?: boolean;
   is_deleted?: boolean;
   deleted_for_users?: string[];
   user?: Profile;
@@ -98,6 +99,7 @@ export interface DirectMessage {
   text: string;
   created_at: string;
   is_read?: boolean;
+  is_pinned?: boolean;
   is_deleted?: boolean;
   deleted_for_users?: string[];
   sender?: Profile;

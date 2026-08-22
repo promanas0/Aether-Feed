@@ -16,6 +16,8 @@ const STORAGE_KEYS = {
   ADMIN_EMAILS: 'aether_admin_emails_v4',
   VIP_CHAT: 'aether_vip_chat_v4',
   DIRECT_MESSAGES: 'aether_direct_messages_v4',
+  PINNED_VIP_CHAT_MSG_ID: 'aether_pinned_vip_chat_msg_id_v4',
+  PINNED_DM_MSG_IDS: 'aether_pinned_dm_msg_ids_v4',
   DELETED_CHAT_MSG_IDS: 'aether_deleted_chat_msg_ids_v4',
   DELETED_DM_MSG_IDS: 'aether_deleted_dm_msg_ids_v4',
   BANNED_USER_IDS: 'aether_banned_user_ids_v4',
@@ -2275,12 +2277,14 @@ export const isUserPostingRestricted = (user?: Profile | null): { restricted: bo
 export const getVipChatMessages = (): ChatMessage[] => {
   const messages = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
   const deletedForMe = new Set(getItem<string[]>(STORAGE_KEYS.DELETED_CHAT_MSG_IDS, []));
+  const pinnedId = getItem<string | null>(STORAGE_KEYS.PINNED_VIP_CHAT_MSG_ID, null);
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
 
   return messages
     .filter(m => !deletedForMe.has(m.id) && !m.is_deleted)
     .map(m => ({
       ...m,
+      is_pinned: m.id === pinnedId,
       user: users.find(u => u.id === m.user_id) || m.user || {
         id: m.user_id,
         email: '',
@@ -2298,7 +2302,25 @@ export const getVipChatMessages = (): ChatMessage[] => {
         total_votes_received: 0,
         created_at: new Date().toISOString(),
       },
-    }));
+    }))
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+};
+
+export const getPinnedVipChatMessage = (): ChatMessage | null => {
+  const pinnedId = getItem<string | null>(STORAGE_KEYS.PINNED_VIP_CHAT_MSG_ID, null);
+  if (!pinnedId) return null;
+  const messages = getVipChatMessages();
+  return messages.find(m => m.id === pinnedId) || null;
+};
+
+export const togglePinVipChatMessage = (messageId: string): boolean => {
+  const currentPinnedId = getItem<string | null>(STORAGE_KEYS.PINNED_VIP_CHAT_MSG_ID, null);
+  const nextPinnedId = currentPinnedId === messageId ? null : messageId;
+  setItem(STORAGE_KEYS.PINNED_VIP_CHAT_MSG_ID, nextPinnedId);
+  broadcastRealtimeEvent('pin_vip_message', { pinned_id: nextPinnedId });
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+  return nextPinnedId !== null;
 };
 
 export const sendVipChatMessage = async (data: {
@@ -2549,6 +2571,9 @@ export const deletePostComment = async (
 export const getDirectMessages = (userA: string, userB: string): DirectMessage[] => {
   const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
   const deletedForMe = new Set(getItem<string[]>(STORAGE_KEYS.DELETED_DM_MSG_IDS, []));
+  const pairKey = [userA, userB].sort().join('_');
+  const pinnedMap = getItem<Record<string, string>>(STORAGE_KEYS.PINNED_DM_MSG_IDS, {});
+  const pinnedId = pinnedMap[pairKey];
   const users = getRealUsers();
   const userMap = new Map<string, Profile>();
   users.forEach(u => userMap.set(u.id, u));
@@ -2562,10 +2587,37 @@ export const getDirectMessages = (userA: string, userB: string): DirectMessage[]
     )
     .map(m => ({
       ...m,
+      is_pinned: m.id === pinnedId,
       sender: userMap.get(m.sender_id),
       receiver: userMap.get(m.receiver_id),
     }))
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+};
+
+export const getPinnedDirectMessage = (userA: string, userB: string): DirectMessage | null => {
+  const pairKey = [userA, userB].sort().join('_');
+  const pinnedMap = getItem<Record<string, string>>(STORAGE_KEYS.PINNED_DM_MSG_IDS, {});
+  const pinnedId = pinnedMap[pairKey];
+  if (!pinnedId) return null;
+  const dms = getDirectMessages(userA, userB);
+  return dms.find(m => m.id === pinnedId) || null;
+};
+
+export const togglePinDirectMessage = (messageId: string, userA: string, userB: string): boolean => {
+  const pairKey = [userA, userB].sort().join('_');
+  const pinnedMap = getItem<Record<string, string>>(STORAGE_KEYS.PINNED_DM_MSG_IDS, {});
+  let isNowPinned = false;
+  if (pinnedMap[pairKey] === messageId) {
+    delete pinnedMap[pairKey];
+  } else {
+    pinnedMap[pairKey] = messageId;
+    isNowPinned = true;
+  }
+  setItem(STORAGE_KEYS.PINNED_DM_MSG_IDS, pinnedMap);
+  broadcastRealtimeEvent('pin_dm_message', { pairKey, pinned_id: pinnedMap[pairKey] || null });
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+  return isNowPinned;
 };
 
 export const getDmConversations = (currentUserId: string): Array<{

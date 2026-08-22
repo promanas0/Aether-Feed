@@ -9,13 +9,17 @@ import {
   User, 
   ChevronLeft,
   Check,
-  CheckCheck
+  CheckCheck,
+  Pin,
+  PinOff
 } from 'lucide-react';
 import type { Profile, DirectMessage, ToastMessage } from '../../types';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
 import { 
   DEFAULT_DLICOM_AVATAR, 
   getDirectMessages, 
+  getPinnedDirectMessage,
+  togglePinDirectMessage,
   getDmConversations, 
   sendDirectMessage, 
   deleteDirectMessage,
@@ -47,6 +51,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     unreadCount: number;
   }>>(() => getDmConversations(currentUser.id));
   const [messages, setMessages] = useState<DirectMessage[]>([]);
+  const [pinnedMessage, setPinnedMessage] = useState<DirectMessage | null>(null);
   const [inputText, setInputText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -54,8 +59,8 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
   };
 
   const desktopAutoSelectedRef = useRef(false);
@@ -81,10 +86,12 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     if (selectedUser) {
       markDirectMessagesAsRead(currentUser.id, selectedUser.id);
       setMessages(getDirectMessages(currentUser.id, selectedUser.id));
+      setPinnedMessage(getPinnedDirectMessage(currentUser.id, selectedUser.id));
       setConversations(getDmConversations(currentUser.id));
-      scrollToBottom();
+      setTimeout(() => scrollToBottom('auto'), 50);
     } else {
       setMessages([]);
+      setPinnedMessage(null);
       setConversations(getDmConversations(currentUser.id));
     }
   }, [selectedUser, currentUser.id]);
@@ -96,6 +103,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
       if (selectedUser) {
         markDirectMessagesAsRead(currentUser.id, selectedUser.id);
         setMessages(getDirectMessages(currentUser.id, selectedUser.id));
+        setPinnedMessage(getPinnedDirectMessage(currentUser.id, selectedUser.id));
       }
     };
 
@@ -112,7 +120,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   }, [currentUser.id, selectedUser]);
 
   useEffect(() => {
-    scrollToBottom();
+    scrollToBottom('smooth');
   }, [messages.length]);
 
   const handleSendMessage = async (e?: React.FormEvent) => {
@@ -316,6 +324,52 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
               </button>
             </div>
 
+            {/* Top Pinned Message Banner */}
+            {pinnedMessage && (
+              <div className="px-4 py-2.5 bg-[#0B132B] border-b border-amber-500/30 flex items-center justify-between gap-3 text-xs z-10 shadow-sm animate-in fade-in duration-150">
+                <div 
+                  onClick={() => {
+                    const el = document.getElementById(`dm_msg_${pinnedMessage.id}`);
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      el.classList.add('ring-2', 'ring-amber-400', 'rounded-2xl');
+                      setTimeout(() => el.classList.remove('ring-2', 'ring-amber-400', 'rounded-2xl'), 2200);
+                    }
+                  }}
+                  className="flex items-center gap-2.5 min-w-0 cursor-pointer group flex-1"
+                  title="Click to jump to pinned message"
+                >
+                  <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/40">
+                    <Pin className="w-3.5 h-3.5 fill-amber-400/40" />
+                  </div>
+                  <div className="truncate min-w-0">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-300 text-[11px]">
+                      <span>Pinned Message</span>
+                      <span className="text-slate-400 font-normal truncate">
+                        • {pinnedMessage.sender_id === currentUser.id ? 'You' : selectedUser.display_name}
+                      </span>
+                    </div>
+                    <p className="text-slate-200 truncate text-xs">
+                      {pinnedMessage.text}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    togglePinDirectMessage(pinnedMessage.id, currentUser.id, selectedUser.id);
+                    setPinnedMessage(getPinnedDirectMessage(currentUser.id, selectedUser.id));
+                    setMessages(getDirectMessages(currentUser.id, selectedUser.id));
+                    addToast('Message Unpinned', 'Pinned message removed.', 'info');
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-[#1E293B] rounded-lg transition-colors cursor-pointer shrink-0"
+                  title="Unpin Message"
+                >
+                  <PinOff className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
             {/* Direct Messages List */}
             <div 
               className="flex-1 p-4 overflow-y-auto space-y-3.5"
@@ -336,7 +390,8 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                   return (
                     <div
                       key={msg.id}
-                      className={`flex flex-col max-w-sm sm:max-w-md ${isMe ? 'ml-auto items-end' : 'mr-auto items-start'}`}
+                      id={`dm_msg_${msg.id}`}
+                      className={`flex flex-col max-w-sm sm:max-w-md transition-all duration-300 ${isMe ? 'ml-auto items-end' : 'mr-auto items-start'}`}
                     >
                       <div className="group relative">
                         <div
@@ -344,8 +399,16 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                             isMe
                               ? 'bg-blue-600 text-white rounded-tr-none shadow-sm'
                               : 'bg-[#1E293B] text-slate-200 border border-[#334155] rounded-tl-none'
-                          }`}
+                          } ${msg.is_pinned ? 'border-amber-400/50 ring-1 ring-amber-400/40' : ''}`}
                         >
+                          {/* Pinned Tag */}
+                          {msg.is_pinned && (
+                            <div className={`flex items-center gap-1 text-[10px] text-amber-300 font-bold mb-1 ${isMe ? 'justify-end' : ''}`}>
+                              <Pin className="w-3 h-3 fill-amber-400/50" />
+                              <span>Pinned</span>
+                            </div>
+                          )}
+
                           {msg.text}
                         </div>
 
@@ -376,6 +439,34 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                                 className={`absolute ${isMe ? 'right-0' : 'left-0'} mt-1 w-44 bg-[#0F172A] border border-[#334155] rounded-xl shadow-2xl py-1 z-30 flex flex-col text-xs`}
                                 onClick={(e) => e.stopPropagation()}
                               >
+                              {/* Pin / Unpin Button */}
+                              <button
+                                onClick={() => {
+                                  setActiveMenuMsgId(null);
+                                  const isNowPinned = togglePinDirectMessage(msg.id, currentUser.id, selectedUser.id);
+                                  setPinnedMessage(getPinnedDirectMessage(currentUser.id, selectedUser.id));
+                                  setMessages(getDirectMessages(currentUser.id, selectedUser.id));
+                                  addToast(
+                                    isNowPinned ? 'Message Pinned' : 'Message Unpinned',
+                                    isNowPinned ? 'Message is pinned to top of conversation.' : 'Message unpinned.',
+                                    'success'
+                                  );
+                                }}
+                                className="flex items-center gap-2 px-3 py-2 text-amber-300 hover:bg-amber-500/10 text-left transition-colors cursor-pointer"
+                              >
+                                {msg.is_pinned ? (
+                                  <>
+                                    <PinOff className="w-3.5 h-3.5 text-amber-400" />
+                                    <span>Unpin Message</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Pin className="w-3.5 h-3.5 text-amber-400" />
+                                    <span>Pin Message</span>
+                                  </>
+                                )}
+                              </button>
+
                               {canDeleteEveryone && (
                                 <button
                                   onClick={() => handleDeleteForEveryone(msg.id)}
