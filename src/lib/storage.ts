@@ -135,8 +135,83 @@ export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
     following: parseArray(p.following),
     total_votes_received: p.total_votes_received || 0,
     password_hash: p.password_hash || '',
+    updated_at: p.updated_at || new Date().toISOString(),
     created_at: p.created_at || new Date().toISOString(),
   };
+};
+
+/**
+ * Robustly save user profile updates to Supabase Cloud DB and local API with fallback
+ */
+export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => {
+  const cleanData = sanitizeProfileForSupabase(profile);
+
+  // 1. Local API Endpoint Update
+  try {
+    fetch('/api/users/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: cleanData }),
+    }).catch(() => {});
+  } catch {}
+
+  // 2. Supabase Cloud DB Update
+  const supabase = getSupabaseClient();
+  if (!supabase) return false;
+
+  try {
+    // Attempt 1: Direct Update on existing row
+    const { error: updateErr } = await supabase
+      .from('profiles')
+      .update(cleanData)
+      .eq('id', profile.id);
+
+    if (!updateErr) return true;
+
+    console.warn('[Aether Supabase] Profile update notice, trying upsert:', updateErr.message);
+
+    // Attempt 2: Upsert by Primary Key ID
+    const { error: upsertErr } = await supabase
+      .from('profiles')
+      .upsert(cleanData, { onConflict: 'id' });
+
+    if (!upsertErr) return true;
+
+    console.warn('[Aether Supabase] Profile upsert notice, trying essential columns:', upsertErr.message);
+
+    // Attempt 3: Core essential columns only (safest against schema mismatches)
+    const essentialData = {
+      id: profile.id,
+      email: profile.email,
+      first_name: profile.first_name,
+      last_name: profile.last_name,
+      display_name: profile.display_name,
+      username: profile.username,
+      avatar_url: profile.avatar_url,
+      banner_url: profile.banner_url,
+      bio: profile.bio,
+      location: profile.location,
+      website: profile.website,
+      is_verified: profile.is_verified,
+      is_golden_verified: profile.is_golden_verified,
+      updated_at: profile.updated_at || new Date().toISOString(),
+      created_at: profile.created_at,
+    };
+
+    const { error: essErr } = await supabase
+      .from('profiles')
+      .upsert(essentialData, { onConflict: 'id' });
+
+    if (essErr) {
+      console.error('[Aether Supabase] Essential profile upsert error:', essErr.message);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[Aether Supabase] Critical saveProfileToCloud error:', err);
+    return false;
+  }
 };
 
 export const sanitizePostForSupabase = (p: Post) => {
@@ -332,11 +407,12 @@ export const syncWithServer = async (): Promise<boolean> => {
         try {
           // A. Push ONLY Current User's Profile
           if (currentUser) {
-            await supabase.from('profiles').upsert(sanitizeProfileForSupabase(currentUser));
+            await saveProfileToCloud(currentUser);
           }
 
           // B. Pull ALL live profiles from Supabase
           const { data: supaProfiles, error: profError } = await supabase.from('profiles').select('*');
+          let finalUsers: Profile[] = [];
           if (!profError && supaProfiles && supaProfiles.length > 0) {
             const cleanSupaUsers = supaProfiles.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
             const currentLocalUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
@@ -353,15 +429,20 @@ export const syncWithServer = async (): Promise<boolean> => {
               };
 
               const localU = localUserMap.get(suProfile.id);
-              if (localU && currentUser && suProfile.id === currentUser.id) {
-                // If this is currentUser, preserve local uncommitted following list
-                mergedUserMap.set(suProfile.id, {
-                  ...suProfile,
-                  ...localU,
-                  following: Array.isArray(localU.following) ? localU.following : suProfile.following,
-                });
+              if (localU) {
+                const localTime = localU.updated_at ? new Date(localU.updated_at).getTime() : 0;
+                const supaTime = suProfile.updated_at ? new Date(suProfile.updated_at).getTime() : 0;
+
+                if (localTime > supaTime) {
+                  // Local edit is newer! Preserve local profile edits and sync to cloud!
+                  const merged = { ...suProfile, ...localU };
+                  mergedUserMap.set(suProfile.id, merged);
+                  saveProfileToCloud(merged);
+                } else {
+                  // Cloud profile is newer or equal! Use cloud profile.
+                  mergedUserMap.set(suProfile.id, suProfile);
+                }
               } else {
-                // For all other users, live Supabase is canonical source
                 mergedUserMap.set(suProfile.id, suProfile);
               }
             });
@@ -374,7 +455,7 @@ export const syncWithServer = async (): Promise<boolean> => {
             });
 
             // Reconcile complete bidirectional follow graph across all users
-            const finalUsers = reconcileFollowGraph(Array.from(mergedUserMap.values()));
+            finalUsers = reconcileFollowGraph(Array.from(mergedUserMap.values()));
             setItem(STORAGE_KEYS.REAL_USERS, finalUsers);
 
             // Update saved accounts if current profile changed
@@ -384,6 +465,8 @@ export const syncWithServer = async (): Promise<boolean> => {
                 addOrUpdateSavedAccount(freshActive);
               }
             }
+          } else {
+            finalUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
           }
 
           // C. Pull ALL live votes from Supabase
@@ -427,11 +510,13 @@ export const syncWithServer = async (): Promise<boolean> => {
                 const pVotes = validVotes.filter(v => v.post_id === p.id);
                 const up = pVotes.filter(v => v.type === 'up').length;
                 const down = pVotes.filter(v => v.type === 'down').length;
+                const freshAuthor = finalUsers.find(u => u.id === p.user_id);
                 return {
                   ...p,
                   votes_up: up,
                   votes_down: down,
                   net_votes: up - down,
+                  user: freshAuthor || p.user,
                 };
               });
 
@@ -930,23 +1015,8 @@ export const updateProfileData = (userId: string, updates: Partial<Profile>): Pr
     setItem(STORAGE_KEYS.VIP_CHAT, updatedChat);
   }
 
-  // Push updated profile to Supabase Cloud directly
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    supabase.from('profiles').upsert(sanitizeProfileForSupabase(updatedUser)).then(
-      () => {},
-      (err: any) => console.warn('[Aether Supabase] Profile update error:', err)
-    );
-  }
-
-  // Push to local server API
-  try {
-    fetch('/api/users/update', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user: sanitizeProfileForSupabase(updatedUser) }),
-    }).catch(() => {});
-  } catch {}
+  // Push updated profile to Supabase Cloud & Local API with fallback
+  saveProfileToCloud(updatedUser);
 
   syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
@@ -1659,16 +1729,7 @@ export const adminToggleVerifyUser = (targetUserId: string, actorEmail?: string)
   };
 
   setItem(STORAGE_KEYS.REAL_USERS, users);
-
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    supabase
-      .from('profiles')
-      .update({ is_verified: users[idx].is_verified })
-      .eq('id', targetUserId)
-      .then(() => {}, () => {});
-  }
-
+  saveProfileToCloud(users[idx]);
   syncWithServer();
   return users[idx];
 };
@@ -1692,16 +1753,7 @@ export const adminToggleGoldenVerifyUser = (targetUserId: string, actorEmail?: s
   };
 
   setItem(STORAGE_KEYS.REAL_USERS, users);
-
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    supabase
-      .from('profiles')
-      .update({ is_golden_verified: nextGolden })
-      .eq('id', targetUserId)
-      .then(() => {}, () => {});
-  }
-
+  saveProfileToCloud(users[idx]);
   syncWithServer();
   return users[idx];
 };
@@ -1727,16 +1779,7 @@ export const adminSetPostingTimeout = (
   };
 
   setItem(STORAGE_KEYS.REAL_USERS, users);
-
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    supabase
-      .from('profiles')
-      .update({ posting_timeout_until: timeoutUntil })
-      .eq('id', targetUserId)
-      .then(() => {}, () => {});
-  }
-
+  saveProfileToCloud(users[idx]);
   syncWithServer();
   return users[idx];
 };
