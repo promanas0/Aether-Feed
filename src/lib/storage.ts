@@ -516,20 +516,28 @@ export const syncWithServer = async (): Promise<boolean> => {
             const mergedUserMap = new Map<string, Profile>();
 
             cleanSupaUsers.forEach((su: any) => {
+              const localU = localUserMap.get(su.id);
               const suProfile: Profile = {
                 ...su,
                 followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : [],
                 following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : [],
+                is_golden_verified: su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : (localU?.is_golden_verified ?? false),
+                is_admin: su.is_admin !== undefined ? Boolean(su.is_admin) : (localU?.is_admin ?? false),
+                is_verified: su.is_verified !== undefined ? Boolean(su.is_verified) : (localU?.is_verified ?? true),
               };
 
-              const localU = localUserMap.get(suProfile.id);
               if (localU) {
                 const localTime = localU.updated_at ? new Date(localU.updated_at).getTime() : 0;
                 const supaTime = suProfile.updated_at ? new Date(suProfile.updated_at).getTime() : 0;
 
                 if (localTime > supaTime) {
                   // Local edit is newer! Preserve local profile edits and sync to cloud!
-                  const merged = { ...suProfile, ...localU };
+                  const merged = { 
+                    ...suProfile, 
+                    ...localU,
+                    is_golden_verified: localU.is_golden_verified ?? suProfile.is_golden_verified ?? false,
+                    is_admin: localU.is_admin ?? suProfile.is_admin ?? false,
+                  };
                   mergedUserMap.set(suProfile.id, merged);
                   saveProfileToCloud(merged);
                 } else {
