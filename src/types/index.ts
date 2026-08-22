@@ -38,6 +38,8 @@ export interface Post {
   votes_down: number;
   net_votes: number; // votes_up - votes_down
   created_at: string;
+  updated_at?: string;
+  is_deleted?: boolean;
   user?: Profile;
 }
 

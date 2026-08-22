@@ -227,6 +227,7 @@ export const sanitizePostForSupabase = (p: Post) => {
     votes_down: p.votes_down || 0,
     net_votes: p.net_votes || 0,
     created_at: p.created_at || new Date().toISOString(),
+    updated_at: p.updated_at || new Date().toISOString(),
   };
 };
 
@@ -503,7 +504,7 @@ export const syncWithServer = async (): Promise<boolean> => {
             const combinedPosts = [...pendingLocalPosts, ...supaPosts];
 
             const validSupaPosts = combinedPosts
-              .filter((p: any) => !deletedIds.has(p.id))
+              .filter((p: any) => !deletedIds.has(p.id) && p.description !== '[DELETED]' && p.title !== '[DELETED]' && !p.is_deleted)
               .map((p: any) => {
                 const pVotes = validVotes.filter(v => v.post_id === p.id);
                 const up = pVotes.filter(v => v.type === 'up').length;
@@ -1289,9 +1290,15 @@ export const deleteRealPost = (postId: string, userId?: string): boolean => {
     }
   }
 
-  // 5. Delete from Supabase Cloud DB directly
+  // 5. Delete from Supabase Cloud DB directly + soft marker
   const supabase = getSupabaseClient();
   if (supabase) {
+    // Soft mark post as deleted in description field so all devices filter it out even if SQL DELETE is blocked by RLS
+    supabase.from('posts').update({
+      title: '[DELETED]',
+      description: '[DELETED]',
+    }).eq('id', postId).then(() => {}, () => {});
+
     supabase.from('posts').delete().eq('id', postId).then(() => {}, (err) => console.warn('[Supabase Delete Post]', err));
     supabase.from('votes').delete().eq('post_id', postId).then(() => {}, () => {});
     supabase.from('notifications').delete().eq('post_id', postId).then(() => {}, () => {});
@@ -1315,20 +1322,22 @@ export const updateRealPostText = (
   title?: string
 ): Post | null => {
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
-  const idx = posts.findIndex(p => p.id === postId && p.user_id === userId);
+  const idx = posts.findIndex(p => p.id === postId && (p.user_id === userId || isUserAdmin(userId)));
   if (idx === -1) return null;
 
+  const now = new Date().toISOString();
   posts[idx] = {
     ...posts[idx],
     description: description.trim(),
     title: title ? title.trim() : posts[idx].title,
+    updated_at: now,
   };
 
   setItem(STORAGE_KEYS.POSTS, posts);
 
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('posts').upsert(sanitizePostForSupabase(posts[idx])).then(() => {}, () => {});
+    supabase.from('posts').upsert(sanitizePostForSupabase(posts[idx]), { onConflict: 'id' }).select().then(() => {}, () => {});
   }
 
   syncWithServer();
