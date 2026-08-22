@@ -160,51 +160,63 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
   if (!supabase) return false;
 
   try {
-    // Attempt 1: Full profile upsert (Inserts row if missing, Updates row if existing)
-    const { data: upData, error: upsertErr } = await supabase
+    // Attempt 1: Full profile upsert
+    const { error: fullErr } = await supabase
       .from('profiles')
-      .upsert(cleanData, { onConflict: 'id' })
-      .select();
+      .upsert(cleanData, { onConflict: 'id' });
 
-    if (!upsertErr && upData && upData.length > 0) {
-      console.log('[Aether Supabase] Profile updated/inserted in Cloud DB for user:', profile.username);
+    if (!fullErr) {
+      console.log('[Aether Supabase] Full profile updated/inserted in Cloud DB:', profile.username);
       return true;
     }
 
-    if (upsertErr) {
-      console.warn('[Aether Supabase] Full profile upsert error:', upsertErr.message);
-    }
+    console.warn('[Aether Supabase] Full profile upsert notice, trying core columns:', fullErr.message);
 
-    // Attempt 2: Core essential columns only (safest against schema column mismatches)
-    const essentialData = {
+    // Attempt 2: Core standard columns
+    const coreData = {
       id: profile.id,
-      email: profile.email,
-      first_name: profile.first_name,
-      last_name: profile.last_name,
-      display_name: profile.display_name,
-      username: profile.username,
-      avatar_url: profile.avatar_url,
-      banner_url: profile.banner_url,
-      bio: profile.bio,
-      location: profile.location,
-      website: profile.website,
-      is_verified: profile.is_verified,
-      is_golden_verified: profile.is_golden_verified,
-      updated_at: profile.updated_at || new Date().toISOString(),
-      created_at: profile.created_at,
+      email: profile.email || '',
+      first_name: profile.first_name || '',
+      last_name: profile.last_name || '',
+      display_name: profile.display_name || '',
+      username: profile.username || '',
+      avatar_url: profile.avatar_url || DEFAULT_DLICOM_AVATAR,
+      bio: profile.bio || '',
+      is_verified: profile.is_verified ?? true,
+      is_golden_verified: profile.is_golden_verified ?? false,
+      created_at: profile.created_at || new Date().toISOString(),
     };
 
-    const { data: essData, error: essErr } = await supabase
+    const { error: coreErr } = await supabase
       .from('profiles')
-      .upsert(essentialData, { onConflict: 'id' })
-      .select();
+      .upsert(coreData, { onConflict: 'id' });
 
-    if (essErr) {
-      console.error('[Aether Supabase] Essential profile upsert error:', essErr.message);
+    if (!coreErr) {
+      console.log('[Aether Supabase] Core profile saved to Cloud DB:', profile.username);
+      return true;
+    }
+
+    console.warn('[Aether Supabase] Core profile upsert notice, trying minimal columns:', coreErr.message);
+
+    // Attempt 3: Minimal fields guaranteed on any Supabase table
+    const minimalData = {
+      id: profile.id,
+      display_name: profile.display_name || '',
+      username: profile.username || '',
+      avatar_url: profile.avatar_url || DEFAULT_DLICOM_AVATAR,
+      created_at: profile.created_at || new Date().toISOString(),
+    };
+
+    const { error: minErr } = await supabase
+      .from('profiles')
+      .upsert(minimalData, { onConflict: 'id' });
+
+    if (minErr) {
+      console.error('[Aether Supabase] Minimal profile upsert failed:', minErr.message);
       return false;
     }
 
-    console.log('[Aether Supabase] Essential profile saved to Cloud DB:', profile.username);
+    console.log('[Aether Supabase] Minimal profile saved to Cloud DB:', profile.username);
     return true;
   } catch (err) {
     console.error('[Aether Supabase] Critical saveProfileToCloud exception:', err);
@@ -227,8 +239,89 @@ export const sanitizePostForSupabase = (p: Post) => {
     votes_down: p.votes_down || 0,
     net_votes: p.net_votes || 0,
     created_at: p.created_at || new Date().toISOString(),
-    updated_at: p.updated_at || new Date().toISOString(),
   };
+};
+
+/**
+ * Robustly save posts to Supabase Cloud DB with schema column fallback
+ */
+export const savePostToCloud = async (post: Post): Promise<boolean> => {
+  const supabase = getSupabaseClient();
+
+  // 1. Send to Local Server API Endpoint
+  try {
+    fetch('/api/posts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ post }),
+    }).catch(() => {});
+  } catch {}
+
+  if (!supabase) return false;
+
+  const fullPayload = sanitizePostForSupabase(post);
+
+  try {
+    // Attempt 1: Full post upsert
+    const { error: fullErr } = await supabase
+      .from('posts')
+      .upsert(fullPayload, { onConflict: 'id' });
+
+    if (!fullErr) {
+      console.log('[Aether Supabase] Post saved to Cloud DB:', post.id);
+      return true;
+    }
+
+    console.warn('[Aether Supabase] Full post upsert notice, trying standard columns:', fullErr.message);
+
+    // Attempt 2: Standard columns (removes video_data and media_type if non-existent in schema)
+    const stdPayload = {
+      id: post.id,
+      user_id: post.user_id,
+      title: post.title || '',
+      image_data: post.image_data || '',
+      description: post.description || '',
+      votes_up: post.votes_up || 0,
+      votes_down: post.votes_down || 0,
+      net_votes: post.net_votes || 0,
+      created_at: post.created_at || new Date().toISOString(),
+    };
+
+    const { error: stdErr } = await supabase
+      .from('posts')
+      .upsert(stdPayload, { onConflict: 'id' });
+
+    if (!stdErr) {
+      console.log('[Aether Supabase] Standard post saved to Cloud DB:', post.id);
+      return true;
+    }
+
+    console.warn('[Aether Supabase] Standard post upsert notice, trying minimal columns:', stdErr.message);
+
+    // Attempt 3: Core minimal columns only
+    const minPayload = {
+      id: post.id,
+      user_id: post.user_id,
+      title: post.title || '',
+      description: post.description || '',
+      created_at: post.created_at || new Date().toISOString(),
+    };
+
+    const { error: minErr } = await supabase
+      .from('posts')
+      .upsert(minPayload, { onConflict: 'id' });
+
+    if (minErr) {
+      console.error('[Aether Supabase] Minimal post upsert failed:', minErr.message);
+      return false;
+    }
+
+    console.log('[Aether Supabase] Minimal post saved to Cloud DB:', post.id);
+    return true;
+  } catch (err) {
+    console.error('[Aether Supabase] Critical savePostToCloud exception:', err);
+    return false;
+  }
 };
 
 /* ==========================================================================
@@ -1233,18 +1326,8 @@ export const createRealPost = (data: {
     }).catch(() => {});
   } catch {}
 
-  // Send to Supabase Cloud
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    supabase.from('posts').upsert(sanitizePostForSupabase(newPost)).then(
-      ({ error }) => {
-        if (error) console.warn('[Aether Supabase] Post upsert error:', error);
-      },
-      (err: any) => {
-        console.warn('[Aether Supabase] Post upsert error:', err);
-      }
-    );
-  }
+  // Send to Supabase Cloud with schema fallback
+  savePostToCloud(newPost);
 
   window.dispatchEvent(
     new CustomEvent('aether_post_broadcast', {
