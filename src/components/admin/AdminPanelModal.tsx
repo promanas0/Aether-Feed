@@ -188,7 +188,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   };
 
   // Handle Add Admin Email
-  const handleAddAdmin = (e: React.FormEvent) => {
+  const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     const clean = newAdminEmail.toLowerCase().trim();
     if (!clean || !clean.includes('@')) {
@@ -196,9 +196,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       return;
     }
 
-    const success = addAdminEmail(clean, currentUser.email);
+    const success = await addAdminEmail(clean, currentUser.email);
     if (success) {
-      addToast('Admin Team Member Added', `${clean} now has full admin privileges.`, 'success');
+      addToast('Admin Team Member Added', `${clean} now has full admin privileges across all devices.`, 'success');
       setNewAdminEmail('');
       onRefreshData();
     } else {
@@ -207,13 +207,13 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   };
 
   // Handle Remove Admin Email
-  const handleRemoveAdmin = (targetEmail: string) => {
+  const handleRemoveAdmin = async (targetEmail: string) => {
     if (targetEmail.toLowerCase() === 'promanas018@gmail.com') {
       addToast('Action Prohibited', 'Root Super Admin cannot be removed.', 'info');
       return;
     }
 
-    const success = removeAdminEmail(targetEmail, currentUser.email);
+    const success = await removeAdminEmail(targetEmail, currentUser.email);
     if (success) {
       addToast('Admin Revoked', `${targetEmail} has been removed from the admin team.`, 'success');
       onRefreshData();

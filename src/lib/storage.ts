@@ -129,6 +129,7 @@ export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
     website: p.website || '',
     is_verified: p.is_verified ?? true,
     is_golden_verified: p.is_golden_verified ?? false,
+    is_admin: p.is_admin ?? false,
     posting_timeout_until: p.posting_timeout_until || null,
     is_banned: p.is_banned ?? false,
     followers: parseArray(p.followers),
@@ -184,6 +185,7 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
       bio: profile.bio || '',
       is_verified: profile.is_verified ?? true,
       is_golden_verified: profile.is_golden_verified ?? false,
+      is_admin: profile.is_admin ?? false,
       created_at: profile.created_at || new Date().toISOString(),
     };
 
@@ -1698,33 +1700,77 @@ export const getAdminEmails = (): string[] => {
 
 export const isUserAdmin = (userOrEmail?: Profile | string | null): boolean => {
   if (!userOrEmail) return false;
-  const email = typeof userOrEmail === 'string' ? userOrEmail : userOrEmail.email;
-  if (!email) return false;
-  const cleanEmail = email.toLowerCase().trim();
-  const adminList = getAdminEmails();
-  return adminList.includes(cleanEmail);
+
+  if (typeof userOrEmail === 'object') {
+    if (userOrEmail.is_admin === true) return true;
+    const email = userOrEmail.email;
+    if (email && email.toLowerCase().trim() === ROOT_ADMIN_EMAIL.toLowerCase()) return true;
+    if (email && getAdminEmails().includes(email.toLowerCase().trim())) return true;
+    return false;
+  }
+
+  const cleanEmail = userOrEmail.toLowerCase().trim();
+  if (cleanEmail === ROOT_ADMIN_EMAIL.toLowerCase()) return true;
+  if (getAdminEmails().includes(cleanEmail)) return true;
+
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const found = users.find(u => (u.email || '').toLowerCase().trim() === cleanEmail);
+  return Boolean(found && found.is_admin);
 };
 
-export const addAdminEmail = (newEmail: string, actorEmail?: string): boolean => {
+export const addAdminEmail = async (newEmail: string, actorEmail?: string): Promise<boolean> => {
   if (actorEmail && !isUserAdmin(actorEmail)) return false;
   const clean = newEmail.toLowerCase().trim();
   if (!clean || !clean.includes('@')) return false;
 
   const current = getAdminEmails();
-  if (current.includes(clean)) return false;
+  if (!current.includes(clean)) {
+    current.push(clean);
+    setItem(STORAGE_KEYS.ADMIN_EMAILS, current);
+  }
 
-  current.push(clean);
-  setItem(STORAGE_KEYS.ADMIN_EMAILS, current);
+  // Update target user's is_admin flag in REAL_USERS and push to Supabase Cloud DB
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const idx = users.findIndex(u => (u.email || '').toLowerCase().trim() === clean);
+  if (idx !== -1) {
+    users[idx] = {
+      ...users[idx],
+      is_admin: true,
+      updated_at: new Date().toISOString(),
+    };
+    setItem(STORAGE_KEYS.REAL_USERS, users);
+    await saveProfileToCloud(users[idx]);
+  }
+
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
   return true;
 };
 
-export const removeAdminEmail = (targetEmail: string, actorEmail?: string): boolean => {
+export const removeAdminEmail = async (targetEmail: string, actorEmail?: string): Promise<boolean> => {
   if (actorEmail && !isUserAdmin(actorEmail)) return false;
   const clean = targetEmail.toLowerCase().trim();
-  if (clean === ROOT_ADMIN_EMAIL.toLowerCase()) return false; // Root admin is permanent
+  if (clean === ROOT_ADMIN_EMAIL.toLowerCase()) return false;
 
   const current = getAdminEmails().filter(e => e !== clean);
   setItem(STORAGE_KEYS.ADMIN_EMAILS, current);
+
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const idx = users.findIndex(u => (u.email || '').toLowerCase().trim() === clean);
+  if (idx !== -1) {
+    users[idx] = {
+      ...users[idx],
+      is_admin: false,
+      updated_at: new Date().toISOString(),
+    };
+    setItem(STORAGE_KEYS.REAL_USERS, users);
+    await saveProfileToCloud(users[idx]);
+  }
+
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
   return true;
 };
 

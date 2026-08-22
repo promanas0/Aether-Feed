@@ -13,6 +13,7 @@ export interface Profile {
   website?: string;
   is_verified: boolean;
   is_golden_verified?: boolean; // Exclusive Golden Checkmark badge
+  is_admin?: boolean; // Admin privileges flag
   posting_timeout_until?: string; // Timeout ISO date string or 'indefinite'
   is_banned?: boolean; // Account banned status
   followers: string[]; // User IDs who follow this user
