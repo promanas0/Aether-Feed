@@ -9,7 +9,8 @@ import {
   ArrowUpCircle,
   FileText,
   ArrowLeft,
-  Users
+  Users,
+  MessageSquare
 } from 'lucide-react';
 import type { Profile, Post } from '../../types';
 import { PostCard } from '../feed/PostCard';
@@ -32,6 +33,7 @@ interface UserProfileViewProps {
   onOpenProfile: (profile: Profile) => void;
   onShare: (post: Post) => void;
   onOpenSettings: () => void;
+  onSendMessage?: (userId: string) => void;
 }
 
 export const UserProfileView: React.FC<UserProfileViewProps> = ({
@@ -50,6 +52,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onOpenProfile,
   onShare,
   onOpenSettings,
+  onSendMessage,
 }) => {
   const [activeTab, setActiveTab] = useState<'posts' | 'upvoted' | 'about'>('posts');
   const [followersModal, setFollowersModal] = useState<{
@@ -132,7 +135,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               </div>
             </div>
 
-            {/* Follow / Edit Profile Action */}
+            {/* Follow / Edit Profile / Message Actions */}
             <div className="flex items-center gap-2">
               {isCurrentUser ? (
                 <button
@@ -142,26 +145,39 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   Edit Profile
                 </button>
               ) : (
-                <button
-                  onClick={() => onToggleFollow(profile.id)}
-                  className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    isFollowing
-                      ? 'bg-[#1C2541] hover:bg-rose-950/40 text-slate-200 hover:text-rose-300 border border-[#334155]'
-                      : 'bg-blue-600 hover:bg-blue-500 text-white shadow-glow'
-                  }`}
-                >
-                  {isFollowing ? (
-                    <>
-                      <UserCheck className="w-4 h-4" />
-                      <span>Following</span>
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="w-4 h-4" />
-                      <span>Follow Member</span>
-                    </>
+                <>
+                  {onSendMessage && (
+                    <button
+                      onClick={() => onSendMessage(profile.id)}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-[#1C2541] hover:bg-[#2A3756] border border-[#334155] rounded-xl text-xs font-semibold text-slate-200 hover:text-white transition-colors cursor-pointer"
+                      title="Send Direct Message"
+                    >
+                      <MessageSquare className="w-4 h-4 text-blue-400" />
+                      <span>Message</span>
+                    </button>
                   )}
-                </button>
+
+                  <button
+                    onClick={() => onToggleFollow(profile.id)}
+                    className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      isFollowing
+                        ? 'bg-[#1C2541] hover:bg-rose-950/40 text-slate-200 hover:text-rose-300 border border-[#334155]'
+                        : 'bg-blue-600 hover:bg-blue-500 text-white shadow-glow'
+                    }`}
+                  >
+                    {isFollowing ? (
+                      <>
+                        <UserCheck className="w-4 h-4" />
+                        <span>Following</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="w-4 h-4" />
+                        <span>Follow Member</span>
+                      </>
+                    )}
+                  </button>
+                </>
               )}
             </div>
           </div>

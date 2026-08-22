@@ -1,9 +1,10 @@
-import type { Profile, Post, VoteRecord, NotificationItem, ThemeMode, ChatMessage } from '../types';
+import type { Profile, Post, VoteRecord, NotificationItem, ThemeMode, ChatMessage, PostComment, DirectMessage } from '../types';
 import { getSupabaseClient } from './supabaseClient';
 
 const STORAGE_KEYS = {
   REAL_USERS: 'aether_real_users_v4',
   POSTS: 'aether_posts_v4',
+  POST_COMMENTS: 'aether_post_comments_v4',
   VOTES: 'aether_votes_v4',
   NOTIFICATIONS: 'aether_notifications_v4',
   CURRENT_USER_ID: 'aether_current_user_id_v4',
@@ -14,6 +15,9 @@ const STORAGE_KEYS = {
   DELETED_POST_IDS: 'aether_deleted_post_ids_v4',
   ADMIN_EMAILS: 'aether_admin_emails_v4',
   VIP_CHAT: 'aether_vip_chat_v4',
+  DIRECT_MESSAGES: 'aether_direct_messages_v4',
+  DELETED_CHAT_MSG_IDS: 'aether_deleted_chat_msg_ids_v4',
+  DELETED_DM_MSG_IDS: 'aether_deleted_dm_msg_ids_v4',
   BANNED_USER_IDS: 'aether_banned_user_ids_v4',
 };
 
@@ -582,6 +586,7 @@ export const syncWithServer = async (): Promise<boolean> => {
 
             const combinedPosts = [...pendingLocalPosts, ...supaPosts];
 
+            const allComments = getItem<PostComment[]>(STORAGE_KEYS.POST_COMMENTS, []);
             const validSupaPosts = combinedPosts
               .filter((p: any) => !deletedIds.has(p.id) && p.description !== '[DELETED]' && p.title !== '[DELETED]' && !p.is_deleted)
               .map((p: any) => {
@@ -589,11 +594,13 @@ export const syncWithServer = async (): Promise<boolean> => {
                 const up = pVotes.filter(v => v.type === 'up').length;
                 const down = pVotes.filter(v => v.type === 'down').length;
                 const freshAuthor = finalUsers.find(u => u.id === p.user_id);
+                const cCount = allComments.filter(c => c.post_id === p.id).length;
                 return {
                   ...p,
                   votes_up: up,
                   votes_down: down,
                   net_votes: up - down,
+                  comments_count: cCount,
                   user: freshAuthor || p.user,
                 };
               });
@@ -615,6 +622,60 @@ export const syncWithServer = async (): Promise<boolean> => {
             });
             setItem(STORAGE_KEYS.NOTIFICATIONS, Array.from(notifMap.values()));
           }
+
+          // F. Pull comments from Supabase
+          try {
+            const { data: supaComments } = await supabase
+              .from('comments')
+              .select('*')
+              .order('created_at', { ascending: true });
+
+            if (supaComments && Array.isArray(supaComments)) {
+              const localComments = getItem<PostComment[]>(STORAGE_KEYS.POST_COMMENTS, []);
+              const cMap = new Map<string, PostComment>();
+              supaComments.forEach((c: any) => cMap.set(c.id, c));
+              localComments.forEach(c => {
+                if (!cMap.has(c.id)) cMap.set(c.id, c);
+              });
+              setItem(STORAGE_KEYS.POST_COMMENTS, Array.from(cMap.values()));
+            }
+          } catch {}
+
+          // G. Pull direct messages from Supabase
+          try {
+            const { data: supaDms } = await supabase
+              .from('direct_messages')
+              .select('*')
+              .order('created_at', { ascending: true });
+
+            if (supaDms && Array.isArray(supaDms)) {
+              const localDms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
+              const dmMap = new Map<string, DirectMessage>();
+              supaDms.forEach((d: any) => dmMap.set(d.id, d));
+              localDms.forEach(d => {
+                if (!dmMap.has(d.id)) dmMap.set(d.id, d);
+              });
+              setItem(STORAGE_KEYS.DIRECT_MESSAGES, Array.from(dmMap.values()));
+            }
+          } catch {}
+
+          // H. Pull VIP chat messages from Supabase
+          try {
+            const { data: supaVipMsgs } = await supabase
+              .from('vip_messages')
+              .select('*')
+              .order('created_at', { ascending: true });
+
+            if (supaVipMsgs && Array.isArray(supaVipMsgs)) {
+              const localVip = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
+              const vMap = new Map<string, ChatMessage>();
+              supaVipMsgs.forEach((m: any) => vMap.set(m.id, m));
+              localVip.forEach(m => {
+                if (!vMap.has(m.id)) vMap.set(m.id, m);
+              });
+              setItem(STORAGE_KEYS.VIP_CHAT, Array.from(vMap.values()));
+            }
+          } catch {}
         } catch (supaErr) {
           console.warn('[Aether Supabase] Sync notice:', supaErr);
         }
@@ -1976,36 +2037,39 @@ export const isUserPostingRestricted = (user?: Profile | null): { restricted: bo
 
 export const getVipChatMessages = (): ChatMessage[] => {
   const messages = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
+  const deletedForMe = new Set(getItem<string[]>(STORAGE_KEYS.DELETED_CHAT_MSG_IDS, []));
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
 
-  return messages.map(msg => ({
-    ...msg,
-    user: users.find(u => u.id === msg.user_id) || {
-      id: msg.user_id,
-      email: '',
-      first_name: 'VIP',
-      last_name: 'Member',
-      display_name: 'Golden Member',
-      username: 'golden_member',
-      avatar_url: DEFAULT_DLICOM_AVATAR,
-      bio: '',
-      dlicom_address: '',
-      is_verified: true,
-      is_golden_verified: true,
-      followers: [],
-      following: [],
-      total_votes_received: 0,
-      created_at: new Date().toISOString(),
-    },
-  }));
+  return messages
+    .filter(m => !deletedForMe.has(m.id) && !m.is_deleted)
+    .map(m => ({
+      ...m,
+      user: users.find(u => u.id === m.user_id) || m.user || {
+        id: m.user_id,
+        email: '',
+        first_name: 'Golden',
+        last_name: 'Member',
+        display_name: 'Golden Member',
+        username: 'golden_member',
+        avatar_url: DEFAULT_DLICOM_AVATAR,
+        bio: '',
+        dlicom_address: '',
+        is_verified: true,
+        is_golden_verified: true,
+        followers: [],
+        following: [],
+        total_votes_received: 0,
+        created_at: new Date().toISOString(),
+      },
+    }));
 };
 
-export const sendVipChatMessage = (data: {
+export const sendVipChatMessage = async (data: {
   user_id: string;
   text: string;
   image_data?: string;
   code_snippet?: string;
-}): ChatMessage => {
+}): Promise<ChatMessage> => {
   const messages = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const user = users.find(u => u.id === data.user_id);
@@ -2021,17 +2085,15 @@ export const sendVipChatMessage = (data: {
   };
 
   messages.push(newMsg);
-  // Keep last 300 VIP chat messages
   if (messages.length > 300) {
     messages.shift();
   }
 
   setItem(STORAGE_KEYS.VIP_CHAT, messages);
 
-  // Supabase Cloud push if connected
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('vip_messages').upsert({
+    await supabase.from('vip_messages').upsert({
       id: newMsg.id,
       user_id: newMsg.user_id,
       text: newMsg.text,
@@ -2041,11 +2103,29 @@ export const sendVipChatMessage = (data: {
     }).then(() => {}, (err) => console.warn('[Supabase VIP Chat notice]', err));
   }
 
+  await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
   return newMsg;
 };
 
-export const deleteVipChatMessage = (messageId: string, actorId: string): boolean => {
+export const deleteVipChatMessage = async (
+  messageId: string, 
+  actorId: string,
+  mode: 'everyone' | 'me' = 'everyone'
+): Promise<boolean> => {
+  if (mode === 'me') {
+    const deletedForMe = getItem<string[]>(STORAGE_KEYS.DELETED_CHAT_MSG_IDS, []);
+    if (!deletedForMe.includes(messageId)) {
+      deletedForMe.push(messageId);
+      setItem(STORAGE_KEYS.DELETED_CHAT_MSG_IDS, deletedForMe);
+    }
+    window.dispatchEvent(new Event('aether_storage_sync'));
+    if (syncChannel) syncChannel.postMessage('sync');
+    return true;
+  }
+
+  // Delete for everyone
   const messages = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const actor = users.find(u => u.id === actorId);
@@ -2063,11 +2143,308 @@ export const deleteVipChatMessage = (messageId: string, actorId: string): boolea
 
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('vip_messages').delete().eq('id', messageId).then(() => {}, () => {});
+    await supabase.from('vip_messages').delete().eq('id', messageId).then(() => {}, () => {});
   }
 
+  await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
   return true;
 };
 
+/* ==========================================================================
+   POST COMMENTS ENGINE (REAL-TIME WORKING)
+   ========================================================================== */
 
+export const getPostComments = (postId: string): PostComment[] => {
+  const comments = getItem<PostComment[]>(STORAGE_KEYS.POST_COMMENTS, []);
+  const users = getRealUsers();
+  const userMap = new Map<string, Profile>();
+  users.forEach(u => userMap.set(u.id, u));
+
+  return comments
+    .filter(c => c.post_id === postId)
+    .map(c => ({
+      ...c,
+      user: userMap.get(c.user_id) || c.user,
+    }))
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+};
+
+export const addPostComment = async (
+  postId: string,
+  userId: string,
+  text: string
+): Promise<PostComment | null> => {
+  const cleanText = text.trim();
+  if (!cleanText) return null;
+
+  const users = getRealUsers();
+  const author = users.find(u => u.id === userId);
+  if (!author) return null;
+
+  const comments = getItem<PostComment[]>(STORAGE_KEYS.POST_COMMENTS, []);
+  const commentId = `comment_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+  const newComment: PostComment = {
+    id: commentId,
+    post_id: postId,
+    user_id: userId,
+    text: cleanText,
+    created_at: new Date().toISOString(),
+    user: author,
+  };
+
+  comments.push(newComment);
+  setItem(STORAGE_KEYS.POST_COMMENTS, comments);
+
+  // Update post's comments_count
+  const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+  const pIdx = posts.findIndex(p => p.id === postId);
+  if (pIdx !== -1) {
+    posts[pIdx].comments_count = (posts[pIdx].comments_count || 0) + 1;
+    setItem(STORAGE_KEYS.POSTS, posts);
+
+    // Notify post author if commenter is not post author
+    if (posts[pIdx].user_id !== userId) {
+      addNotification({
+        user_id: posts[pIdx].user_id,
+        actor_id: userId,
+        post_id: postId,
+        type: 'comment',
+      });
+    }
+  }
+
+  // Sync to Supabase Cloud DB
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      await supabase.from('comments').upsert({
+        id: newComment.id,
+        post_id: newComment.post_id,
+        user_id: newComment.user_id,
+        text: newComment.text,
+        created_at: newComment.created_at,
+      }, { onConflict: 'id' });
+    } catch (err) {
+      console.warn('[Aether Supabase] Comment save notice:', err);
+    }
+  }
+
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+  return newComment;
+};
+
+export const deletePostComment = async (
+  commentId: string,
+  actorUserId: string
+): Promise<boolean> => {
+  const comments = getItem<PostComment[]>(STORAGE_KEYS.POST_COMMENTS, []);
+  const cIdx = comments.findIndex(c => c.id === commentId);
+  if (cIdx === -1) return false;
+
+  const targetComment = comments[cIdx];
+  const users = getRealUsers();
+  const actor = users.find(u => u.id === actorUserId);
+  const isAdmin = isUserAdmin(actor);
+
+  if (!isAdmin && targetComment.user_id !== actorUserId) {
+    return false;
+  }
+
+  comments.splice(cIdx, 1);
+  setItem(STORAGE_KEYS.POST_COMMENTS, comments);
+
+  // Decrement post comments_count
+  const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+  const pIdx = posts.findIndex(p => p.id === targetComment.post_id);
+  if (pIdx !== -1) {
+    posts[pIdx].comments_count = Math.max(0, (posts[pIdx].comments_count || 1) - 1);
+    setItem(STORAGE_KEYS.POSTS, posts);
+  }
+
+  // Supabase delete
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    await supabase.from('comments').delete().eq('id', commentId);
+  }
+
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+  return true;
+};
+
+/* ==========================================================================
+   DIRECT MESSAGES (1-ON-1 DM) ENGINE
+   ========================================================================== */
+
+export const getDirectMessages = (userA: string, userB: string): DirectMessage[] => {
+  const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
+  const deletedForMe = new Set(getItem<string[]>(STORAGE_KEYS.DELETED_DM_MSG_IDS, []));
+  const users = getRealUsers();
+  const userMap = new Map<string, Profile>();
+  users.forEach(u => userMap.set(u.id, u));
+
+  return dms
+    .filter(m => 
+      !deletedForMe.has(m.id) &&
+      !m.is_deleted &&
+      ((m.sender_id === userA && m.receiver_id === userB) ||
+       (m.sender_id === userB && m.receiver_id === userA))
+    )
+    .map(m => ({
+      ...m,
+      sender: userMap.get(m.sender_id),
+      receiver: userMap.get(m.receiver_id),
+    }))
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+};
+
+export const getDmConversations = (currentUserId: string): Array<{
+  contact: Profile;
+  lastMessage: DirectMessage;
+  unreadCount: number;
+}> => {
+  const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
+  const deletedForMe = new Set(getItem<string[]>(STORAGE_KEYS.DELETED_DM_MSG_IDS, []));
+  const users = getRealUsers();
+  const userMap = new Map<string, Profile>();
+  users.forEach(u => userMap.set(u.id, u));
+
+  const relevant = dms.filter(m => 
+    !deletedForMe.has(m.id) &&
+    !m.is_deleted &&
+    (m.sender_id === currentUserId || m.receiver_id === currentUserId)
+  );
+
+  const contactMap = new Map<string, { lastMsg: DirectMessage; unread: number }>();
+
+  relevant.forEach(m => {
+    const otherId = m.sender_id === currentUserId ? m.receiver_id : m.sender_id;
+    const existing = contactMap.get(otherId);
+    const isUnread = m.receiver_id === currentUserId && !m.is_read;
+
+    if (!existing || new Date(m.created_at).getTime() > new Date(existing.lastMsg.created_at).getTime()) {
+      contactMap.set(otherId, {
+        lastMsg: m,
+        unread: (existing?.unread || 0) + (isUnread ? 1 : 0),
+      });
+    } else if (isUnread) {
+      existing.unread += 1;
+    }
+  });
+
+  const list: Array<{ contact: Profile; lastMessage: DirectMessage; unreadCount: number }> = [];
+  contactMap.forEach((val, contactId) => {
+    const contact = userMap.get(contactId);
+    if (contact && contact.id !== currentUserId) {
+      list.push({
+        contact,
+        lastMessage: val.lastMsg,
+        unreadCount: val.unread,
+      });
+    }
+  });
+
+  return list.sort((a, b) => new Date(b.lastMessage.created_at).getTime() - new Date(a.lastMessage.created_at).getTime());
+};
+
+export const sendDirectMessage = async (
+  senderId: string,
+  receiverId: string,
+  text: string
+): Promise<DirectMessage | null> => {
+  const clean = text.trim();
+  if (!clean || senderId === receiverId) return null;
+
+  const users = getRealUsers();
+  const sender = users.find(u => u.id === senderId);
+  const receiver = users.find(u => u.id === receiverId);
+  if (!sender || !receiver) return null;
+
+  const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
+  const msgId = `dm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+  const newDm: DirectMessage = {
+    id: msgId,
+    sender_id: senderId,
+    receiver_id: receiverId,
+    text: clean,
+    created_at: new Date().toISOString(),
+    is_read: false,
+    sender,
+    receiver,
+  };
+
+  dms.push(newDm);
+  setItem(STORAGE_KEYS.DIRECT_MESSAGES, dms);
+
+  // Sync to Supabase Cloud DB
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      await supabase.from('direct_messages').upsert({
+        id: newDm.id,
+        sender_id: newDm.sender_id,
+        receiver_id: newDm.receiver_id,
+        text: newDm.text,
+        created_at: newDm.created_at,
+        is_read: false,
+      }, { onConflict: 'id' });
+    } catch (err) {
+      console.warn('[Aether Supabase] DM save notice:', err);
+    }
+  }
+
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+  return newDm;
+};
+
+export const deleteDirectMessage = async (
+  messageId: string,
+  mode: 'everyone' | 'me',
+  userId: string
+): Promise<boolean> => {
+  if (mode === 'me') {
+    const deletedForMe = getItem<string[]>(STORAGE_KEYS.DELETED_DM_MSG_IDS, []);
+    if (!deletedForMe.includes(messageId)) {
+      deletedForMe.push(messageId);
+      setItem(STORAGE_KEYS.DELETED_DM_MSG_IDS, deletedForMe);
+    }
+    window.dispatchEvent(new Event('aether_storage_sync'));
+    if (syncChannel) syncChannel.postMessage('sync');
+    return true;
+  }
+
+  // Delete for everyone
+  const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
+  const idx = dms.findIndex(m => m.id === messageId);
+  if (idx === -1) return false;
+
+  const users = getRealUsers();
+  const actor = users.find(u => u.id === userId);
+  const isAdmin = isUserAdmin(actor);
+
+  if (!isAdmin && dms[idx].sender_id !== userId) {
+    return false;
+  }
+
+  dms.splice(idx, 1);
+  setItem(STORAGE_KEYS.DIRECT_MESSAGES, dms);
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    await supabase.from('direct_messages').delete().eq('id', messageId);
+  }
+
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+  return true;
+};

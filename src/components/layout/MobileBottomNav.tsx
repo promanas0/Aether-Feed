@@ -1,7 +1,6 @@
 import React from 'react';
-import { Home, Users, Plus, Trophy, User, MessageSquare } from 'lucide-react';
+import { Home, Plus, Trophy, User, MessageSquare, Send } from 'lucide-react';
 import type { Profile, ActiveView } from '../../types';
-import { isUserAdmin } from '../../lib/storage';
 
 interface MobileBottomNavProps {
   currentUser: Profile;
@@ -18,15 +17,13 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   onOpenMyProfile,
   onOpenCreateModal,
 }) => {
-  const isGolden = Boolean(currentUser.is_golden_verified || isUserAdmin(currentUser));
-
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0B132B]/90 dark:bg-[#0B132B]/90 light:bg-white/95 backdrop-blur-xl border-t border-[#334155]/80 px-2 py-1.5 flex items-center justify-around shadow-2xl transition-all duration-200">
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0B132B]/95 backdrop-blur-xl border-t border-[#334155]/80 px-2 py-1.5 flex items-center justify-around shadow-2xl transition-all duration-200">
       
       {/* Home Feed */}
       <button
         onClick={() => onViewChange('feed')}
-        className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition-all active:scale-90 ${
+        className={`flex flex-col items-center justify-center py-1 px-2 rounded-2xl transition-all active:scale-90 ${
           activeView === 'feed'
             ? 'text-blue-400 font-bold'
             : 'text-slate-400 hover:text-white'
@@ -37,18 +34,18 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         <span className="text-[10px] mt-0.5 font-medium">Home</span>
       </button>
 
-      {/* Following Feed */}
+      {/* Direct Messages */}
       <button
-        onClick={() => onViewChange('following_feed')}
-        className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition-all active:scale-90 ${
-          activeView === 'following_feed'
+        onClick={() => onViewChange('dms')}
+        className={`flex flex-col items-center justify-center py-1 px-2 rounded-2xl transition-all active:scale-90 ${
+          activeView === 'dms'
             ? 'text-blue-400 font-bold'
             : 'text-slate-400 hover:text-white'
         }`}
-        title="Following"
+        title="Direct Messages"
       >
-        <Users className={`w-5 h-5 ${activeView === 'following_feed' ? 'stroke-[2.5]' : 'stroke-2'}`} />
-        <span className="text-[10px] mt-0.5 font-medium">Following</span>
+        <Send className={`w-5 h-5 ${activeView === 'dms' ? 'stroke-[2.5]' : 'stroke-2'}`} />
+        <span className="text-[10px] mt-0.5 font-medium">DMs</span>
       </button>
 
       {/* Center + Post Button */}
@@ -60,26 +57,24 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         <Plus className="w-6 h-6 stroke-[3]" />
       </button>
 
-      {/* Aether Chat (Only for Golden Checkmark Members & Admins) */}
-      {isGolden && (
-        <button
-          onClick={() => onViewChange('chat')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition-all active:scale-90 ${
-            activeView === 'chat'
-              ? 'text-amber-400 font-bold'
-              : 'text-slate-400 hover:text-white'
-          }`}
-          title="Aether Chat"
-        >
-          <MessageSquare className={`w-5 h-5 ${activeView === 'chat' ? 'stroke-[2.5] text-amber-400' : 'stroke-2'}`} />
-          <span className="text-[10px] mt-0.5 font-medium">Chat</span>
-        </button>
-      )}
+      {/* Aether Chat */}
+      <button
+        onClick={() => onViewChange('chat')}
+        className={`flex flex-col items-center justify-center py-1 px-2 rounded-2xl transition-all active:scale-90 ${
+          activeView === 'chat'
+            ? 'text-blue-400 font-bold'
+            : 'text-slate-400 hover:text-white'
+        }`}
+        title="Aether Chat"
+      >
+        <MessageSquare className={`w-5 h-5 ${activeView === 'chat' ? 'stroke-[2.5]' : 'stroke-2'}`} />
+        <span className="text-[10px] mt-0.5 font-medium">Chat</span>
+      </button>
 
       {/* Leaderboard */}
       <button
         onClick={() => onViewChange('leaderboard')}
-        className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition-all active:scale-90 ${
+        className={`flex flex-col items-center justify-center py-1 px-2 rounded-2xl transition-all active:scale-90 ${
           activeView === 'leaderboard'
             ? 'text-blue-400 font-bold'
             : 'text-slate-400 hover:text-white'
@@ -93,22 +88,14 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       {/* Profile */}
       <button
         onClick={onOpenMyProfile}
-        className={`flex flex-col items-center justify-center py-1 px-3 rounded-2xl transition-all active:scale-90 ${
+        className={`flex flex-col items-center justify-center py-1 px-2 rounded-2xl transition-all active:scale-90 ${
           activeView === 'profile'
             ? 'text-blue-400 font-bold'
             : 'text-slate-400 hover:text-white'
         }`}
         title="My Profile"
       >
-        <div className="relative">
-          <img
-            src={currentUser.avatar_url}
-            alt={currentUser.display_name}
-            className={`w-5 h-5 rounded-full object-cover border ${
-              activeView === 'profile' ? 'border-blue-400 ring-2 ring-blue-500/30' : 'border-[#334155]'
-            }`}
-          />
-        </div>
+        <User className={`w-5 h-5 ${activeView === 'profile' ? 'stroke-[2.5]' : 'stroke-2'}`} />
         <span className="text-[10px] mt-0.5 font-medium">Profile</span>
       </button>
 

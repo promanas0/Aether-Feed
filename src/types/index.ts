@@ -38,9 +38,19 @@ export interface Post {
   votes_up: number;
   votes_down: number;
   net_votes: number; // votes_up - votes_down
+  comments_count?: number;
   created_at: string;
   updated_at?: string;
   is_deleted?: boolean;
+  user?: Profile;
+}
+
+export interface PostComment {
+  id: string;
+  post_id: string;
+  user_id: string;
+  text: string;
+  created_at: string;
   user?: Profile;
 }
 
@@ -57,7 +67,7 @@ export interface NotificationItem {
   user_id: string; // Recipient
   actor_id: string; // Sender / poster / voter / follower
   post_id?: string;
-  type: 'new_post' | 'vote_up' | 'vote_down' | 'follow' | 'tag';
+  type: 'new_post' | 'vote_up' | 'vote_down' | 'follow' | 'tag' | 'comment';
   is_read: boolean;
   created_at: string;
   actor?: Profile;
@@ -71,12 +81,27 @@ export interface ChatMessage {
   image_data?: string;
   code_snippet?: string;
   created_at: string;
+  is_deleted?: boolean;
+  deleted_for_users?: string[];
   user?: Profile;
+}
+
+export interface DirectMessage {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  text: string;
+  created_at: string;
+  is_read?: boolean;
+  is_deleted?: boolean;
+  deleted_for_users?: string[];
+  sender?: Profile;
+  receiver?: Profile;
 }
 
 export type ThemeMode = 'dark' | 'light';
 
-export type ActiveView = 'feed' | 'following_feed' | 'profile' | 'leaderboard' | 'settings' | 'chat';
+export type ActiveView = 'feed' | 'following_feed' | 'profile' | 'leaderboard' | 'settings' | 'chat' | 'dms';
 
 export type FeedFilter = 'trending' | 'latest' | 'top_voted';
 

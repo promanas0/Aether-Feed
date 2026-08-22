@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ChevronUp, 
   ChevronDown, 
@@ -11,12 +11,14 @@ import {
   MoreVertical,
   Edit3,
   Trash2,
-  Info
+  Info,
+  MessageSquare,
+  Send
 } from 'lucide-react';
-import type { Post, Profile } from '../../types';
+import type { Post, Profile, PostComment } from '../../types';
 
 import { VerifiedBadge } from '../ui/VerifiedBadge';
-import { DEFAULT_DLICOM_AVATAR, isUserAdmin } from '../../lib/storage';
+import { DEFAULT_DLICOM_AVATAR, isUserAdmin, getPostComments, addPostComment, deletePostComment } from '../../lib/storage';
 
 interface PostCardProps {
   post: Post;
@@ -62,6 +64,18 @@ export const PostCard: React.FC<PostCardProps> = ({
   const [isPopAnim, setIsPopAnim] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<PostComment[]>(() => getPostComments(post.id));
+  const [newCommentText, setNewCommentText] = useState('');
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+
+  useEffect(() => {
+    const handleSync = () => {
+      setComments(getPostComments(post.id));
+    };
+    window.addEventListener('aether_storage_sync', handleSync);
+    return () => window.removeEventListener('aether_storage_sync', handleSync);
+  }, [post.id]);
 
   const handleVoteClick = (type: 'up' | 'down') => {
     setIsPopAnim(true);
@@ -362,6 +376,26 @@ export const PostCard: React.FC<PostCardProps> = ({
 
         </div>
 
+        {/* Comments Toggle Button */}
+        <button
+          onClick={() => {
+            setShowComments(!showComments);
+            setComments(getPostComments(post.id));
+          }}
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 border rounded-2xl text-xs font-semibold transition-colors cursor-pointer ${
+            showComments
+              ? 'bg-blue-600/20 text-blue-400 border-blue-500/40'
+              : 'bg-[#1C2541]/70 hover:bg-[#1C2541] text-slate-300 hover:text-white border-[#334155]'
+          }`}
+          title="View comments"
+        >
+          <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
+          <span>Comments</span>
+          <span className="font-mono text-[11px] bg-[#0B132B] px-1.5 py-0.5 rounded-full text-slate-300 border border-[#334155]/60">
+            {comments.length}
+          </span>
+        </button>
+
         {/* Share Action */}
         <button
           onClick={() => onShare(post)}
@@ -372,6 +406,137 @@ export const PostCard: React.FC<PostCardProps> = ({
         </button>
 
       </div>
+
+      {/* Expandable Comments Drawer */}
+      {showComments && (
+        <div className="bg-[#0B132B]/80 border-t border-[#334155]/60 p-4 flex flex-col gap-3.5">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Comments ({comments.length})
+            </h4>
+          </div>
+
+          {/* Comments List */}
+          <div className="flex flex-col gap-2.5 max-h-64 overflow-y-auto pr-1">
+            {comments.length === 0 ? (
+              <p className="text-xs text-slate-500 py-3 text-center">
+                No comments yet. Start the conversation!
+              </p>
+            ) : (
+              comments.map((comment) => {
+                const isCommentAuthor = currentUser?.id === comment.user_id;
+                const canDeleteComment = isCommentAuthor || isAdmin;
+                const commentUser = comment.user || allUsers?.find(u => u.id === comment.user_id);
+
+                return (
+                  <div 
+                    key={comment.id} 
+                    className="flex items-start gap-2.5 p-2.5 bg-[#1E293B]/70 rounded-2xl border border-[#334155]/40 text-xs group"
+                  >
+                    <img
+                      src={commentUser?.avatar_url || DEFAULT_DLICOM_AVATAR}
+                      alt={commentUser?.display_name || 'User'}
+                      className="w-7 h-7 rounded-full border border-slate-700 object-cover flex-shrink-0 cursor-pointer"
+                      onClick={() => commentUser && onOpenProfile(commentUser)}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span 
+                            onClick={() => commentUser && onOpenProfile(commentUser)}
+                            className="font-bold text-slate-200 hover:text-blue-400 cursor-pointer truncate"
+                          >
+                            {commentUser?.display_name || 'Member'}
+                          </span>
+                          {commentUser && (
+                            <VerifiedBadge
+                              isVerified={commentUser.is_verified}
+                              isGoldenVerified={commentUser.is_golden_verified}
+                              size="sm"
+                            />
+                          )}
+                          <span className="text-[10px] text-slate-400">
+                            {formatTimeAgo(comment.created_at)}
+                          </span>
+                        </div>
+
+                        {canDeleteComment && (
+                          <button
+                            onClick={async () => {
+                              if (!currentUser) return;
+                              await deletePostComment(comment.id, currentUser.id);
+                              setComments(getPostComments(post.id));
+                            }}
+                            className="text-slate-400 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 cursor-pointer"
+                            title="Delete comment"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-slate-300 mt-1 whitespace-pre-wrap break-words leading-relaxed">
+                        {comment.text}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* New Comment Input Box */}
+          {currentUser ? (
+            <div className="flex items-center gap-2 pt-2 border-t border-[#334155]/40">
+              <img
+                src={currentUser.avatar_url || DEFAULT_DLICOM_AVATAR}
+                alt={currentUser.display_name}
+                className="w-7 h-7 rounded-full border border-slate-700 object-cover flex-shrink-0"
+              />
+              <input
+                type="text"
+                value={newCommentText}
+                onChange={(e) => setNewCommentText(e.target.value)}
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && newCommentText.trim() && !isSubmittingComment) {
+                    e.preventDefault();
+                    setIsSubmittingComment(true);
+                    await addPostComment(post.id, currentUser.id, newCommentText);
+                    setNewCommentText('');
+                    setComments(getPostComments(post.id));
+                    setIsSubmittingComment(false);
+                  }
+                }}
+                placeholder="Write a thoughtful comment..."
+                className="flex-1 bg-[#1E293B] border border-[#334155] rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                maxLength={500}
+              />
+              <button
+                disabled={!newCommentText.trim() || isSubmittingComment}
+                onClick={async () => {
+                  if (!newCommentText.trim() || isSubmittingComment) return;
+                  setIsSubmittingComment(true);
+                  await addPostComment(post.id, currentUser.id, newCommentText);
+                  setNewCommentText('');
+                  setComments(getPostComments(post.id));
+                  setIsSubmittingComment(false);
+                }}
+                className={`p-2 rounded-xl border font-semibold text-xs transition-all cursor-pointer ${
+                  newCommentText.trim() && !isSubmittingComment
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500 shadow-sm'
+                    : 'bg-slate-800 text-slate-600 border-slate-700 cursor-not-allowed'
+                }`}
+                title="Send comment"
+              >
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 text-center py-1">
+              Please sign in to write comments.
+            </p>
+          )}
+        </div>
+      )}
 
     </article>
   );

@@ -38,7 +38,6 @@ import type {
 import { LandingPage } from './components/auth/LandingPage';
 import { Header } from './components/layout/Header';
 import { LeftSidebar } from './components/layout/LeftSidebar';
-import { RightSidebar } from './components/layout/RightSidebar';
 import { MobileBottomNav } from './components/layout/MobileBottomNav';
 import { CreatePostBox } from './components/feed/CreatePostBox';
 import { CreatePostModal } from './components/feed/CreatePostModal';
@@ -49,6 +48,8 @@ import { PostCard } from './components/feed/PostCard';
 import { UserProfileView } from './components/profile/UserProfileView';
 import { RealLeaderboardView } from './components/leaderboard/RealLeaderboardView';
 import { VipChatView } from './components/chat/VipChatView';
+import { DirectMessagesView } from './components/chat/DirectMessagesView';
+import { SettingsView } from './components/settings/SettingsView';
 import { SettingsModal } from './components/settings/SettingsModal';
 import { ImageLightboxModal } from './components/feed/ImageLightboxModal';
 import { AccountSwitcherModal } from './components/auth/AccountSwitcherModal';
@@ -92,6 +93,7 @@ export function App() {
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('latest');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
+  const [dmRecipientId, setDmRecipientId] = useState<string | null>(null);
 
   // Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -432,7 +434,10 @@ export function App() {
         onSearchChange={setSearchQuery}
         onThemeToggle={handleToggleTheme}
         onOpenProfile={handleOpenProfile}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={() => {
+          setActiveView('settings');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
         onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
         onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
         onSignOut={handleSignOut}
@@ -454,8 +459,8 @@ export function App() {
         }}
       />
 
-      {/* Main Content Layout: Edge-to-Edge Desktop 3-Column Layout */}
-      <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 py-6 pb-24 lg:pb-8 flex justify-between gap-6 flex-1">
+      {/* Main Content Layout: Clean 2-Column Desktop Layout (Left Nav + Focused Main Stream) */}
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-8 flex justify-center gap-6 flex-1">
         
         {/* Left Column: Navigation Menu (Desktop) */}
         <LeftSidebar
@@ -468,14 +473,17 @@ export function App() {
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
           onOpenMyProfile={() => handleOpenProfile(currentUser)}
-          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenSettings={() => {
+            setActiveView('settings');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
           onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
           onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
           onSignOut={handleSignOut}
         />
 
         {/* Center Main Column: Pure Focused Stream */}
-        <main className="flex-1 min-w-0 max-w-2xl w-full">
+        <main className="flex-1 min-w-0 max-w-3xl w-full">
           
           {/* VIEW 1: Feed (Home or Following) */}
           {(activeView === 'feed' || activeView === 'following_feed') && (
@@ -684,7 +692,15 @@ export function App() {
                 onOpenLightbox={(url, title) => setLightboxData({ isOpen: true, url, title })}
                 onOpenProfile={handleOpenProfile}
                 onShare={(p) => setShareModalPost(p)}
-                onOpenSettings={() => setIsSettingsOpen(true)}
+                onOpenSettings={() => {
+                  setActiveView('settings');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                onSendMessage={(uid) => {
+                  setDmRecipientId(uid);
+                  setActiveView('dms');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
               />
             </div>
           )}
@@ -701,7 +717,7 @@ export function App() {
             </div>
           )}
 
-          {/* VIEW 4: VIP Golden Chat Lounge */}
+          {/* VIEW 4: Aether Chat */}
           {activeView === 'chat' && (
             <div className="view-transition">
               <VipChatView
@@ -713,25 +729,41 @@ export function App() {
             </div>
           )}
 
-        </main>
+          {/* VIEW 5: Direct Messages (1-on-1 Live DMs) */}
+          {activeView === 'dms' && (
+            <div className="view-transition">
+              <DirectMessagesView
+                currentUser={currentUser}
+                allUsers={users}
+                initialRecipientId={dmRecipientId}
+                addToast={addToast}
+                onOpenProfile={handleOpenProfile}
+              />
+            </div>
+          )}
 
-        {/* Right Column: Trending Curators, Topics & VIP Status (Desktop) */}
-        <RightSidebar
-          leaderboard={leaderboard}
-          registeredUsers={users}
-          currentUser={currentUser}
-          onSelectUser={handleOpenProfile}
-          onToggleFollow={handleToggleFollow}
-          onSelectTag={(tag) => {
-            setSelectedTagFilter(tag);
-            setActiveView('feed');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-          onOpenFullLeaderboard={() => {
-            setActiveView('leaderboard');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-        />
+          {/* VIEW 6: Settings Page (Left Sidebar & Accordion Rules) */}
+          {activeView === 'settings' && (
+            <div className="view-transition">
+              <SettingsView
+                currentUser={currentUser}
+                themeMode={themeMode}
+                onThemeChange={handleToggleTheme}
+                onUpdateProfile={handleUpdateProfile}
+                onSignOut={handleSignOut}
+                onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
+                onSwitchAccount={(uid) => {
+                  switchAccountSession(uid);
+                  syncStateFromStorage();
+                  addToast('Account Switched', 'Active profile updated.', 'success');
+                }}
+                onAddAccount={() => setIsAccountSwitcherOpen(true)}
+                addToast={addToast}
+              />
+            </div>
+          )}
+
+        </main>
 
       </div>
 
