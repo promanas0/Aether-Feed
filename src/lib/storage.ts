@@ -45,6 +45,17 @@ export const DLICOM_DEFAULT_AVATARS = [
 export const DEFAULT_DLICOM_AVATAR = '/avatars/dlicom_default_1.jpg';
 
 export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
+  const parseArray = (arr: any): string[] => {
+    if (Array.isArray(arr)) return arr.map(String);
+    if (typeof arr === 'string') {
+      try {
+        const parsed = JSON.parse(arr);
+        if (Array.isArray(parsed)) return parsed.map(String);
+      } catch {}
+    }
+    return [];
+  };
+
   return {
     id: p.id,
     email: p.email,
@@ -59,8 +70,8 @@ export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
     location: p.location || '',
     website: p.website || '',
     is_verified: p.is_verified ?? true,
-    followers: p.followers || [],
-    following: p.following || [],
+    followers: parseArray(p.followers),
+    following: parseArray(p.following),
     total_votes_received: p.total_votes_received || 0,
     password_hash: p.password_hash || '',
     created_at: p.created_at || new Date().toISOString(),
@@ -214,7 +225,13 @@ export const syncWithServer = async (): Promise<boolean> => {
               const mergedUserMap = new Map<string, Profile>();
               cleanUsers.forEach((u: Profile) => mergedUserMap.set(u.id, u));
               if (currentUser) {
-                mergedUserMap.set(currentUser.id, { ...(mergedUserMap.get(currentUser.id) || {}), ...currentUser });
+                const existing: Partial<Profile> = mergedUserMap.get(currentUser.id) || {};
+                mergedUserMap.set(currentUser.id, {
+                  ...existing,
+                  ...currentUser,
+                  following: Array.isArray(currentUser.following) ? currentUser.following : existing.following || [],
+                  followers: Array.isArray(currentUser.followers) ? currentUser.followers : existing.followers || [],
+                } as Profile);
               }
               setItem(STORAGE_KEYS.REAL_USERS, Array.from(mergedUserMap.values()));
             }
@@ -260,20 +277,53 @@ export const syncWithServer = async (): Promise<boolean> => {
           const { data: supaProfiles, error: profError } = await supabase.from('profiles').select('*');
           if (!profError && supaProfiles && supaProfiles.length > 0) {
             const cleanSupaUsers = supaProfiles.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
-            const userMap = new Map<string, Profile>();
-            cleanSupaUsers.forEach((u: Profile) => userMap.set(u.id, u));
+            const currentLocalUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+            const localUserMap = new Map<string, Profile>();
+            currentLocalUsers.forEach(u => localUserMap.set(u.id, u));
 
-            // Preserve local currentUser if present
-            if (currentUser) {
-              const supaCurrent = userMap.get(currentUser.id);
-              if (supaCurrent) {
-                userMap.set(currentUser.id, { ...supaCurrent, ...currentUser });
+            const mergedUserMap = new Map<string, Profile>();
+
+            cleanSupaUsers.forEach((su: any) => {
+              const suProfile: Profile = {
+                ...su,
+                followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : [],
+                following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : [],
+              };
+
+              const localU = localUserMap.get(suProfile.id);
+              if (localU) {
+                // If this is currentUser, preserve local following/followers
+                if (currentUser && suProfile.id === currentUser.id) {
+                  mergedUserMap.set(suProfile.id, {
+                    ...suProfile,
+                    ...localU,
+                    following: Array.isArray(localU.following) ? localU.following : suProfile.following,
+                    followers: Array.isArray(localU.followers) ? localU.followers : suProfile.followers,
+                  });
+                } else {
+                  // For other users, preserve local follower relationship if we just followed them
+                  const localFollowers = Array.isArray(localU.followers) ? localU.followers : [];
+                  const supaFollowers = Array.isArray(suProfile.followers) ? suProfile.followers : [];
+                  const combinedFollowers = Array.from(new Set([...supaFollowers, ...localFollowers]));
+
+                  mergedUserMap.set(suProfile.id, {
+                    ...suProfile,
+                    followers: combinedFollowers,
+                  });
+                }
               } else {
-                userMap.set(currentUser.id, currentUser);
+                mergedUserMap.set(suProfile.id, suProfile);
               }
-            }
+            });
 
-            const finalUsers = Array.from(userMap.values());
+            // Preserve any local users not yet in Supabase
+            currentLocalUsers.forEach(lu => {
+              if (!mergedUserMap.has(lu.id)) {
+                mergedUserMap.set(lu.id, lu);
+              }
+            });
+
+            const finalUsers = Array.from(mergedUserMap.values());
             setItem(STORAGE_KEYS.REAL_USERS, finalUsers);
 
             // Update saved accounts if current profile changed
@@ -302,15 +352,25 @@ export const syncWithServer = async (): Promise<boolean> => {
             validVotes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(v => !deletedIds.has(v.post_id));
           }
 
-          // D. Pull ALL live posts from Supabase (Supabase is authoritative for active posts)
+          // D. Pull ALL live posts from Supabase
           const { data: supaPosts, error: postsError } = await supabase
             .from('posts')
             .select('*')
             .order('created_at', { ascending: false });
 
           if (!postsError && supaPosts) {
-            // Any post NOT in Supabase has been deleted; update local posts to match Supabase exactly
-            const validSupaPosts = supaPosts
+            const supaPostMap = new Map<string, any>();
+            supaPosts.forEach((p: any) => supaPostMap.set(p.id, p));
+
+            // Keep any local posts created by currentUser that are still pending / in-flight
+            const localPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+            const pendingLocalPosts = localPosts.filter(
+              lp => !deletedIds.has(lp.id) && !supaPostMap.has(lp.id) && lp.user_id === currentUserId
+            );
+
+            const combinedPosts = [...pendingLocalPosts, ...supaPosts];
+
+            const validSupaPosts = combinedPosts
               .filter((p: any) => !deletedIds.has(p.id))
               .map((p: any) => {
                 const pVotes = validVotes.filter(v => v.post_id === p.id);
@@ -838,14 +898,21 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
     throw new Error('User not found');
   }
 
-  const isFollowing = users[currentIdx].following.includes(targetUserId);
+  const currentFollowing = Array.isArray(users[currentIdx].following) ? [...users[currentIdx].following] : [];
+  const targetFollowers = Array.isArray(users[targetIdx].followers) ? [...users[targetIdx].followers] : [];
 
-  if (isFollowing) {
-    users[currentIdx].following = users[currentIdx].following.filter(id => id !== targetUserId);
-    users[targetIdx].followers = users[targetIdx].followers.filter(id => id !== currentUserId);
+  const isCurrentlyFollowing = currentFollowing.includes(targetUserId);
+
+  if (isCurrentlyFollowing) {
+    users[currentIdx].following = currentFollowing.filter(id => id !== targetUserId);
+    users[targetIdx].followers = targetFollowers.filter(id => id !== currentUserId);
   } else {
-    users[currentIdx].following.push(targetUserId);
-    users[targetIdx].followers.push(currentUserId);
+    if (!currentFollowing.includes(targetUserId)) {
+      users[currentIdx].following = [...currentFollowing, targetUserId];
+    }
+    if (!targetFollowers.includes(currentUserId)) {
+      users[targetIdx].followers = [...targetFollowers, currentUserId];
+    }
 
     addNotification({
       user_id: targetUserId,
@@ -854,12 +921,14 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
     });
   }
 
-  users[currentIdx].updated_at = new Date().toISOString();
-  users[targetIdx].updated_at = new Date().toISOString();
+  const now = new Date().toISOString();
+  users[currentIdx].updated_at = now;
+  users[targetIdx].updated_at = now;
 
   setItem(STORAGE_KEYS.REAL_USERS, users);
   addOrUpdateSavedAccount(users[currentIdx]);
 
+  // Update Supabase Cloud DB
   const supabase = getSupabaseClient();
   if (supabase) {
     supabase
@@ -871,8 +940,22 @@ export const toggleFollowUser = (targetUserId: string, currentUserId: string): {
       .then(() => {}, (err) => console.warn('[Supabase Follow Upsert Error]', err));
   }
 
-  syncWithServer();
-  return { isFollowing: !isFollowing, targetUser: users[targetIdx] };
+  // Update Local Server API
+  try {
+    fetch('/api/users/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: sanitizeProfileForSupabase(users[currentIdx]) }),
+    }).catch(() => {});
+    fetch('/api/users/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: sanitizeProfileForSupabase(users[targetIdx]) }),
+    }).catch(() => {});
+  } catch {}
+
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  return { isFollowing: !isCurrentlyFollowing, targetUser: users[targetIdx] };
 };
 
 /* ==========================================================================
@@ -970,6 +1053,15 @@ export const createRealPost = (data: {
     });
   }
 
+  // Direct Server Dispatch
+  try {
+    fetch('/api/posts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ post: newPost }),
+    }).catch(() => {});
+  } catch {}
+
   // Send to Supabase Cloud
   const supabase = getSupabaseClient();
   if (supabase) {
@@ -983,22 +1075,13 @@ export const createRealPost = (data: {
     );
   }
 
-  // Direct Server Dispatch
-  try {
-    fetch('/api/posts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ post: newPost }),
-    }).catch(() => {});
-  } catch {}
-
   window.dispatchEvent(
     new CustomEvent('aether_post_broadcast', {
       detail: { post: newPost, authorId: data.authorId }
     })
   );
 
-  syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
   return newPost;
 };
 

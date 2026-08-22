@@ -62,17 +62,25 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     userIds: [],
   });
 
-  const isCurrentUser = currentUser.id === profile.id;
-  const isFollowing = currentUser.following.includes(profile.id);
+  const isCurrentUser = Boolean(currentUser && profile && currentUser.id === profile.id);
+  const currentFollowingList = Array.isArray(currentUser?.following) ? currentUser.following : [];
+  const isFollowing = currentFollowingList.includes(profile.id);
 
   // User's own posts
-  const userPosts = posts.filter(p => p.user_id === profile.id);
+  const userPosts = posts.filter(
+    p => p && p.user_id && profile.id && p.user_id.trim() === profile.id.trim()
+  );
 
   // Posts upvoted by this user
   const upvotedPostIds = new Set(
-    votesList.filter(v => v.user_id === profile.id && v.type === 'up').map(v => v.post_id)
+    votesList
+      .filter(v => v && v.user_id && profile.id && v.user_id.trim() === profile.id.trim() && v.type === 'up')
+      .map(v => v.post_id)
   );
   const upvotedPosts = posts.filter(p => upvotedPostIds.has(p.id));
+
+  const profileFollowers = Array.isArray(profile.followers) ? profile.followers : [];
+  const profileFollowing = Array.isArray(profile.following) ? profile.following : [];
 
   return (
     <div className="w-full">
@@ -197,28 +205,28 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 onClick={() => setFollowersModal({
                   isOpen: true,
                   title: 'Followers',
-                  userIds: profile.followers,
+                  userIds: profileFollowers,
                 })}
                 className="hover:text-blue-400 transition-colors cursor-pointer group"
                 title="View Followers list"
               >
-                <strong className="text-white font-bold group-hover:text-blue-400">{profile.followers.length}</strong> Followers
+                <strong className="text-white font-bold group-hover:text-blue-400">{profileFollowers.length}</strong> Followers
               </button>
 
               <button
                 onClick={() => setFollowersModal({
                   isOpen: true,
                   title: 'Following',
-                  userIds: profile.following,
+                  userIds: profileFollowing,
                 })}
                 className="hover:text-blue-400 transition-colors cursor-pointer group"
                 title="View Following list"
               >
-                <strong className="text-white font-bold group-hover:text-blue-400">{profile.following.length}</strong> Following
+                <strong className="text-white font-bold group-hover:text-blue-400">{profileFollowing.length}</strong> Following
               </button>
 
               <span className="text-blue-400">
-                <strong className="text-blue-400 font-bold">▲ {profile.total_votes_received}</strong> Net Votes
+                <strong className="text-blue-400 font-bold">▲ {profile.total_votes_received || 0}</strong> Net Votes
               </span>
             </div>
           </div>
