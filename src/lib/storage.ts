@@ -313,6 +313,17 @@ export const savePostToCloud = async (post: Post): Promise<boolean> => {
 
   if (!supabase) return false;
 
+  // CRITICAL: Ensure author exists in Supabase profiles to satisfy foreign key constraint `posts_user_id_fkey`
+  try {
+    const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+    const author = users.find(u => u.id === post.user_id) || (post.user ? post.user : null);
+    if (author) {
+      await saveProfileToCloud(author);
+    }
+  } catch (err) {
+    console.warn('[Aether Supabase] Author pre-save warning before post upload:', err);
+  }
+
   const fullPayload = sanitizePostForSupabase(post);
 
   try {
@@ -810,11 +821,22 @@ export const syncWithServer = async (): Promise<boolean> => {
             const supaPostMap = new Map<string, any>();
             supaPosts.forEach((p: any) => supaPostMap.set(p.id, p));
 
-            // Keep any local posts created by currentUser that are still pending / in-flight
+            // Keep any local posts that are still pending / in-flight
             const localPosts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
             const pendingLocalPosts = localPosts.filter(
-              lp => !deletedIds.has(lp.id) && !supaPostMap.has(lp.id) && lp.user_id === currentUserId
+              lp => !deletedIds.has(lp.id) && !supaPostMap.has(lp.id) && !lp.is_deleted && lp.description !== '[DELETED]'
             );
+
+            // Auto-heal: If there are any local posts missing from Supabase, push them to Supabase
+            if (pendingLocalPosts.length > 0) {
+              pendingLocalPosts.forEach(async (lp) => {
+                const author = finalUsers.find(u => u.id === lp.user_id) || lp.user;
+                if (author) {
+                  await saveProfileToCloud(author);
+                }
+                await savePostToCloud(lp);
+              });
+            }
 
             const combinedPosts = [...pendingLocalPosts, ...supaPosts];
 
@@ -828,6 +850,26 @@ export const syncWithServer = async (): Promise<boolean> => {
                 const freshAuthor = finalUsers.find(u => u.id === p.user_id);
                 const cCount = allComments.filter(c => c.post_id === p.id).length;
                 const localP = localPosts.find(lp => lp.id === p.id);
+                const authorFallback: Profile = {
+                  id: p.user_id,
+                  email: `${p.user_id}@aetherfeed.io`,
+                  first_name: '',
+                  last_name: '',
+                  display_name: p.user?.display_name || 'Creator',
+                  username: p.user?.username || `user_${p.user_id.slice(-5)}`,
+                  avatar_url: p.user?.avatar_url || DEFAULT_DLICOM_AVATAR,
+                  banner_url: '',
+                  bio: '',
+                  dlicom_address: '',
+                  location: '',
+                  website: '',
+                  is_verified: true,
+                  followers: [],
+                  following: [],
+                  total_votes_received: 0,
+                  created_at: p.created_at || new Date().toISOString(),
+                };
+
                 return {
                   ...p,
                   is_pinned_home: p.is_pinned_home !== undefined ? Boolean(p.is_pinned_home) : Boolean(localP?.is_pinned_home),
@@ -836,7 +878,7 @@ export const syncWithServer = async (): Promise<boolean> => {
                   votes_down: down,
                   net_votes: up - down,
                   comments_count: cCount,
-                  user: freshAuthor || p.user,
+                  user: freshAuthor || p.user || authorFallback,
                 };
               });
 
@@ -1239,6 +1281,24 @@ export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => vo
           window.dispatchEvent(new Event('aether_storage_sync'));
           onSyncNeeded();
         }
+      })
+      .on('broadcast', { event: 'new_post' }, ({ payload }) => {
+        if (!payload || !payload.id) return;
+        const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+        if (!posts.some(p => p.id === payload.id)) {
+          posts.unshift(payload);
+          setItem(STORAGE_KEYS.POSTS, posts);
+          window.dispatchEvent(new Event('aether_storage_sync'));
+          onSyncNeeded();
+        }
+      })
+      .on('broadcast', { event: 'delete_post' }, ({ payload }) => {
+        if (!payload || !payload.postId) return;
+        const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+        const updated = posts.filter(p => p.id !== payload.postId);
+        setItem(STORAGE_KEYS.POSTS, updated);
+        window.dispatchEvent(new Event('aether_storage_sync'));
+        onSyncNeeded();
       })
       .on('broadcast', { event: 'vote_updated' }, () => {
         syncWithServer().then(() => onSyncNeeded());
@@ -1840,13 +1900,32 @@ export const getRealPosts = (): Post[] => {
     const vCounts = votesMap.get(p.id) || { up: 0, down: 0 };
     const net_votes = vCounts.up - vCounts.down;
     const author = userMap.get(p.user_id);
+    const authorFallback: Profile = {
+      id: p.user_id,
+      email: `${p.user_id}@aetherfeed.io`,
+      first_name: '',
+      last_name: '',
+      display_name: p.user?.display_name || 'Creator',
+      username: p.user?.username || `user_${p.user_id.slice(-5)}`,
+      avatar_url: p.user?.avatar_url || DEFAULT_DLICOM_AVATAR,
+      banner_url: '',
+      bio: '',
+      dlicom_address: '',
+      location: '',
+      website: '',
+      is_verified: true,
+      followers: [],
+      following: [],
+      total_votes_received: 0,
+      created_at: p.created_at || new Date().toISOString(),
+    };
 
     return {
       ...p,
       votes_up: vCounts.up,
       votes_down: vCounts.down,
       net_votes,
-      user: author || p.user,
+      user: author || p.user || authorFallback,
     };
   });
 };
@@ -1912,6 +1991,7 @@ export const createRealPost = async (data: {
 
   // Send to Supabase Cloud with schema fallback
   await savePostToCloud(newPost);
+  await broadcastRealtimeEvent('new_post', newPost);
   await syncWithServer();
 
   window.dispatchEvent(
@@ -1980,6 +2060,7 @@ export const deleteRealPost = async (postId: string, userId?: string): Promise<b
     }).catch(() => { });
   } catch { }
 
+  await broadcastRealtimeEvent('delete_post', { postId });
   await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
   if (syncChannel) syncChannel.postMessage('sync');
