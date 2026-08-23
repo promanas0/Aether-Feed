@@ -20,7 +20,8 @@ import {
   Sparkles,
   Clock,
   UserCheck,
-  UserX
+  UserX,
+  Wallet
 } from 'lucide-react';
 import type { Profile, Post, ToastMessage } from '../../types';
 import { 
@@ -205,18 +206,18 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     onRefreshData();
   };
 
-  // Handle Add Admin Email
+  // Handle Add Admin Email or Wallet Address
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     const clean = newAdminEmail.toLowerCase().trim();
-    if (!clean || !clean.includes('@')) {
-      addToast('Invalid Email', 'Please enter a valid email address.', 'info');
+    if (!clean || (!clean.includes('@') && !clean.startsWith('0x'))) {
+      addToast('Invalid Identifier', 'Please enter a valid email address or 0x Web3 wallet address.', 'info');
       return;
     }
 
     const success = await addAdminEmail(clean, currentUser.email);
     if (success) {
-      addToast('Admin Team Member Added', `${clean} now has full admin privileges across all devices.`, 'success');
+      addToast('Admin Team Member Added', `${clean} now has full admin console privileges across all devices.`, 'success');
       setNewAdminEmail('');
       onRefreshData();
     } else {
@@ -438,6 +439,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                                   Admin Team
                                 </span>
                               )}
+                              {(u.dlicom_address || u.id.startsWith('wallet_')) && (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/40 flex items-center gap-1 font-mono">
+                                  <Wallet className="w-3 h-3 text-amber-400" /> Web3 Wallet
+                                </span>
+                              )}
                             </div>
 
                             <p className="text-xs text-slate-400 font-mono truncate">
@@ -525,37 +531,40 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                                   type="button"
                                   onClick={() => handleUnbanUser(u)}
                                   className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                                  title="Unban and restore this user"
                                 >
                                   <UserCheck className="w-3.5 h-3.5" />
-                                  <span>Unban User</span>
-                                </button>
-                              ) : banConfirmId !== u.id ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setBanConfirmId(u.id)}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                                  title="Ban and delete this user completely"
-                                >
-                                  <UserX className="w-3.5 h-3.5" />
-                                  <span>Ban / Wipe</span>
+                                  <span>Unban</span>
                                 </button>
                               ) : (
-                                <div className="flex items-center gap-1 p-1 bg-rose-950/80 border border-rose-500 rounded-xl">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleBanUser(u)}
-                                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] font-bold cursor-pointer"
-                                  >
-                                    Confirm Ban
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setBanConfirmId(null)}
-                                    className="px-2 py-1 bg-[#1C2541] text-slate-300 hover:text-white rounded-lg text-[11px] cursor-pointer"
-                                  >
-                                    Cancel
-                                  </button>
+                                <div>
+                                  {banConfirmId === u.id ? (
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleBanUser(u)}
+                                        className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+                                      >
+                                        Confirm
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setBanConfirmId(null)}
+                                        className="px-2 py-1 bg-slate-700 text-slate-300 rounded-lg text-xs hover:text-white transition-all cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setBanConfirmId(u.id)}
+                                      className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                      title="Ban User & Purge All Content"
+                                    >
+                                      <UserX className="w-3.5 h-3.5" />
+                                      <span>Ban User</span>
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -570,110 +579,104 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: Post Feed Moderation */}
+          {/* TAB 2: Post Content Moderation */}
           {activeTab === 'posts' && (
             <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className="relative w-full sm:max-w-md">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <div className="flex items-center justify-between gap-4">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={postSearch}
                     onChange={(e) => setPostSearch(e.target.value)}
-                    placeholder="Search posts by title, caption, author..."
-                    className="w-full pl-9 pr-4 py-2 bg-[#0B132B] border border-[#334155] focus:border-rose-500 rounded-xl text-xs text-white placeholder-slate-400 focus:outline-none font-mono"
+                    placeholder="Search posts by title, description, creator..."
+                    className="w-full pl-10 pr-4 py-2.5 bg-[#0B132B] border border-[#334155] focus:border-blue-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none"
                   />
                 </div>
-
-                <p className="text-xs text-slate-400 font-mono">
-                  Total Posts: <span className="text-white font-bold">{allPosts.length}</span>
-                </p>
+                <div className="text-xs text-slate-400 font-mono shrink-0">
+                  {filteredPosts.length} posts found
+                </div>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
                 {filteredPosts.length === 0 ? (
-                  <div className="p-8 text-center bg-[#0B132B] rounded-2xl border border-[#334155] text-slate-400 text-xs">
-                    No posts found matching search.
+                  <div className="text-center py-12 text-slate-500 text-xs">
+                    No posts matching search.
                   </div>
                 ) : (
                   filteredPosts.map((p) => {
-                    const author = p.user || allUsers.find(u => u.id === p.user_id);
+                    const postCreator = allUsers.find(u => u.id === p.user_id || u.username === p.user?.username);
+                    const creatorIsBanned = postCreator?.is_banned || false;
 
                     return (
                       <div
                         key={p.id}
-                        className="p-4 bg-[#0B132B] border border-[#334155] hover:border-slate-500 rounded-2xl flex flex-col sm:flex-row items-start justify-between gap-4 transition-all"
+                        className={`p-4 rounded-2xl border transition-all ${
+                          creatorIsBanned
+                            ? 'bg-rose-950/20 border-rose-500/30 opacity-60'
+                            : 'bg-[#0B132B] border-[#334155] hover:border-slate-600'
+                        }`}
                       >
-                        <div className="flex gap-3.5 min-w-0 flex-1">
-                          {p.image_data ? (
-                            <img
-                              src={p.image_data}
-                              alt="Post preview"
-                              className="w-16 h-16 rounded-xl object-cover border border-slate-700 shrink-0"
-                            />
-                          ) : (
-                            <div className="w-16 h-16 rounded-xl bg-[#1C2541] border border-slate-700 flex items-center justify-center shrink-0 text-slate-500 text-xs font-mono">
-                              Text
-                            </div>
-                          )}
-
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-xs font-bold text-white truncate">
-                                {author?.display_name || 'Aether Member'}
-                              </span>
-                              <span className="text-[11px] text-slate-400 font-mono">
-                                @{author?.username || p.user_id}
-                              </span>
-                              <span className="text-[10px] text-slate-500">
-                                &bull; {new Date(p.created_at).toLocaleDateString()}
-                              </span>
-                            </div>
-
-                            {p.title && (
-                              <p className="text-xs font-bold text-slate-200 mb-0.5 truncate">
+                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-bold text-white truncate max-w-md">
                                 {p.title}
-                              </p>
-                            )}
-                            <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">
-                              {p.description || '(No caption)'}
-                            </p>
-
-                            <p className="text-[11px] text-slate-500 font-mono mt-1">
-                              Votes: +{p.votes_up} / -{p.votes_down} (Net: {p.net_votes}) &bull; ID: {p.id}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Delete Post Action */}
-                        <div className="shrink-0 self-end sm:self-center">
-                          {deletePostId !== p.id ? (
-                            <button
-                              type="button"
-                              onClick={() => setDeletePostId(p.id)}
-                              className="flex items-center gap-1 px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Delete Post</span>
-                            </button>
-                          ) : (
-                            <div className="flex items-center gap-1 p-1 bg-rose-950/80 border border-rose-500 rounded-xl">
-                              <button
-                                type="button"
-                                onClick={() => handleDeletePost(p.id)}
-                                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] font-bold cursor-pointer"
-                              >
-                                Confirm
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeletePostId(null)}
-                                className="px-2 py-1 bg-[#1C2541] text-slate-300 hover:text-white rounded-lg text-[11px] cursor-pointer"
-                              >
-                                Cancel
-                              </button>
+                              </span>
+                              {p.is_pinned_home && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                  Pinned
+                                </span>
+                              )}
+                              {creatorIsBanned && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-600/30 text-rose-300 border border-rose-500/50">
+                                  Author Banned
+                                </span>
+                              )}
                             </div>
-                          )}
+
+                            <p className="text-xs text-slate-400 line-clamp-2">
+                              {p.description}
+                            </p>
+
+                            <div className="flex items-center gap-3 text-[11px] text-slate-500 font-mono pt-1">
+                              <span>By: @{p.user?.username || 'unknown'}</span>
+                              <span>&bull;</span>
+                              <span>Votes: {p.net_votes ?? ((p.votes_up || 0) - (p.votes_down || 0))}</span>
+                              <span>&bull;</span>
+                              <span>{new Date(p.created_at).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            {deletePostId === p.id ? (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeletePost(p.id)}
+                                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                >
+                                  Confirm Delete
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeletePostId(null)}
+                                  className="px-3 py-1.5 bg-slate-700 text-slate-300 rounded-xl text-xs hover:text-white transition-all cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setDeletePostId(p.id)}
+                                className="flex items-center gap-1 px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete Post</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -692,23 +695,23 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                 <div className="flex items-center gap-2 text-blue-400">
                   <UserPlus className="w-4 h-4" />
                   <h4 className="text-xs font-bold uppercase tracking-wider">
-                    Add Team Member to Admin Panel
+                    Add Team Member (Email or Web3 Wallet Address)
                   </h4>
                 </div>
                 <p className="text-xs text-slate-400">
-                  Authorize additional team members to access this Admin Console using their email address.
+                  Authorize additional team members to access this Admin Console using their email address or Web3 wallet address (`0x...`).
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-2 pt-1">
                   <div className="relative flex-1">
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
-                      type="email"
+                      type="text"
                       required
                       value={newAdminEmail}
                       onChange={(e) => setNewAdminEmail(e.target.value)}
-                      placeholder="team_moderator@gmail.com"
-                      className="w-full pl-9 pr-4 py-2.5 bg-[#1C2541] border border-[#334155] focus:border-blue-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none"
+                      placeholder="team_admin@gmail.com or 0x71C...3a9"
+                      className="w-full pl-9 pr-4 py-2.5 bg-[#1C2541] border border-[#334155] focus:border-blue-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none font-mono"
                     />
                   </div>
                   <button

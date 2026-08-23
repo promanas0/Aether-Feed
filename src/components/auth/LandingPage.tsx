@@ -14,12 +14,15 @@ import {
   UserPlus,
   LogIn,
   Sun,
-  Moon
+  Moon,
+  Wallet,
+  Sparkles
 } from 'lucide-react';
 import { 
   createPendingRegistration, 
   verifyAndCreateUser, 
   authenticateUser,
+  authenticateWithWeb3Wallet,
   syncWithServer,
   getSavedAccounts,
   switchAccountSession,
@@ -45,6 +48,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   // Views: 'home' (just buttons) | 'signin' | 'signup' | 'otp'
   const [viewState, setViewState] = useState<'home' | 'signin' | 'signup'>('home');
   
+  // Web3 Wallet Connect State
+  const [isConnectingWallet, setIsConnectingWallet] = useState(false);
+
   // Sign In State
   const [signInEmail, setSignInEmail] = useState('');
   const [signInPassword, setSignInPassword] = useState('');
@@ -68,6 +74,24 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     // Initial fetch from central server database
     syncWithServer();
   }, []);
+
+  // Handle 1-Click Native Web3 Wallet Login (MetaMask / TrustWallet / EVM)
+  const handleWeb3WalletConnect = async () => {
+    setIsConnectingWallet(true);
+    try {
+      const res = await authenticateWithWeb3Wallet();
+      setIsConnectingWallet(false);
+      if (res.success && res.user) {
+        addToast('Web3 Wallet Connected', res.message, 'success');
+        onAuthSuccess(res.user);
+      } else {
+        addToast('Wallet Connection', res.message, 'info');
+      }
+    } catch (err: any) {
+      setIsConnectingWallet(false);
+      addToast('Wallet Error', err?.message || 'Could not connect Web3 Wallet.', 'info');
+    }
+  };
 
   // Password Strength Calculation
   const hasMinLength = signUpPassword.length >= 8;
@@ -328,22 +352,44 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               );
             })()}
 
-            {/* 2 Big Clean Action Buttons */}
+            {/* 1-Click Web3 Wallet Connect + Email Action Buttons */}
             <div className="space-y-3 pt-2">
+              
+              {/* Primary 1-Click Native Web3 Wallet Button */}
+              <button
+                type="button"
+                onClick={handleWeb3WalletConnect}
+                disabled={isConnectingWallet}
+                className="w-full flex items-center justify-center gap-2.5 py-3.5 px-6 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black rounded-2xl text-sm shadow-[0_0_20px_rgba(245,158,11,0.4)] hover:shadow-[0_0_25px_rgba(245,158,11,0.6)] transition-all active:scale-95 cursor-pointer border border-amber-300/60"
+              >
+                <Wallet className="w-4 h-4 text-slate-950 stroke-[2.5]" />
+                <span>{isConnectingWallet ? 'Connecting Wallet...' : 'Connect Web3 Wallet (MetaMask / EVM)'}</span>
+                <Sparkles className="w-3.5 h-3.5 text-amber-900 ml-0.5" />
+              </button>
+
+              {/* Clean Divider */}
+              <div className="flex items-center gap-3 py-1">
+                <div className="flex-1 h-px bg-slate-700/60" />
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">
+                  Or with Email
+                </span>
+                <div className="flex-1 h-px bg-slate-700/60" />
+              </div>
+
               <button
                 onClick={() => setViewState('signin')}
-                className="w-full flex items-center justify-center gap-2 py-3.5 px-6 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-sm font-bold shadow-glow transition-all active:scale-95 cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 py-3 px-6 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-sm font-bold shadow-glow transition-all active:scale-95 cursor-pointer"
               >
                 <LogIn className="w-4 h-4" />
-                <span>Sign In to Account</span>
+                <span>Sign In with Email</span>
               </button>
 
               <button
                 onClick={() => setViewState('signup')}
-                className="w-full flex items-center justify-center gap-2 py-3.5 px-6 bg-[#1C2541] hover:bg-[#2A3756] text-white border border-[#334155] rounded-2xl text-sm font-bold transition-all active:scale-95 cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 py-3 px-6 bg-[#1C2541] hover:bg-[#2A3756] text-white border border-[#334155] rounded-2xl text-sm font-bold transition-all active:scale-95 cursor-pointer"
               >
                 <UserPlus className="w-4 h-4 text-blue-400" />
-                <span>Create New Account</span>
+                <span>Create Email Account</span>
               </button>
             </div>
 
@@ -354,7 +400,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {viewState === 'signin' && !isVerifyingOtp && (
           <div className="w-full bg-[#1C2541] border border-[#334155] rounded-3xl p-6 sm:p-8 shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
             
-            <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center justify-between mb-4">
               <button
                 onClick={() => setViewState('home')}
                 className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
@@ -366,6 +412,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <h2 className="text-sm font-bold text-white uppercase tracking-wider">
                 Sign In
               </h2>
+            </div>
+
+            {/* Quick Web3 Connect inside Sign In */}
+            <div className="mb-4">
+              <button
+                type="button"
+                onClick={handleWeb3WalletConnect}
+                disabled={isConnectingWallet}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/50 text-amber-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <Wallet className="w-3.5 h-3.5 text-amber-400" />
+                <span>{isConnectingWallet ? 'Connecting...' : '1-Click Web3 Wallet Login'}</span>
+              </button>
             </div>
 
             <form onSubmit={handleSignIn} className="space-y-4">

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Lock, Mail, ArrowRight, Layers, AlertCircle, Info } from 'lucide-react';
+import { X, Lock, Mail, ArrowRight, Layers, AlertCircle, Info, Wallet, Sparkles } from 'lucide-react';
 import type { Profile } from '../../types';
-import { checkEmailExists } from '../../lib/storage';
+import { checkEmailExists, authenticateWithWeb3Wallet } from '../../lib/storage';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -26,8 +26,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isConnectingWallet, setIsConnectingWallet] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleWalletAuth = async () => {
+    setIsConnectingWallet(true);
+    setValidationError(null);
+    try {
+      const res = await authenticateWithWeb3Wallet();
+      setIsConnectingWallet(false);
+      if (res.success && res.user) {
+        onClose();
+      } else {
+        setValidationError(res.message);
+      }
+    } catch (err: any) {
+      setIsConnectingWallet(false);
+      setValidationError(err?.message || 'Could not connect Web3 Wallet.');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,7 +101,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-[#334155] transition-colors"
+            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-[#334155] transition-colors cursor-pointer"
             aria-label="Close auth modal"
           >
             <X className="w-4 h-4" />
@@ -92,6 +110,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Tab Switcher: Sign In vs Create Account */}
         <div className="p-6 pt-5">
+          
+          {/* 1-Click Native Web3 Wallet Button */}
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={handleWalletAuth}
+              disabled={isConnectingWallet}
+              className="w-full flex items-center justify-center gap-2.5 py-3 px-4 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black rounded-xl text-xs shadow-[0_0_15px_rgba(245,158,11,0.35)] transition-all active:scale-95 cursor-pointer border border-amber-300/60"
+            >
+              <Wallet className="w-4 h-4 text-slate-950 stroke-[2.5]" />
+              <span>{isConnectingWallet ? 'Connecting Wallet...' : 'Connect Web3 Wallet (1-Click Login)'}</span>
+              <Sparkles className="w-3 h-3 text-amber-900" />
+            </button>
+
+            <div className="flex items-center gap-3 my-3">
+              <div className="flex-1 h-px bg-slate-700/50" />
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">
+                Or with Email
+              </span>
+              <div className="flex-1 h-px bg-slate-700/50" />
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 p-1 bg-[#0B132B] border border-[#334155] rounded-xl mb-4">
             <button
               type="button"
@@ -99,7 +140,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 setIsSignUp(false);
                 setValidationError(null);
               }}
-              className={`py-2 text-xs font-semibold rounded-lg transition-all ${
+              className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                 !isSignUp
                   ? 'bg-blue-600 text-white shadow-glow-sm'
                   : 'text-slate-400 hover:text-slate-200'
@@ -113,7 +154,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 setIsSignUp(true);
                 setValidationError(null);
               }}
-              className={`py-2 text-xs font-semibold rounded-lg transition-all ${
+              className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                 isSignUp
                   ? 'bg-blue-600 text-white shadow-glow-sm'
                   : 'text-slate-400 hover:text-slate-200'

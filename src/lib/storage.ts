@@ -1658,6 +1658,136 @@ export const authenticateUser = async (
   return { success: true, user, message: 'Signed in successfully.' };
 };
 
+/**
+ * 1-Click Native Web3 Wallet Authentication (MetaMask, TrustWallet, OKX, EVM)
+ * Connects directly to window.ethereum without requiring email or password.
+ */
+export const authenticateWithWeb3Wallet = async (): Promise<{ success: boolean; user?: Profile; message: string }> => {
+  if (typeof window === 'undefined') {
+    return { success: false, message: 'Window is not defined.' };
+  }
+
+  const ethereum = (window as any).ethereum;
+  if (!ethereum) {
+    return {
+      success: false,
+      message: 'No Web3 Wallet detected. Please open in a Web3 browser (MetaMask, Trust Wallet, OKX) or install a wallet extension.',
+    };
+  }
+
+  try {
+    const accounts: string[] = await ethereum.request({ method: 'eth_requestAccounts' });
+    if (!accounts || accounts.length === 0) {
+      return { success: false, message: 'No Ethereum accounts authorized by wallet.' };
+    }
+
+    const rawAddress = accounts[0];
+    const cleanAddress = rawAddress.toLowerCase();
+    const shortAddress = `${rawAddress.slice(0, 6)}...${rawAddress.slice(-4)}`;
+    const formattedEmail = `${cleanAddress}@wallet.dlicom.social`;
+    const walletUserId = `wallet_${cleanAddress}`;
+
+    let existingUser: Profile | null = null;
+    const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
+
+    const localMatchIdx = users.findIndex(
+      u => u.id === walletUserId || 
+           (u.dlicom_address && u.dlicom_address.toLowerCase() === cleanAddress) ||
+           (u.email && u.email.toLowerCase() === formattedEmail)
+    );
+
+    if (localMatchIdx !== -1) {
+      existingUser = users[localMatchIdx];
+    } else {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        try {
+          const { data: supaUsers } = await supabase
+            .from('profiles')
+            .select('*')
+            .or(`id.eq.${walletUserId},email.eq.${formattedEmail},dlicom_address.ilike.${cleanAddress}`)
+            .limit(1);
+
+          if (supaUsers && supaUsers.length > 0) {
+            existingUser = supaUsers[0];
+          }
+        } catch (err) {
+          console.warn('[Aether Supabase] Wallet lookup notice:', err);
+        }
+      }
+    }
+
+    let finalUser: Profile;
+
+    if (existingUser) {
+      finalUser = {
+        ...existingUser,
+        dlicom_address: rawAddress,
+        updated_at: new Date().toISOString(),
+      };
+
+      const uIdx = users.findIndex(u => u.id === finalUser.id);
+      if (uIdx !== -1) {
+        users[uIdx] = finalUser;
+      } else {
+        users.unshift(finalUser);
+      }
+    } else {
+      const generatedAvatar = `https://api.dicebear.com/7.x/identicon/svg?seed=${cleanAddress}&backgroundColor=0b132b,1c2541,1e293b`;
+
+      finalUser = {
+        id: walletUserId,
+        email: formattedEmail,
+        first_name: 'Web3',
+        last_name: 'Creator',
+        display_name: shortAddress,
+        username: `0x${cleanAddress.slice(2, 8)}`,
+        avatar_url: generatedAvatar,
+        banner_url: '',
+        banner_size: 'standard',
+        bio: `Verified Web3 Member on Dlicom SocialFi • ${shortAddress}`,
+        dlicom_address: rawAddress,
+        location: 'Web3 Ecosystem',
+        website: `https://etherscan.io/address/${rawAddress}`,
+        is_verified: true,
+        is_golden_verified: false,
+        is_admin: false,
+        followers: [],
+        following: [],
+        total_votes_received: 0,
+        password_hash: '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      users.unshift(finalUser);
+    }
+
+    setItem(STORAGE_KEYS.REAL_USERS, reconcileFollowGraph(users));
+    setItem(STORAGE_KEYS.CURRENT_USER_ID, finalUser.id);
+    addOrUpdateSavedAccount(finalUser);
+
+    await saveProfileToCloud(finalUser);
+    broadcastRealtimeEvent('user_registered', finalUser);
+
+    await syncWithServer();
+    window.dispatchEvent(new Event('aether_storage_sync'));
+    if (syncChannel) syncChannel.postMessage('sync');
+
+    return {
+      success: true,
+      user: finalUser,
+      message: `Connected wallet ${shortAddress} successfully!`,
+    };
+  } catch (err: any) {
+    console.error('[Web3 Wallet Auth Error]:', err);
+    if (err?.code === 4001) {
+      return { success: false, message: 'Connection request rejected in wallet.' };
+    }
+    return { success: false, message: err?.message || 'Failed to connect Web3 Wallet.' };
+  }
+};
+
 export const getCurrentUser = (): Profile | null => {
   const currentId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);
   if (!currentId) return null;
@@ -2734,10 +2864,10 @@ export const isUserAdmin = (userOrEmail?: Profile | string | null): boolean => {
   return Boolean(found && (found.is_admin || adminEmailList.includes((found.email || '').toLowerCase().trim())));
 };
 
-export const addAdminEmail = async (newEmail: string, actorEmail?: string): Promise<boolean> => {
+export const addAdminEmail = async (newEmailOrWallet: string, actorEmail?: string): Promise<boolean> => {
   if (actorEmail && !isUserAdmin(actorEmail)) return false;
-  const clean = newEmail.toLowerCase().trim();
-  if (!clean || !clean.includes('@')) return false;
+  const clean = newEmailOrWallet.toLowerCase().trim();
+  if (!clean || (!clean.includes('@') && !clean.startsWith('0x'))) return false;
 
   const current = getAdminEmails();
   if (!current.includes(clean)) {
@@ -2747,7 +2877,12 @@ export const addAdminEmail = async (newEmail: string, actorEmail?: string): Prom
 
   // Update target user's is_admin flag in REAL_USERS and push to Supabase Cloud DB
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-  const idx = users.findIndex(u => (u.email || '').toLowerCase().trim() === clean);
+  const idx = users.findIndex(
+    u => (u.email || '').toLowerCase().trim() === clean ||
+         (u.dlicom_address || '').toLowerCase().trim() === clean ||
+         u.id.toLowerCase() === `wallet_${clean}` ||
+         u.id.toLowerCase() === clean
+  );
   let targetUserId = '';
   if (idx !== -1) {
     targetUserId = users[idx].id;
@@ -2773,14 +2908,23 @@ export const addAdminEmail = async (newEmail: string, actorEmail?: string): Prom
       post_id: null,
       is_read: false,
       created_at: new Date().toISOString(),
-    }).then(() => {}, () => {});
+    }).then(() => { }, () => { });
 
-    supabase.from('profiles').update({
-      is_admin: true,
-      is_golden_verified: true,
-      is_verified: true,
-      updated_at: new Date().toISOString(),
-    }).eq('email', clean).then(() => {}, () => {});
+    if (clean.includes('@')) {
+      supabase.from('profiles').update({
+        is_admin: true,
+        is_golden_verified: true,
+        is_verified: true,
+        updated_at: new Date().toISOString(),
+      }).eq('email', clean).then(() => { }, () => { });
+    } else if (targetUserId) {
+      supabase.from('profiles').update({
+        is_admin: true,
+        is_golden_verified: true,
+        is_verified: true,
+        updated_at: new Date().toISOString(),
+      }).eq('id', targetUserId).then(() => { }, () => { });
+    }
   }
 
   // Real-time broadcast
@@ -2792,16 +2936,21 @@ export const addAdminEmail = async (newEmail: string, actorEmail?: string): Prom
   return true;
 };
 
-export const removeAdminEmail = async (targetEmail: string, actorEmail?: string): Promise<boolean> => {
+export const removeAdminEmail = async (targetEmailOrWallet: string, actorEmail?: string): Promise<boolean> => {
   if (actorEmail && !isUserAdmin(actorEmail)) return false;
-  const clean = targetEmail.toLowerCase().trim();
+  const clean = targetEmailOrWallet.toLowerCase().trim();
   if (clean === ROOT_ADMIN_EMAIL.toLowerCase()) return false;
 
   const current = getAdminEmails().filter(e => e !== clean);
   setItem(STORAGE_KEYS.ADMIN_EMAILS, current);
 
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-  const idx = users.findIndex(u => (u.email || '').toLowerCase().trim() === clean);
+  const idx = users.findIndex(
+    u => (u.email || '').toLowerCase().trim() === clean ||
+         (u.dlicom_address || '').toLowerCase().trim() === clean ||
+         u.id.toLowerCase() === `wallet_${clean}` ||
+         u.id.toLowerCase() === clean
+  );
   let targetUserId = '';
   if (idx !== -1) {
     targetUserId = users[idx].id;
@@ -2817,12 +2966,19 @@ export const removeAdminEmail = async (targetEmail: string, actorEmail?: string)
   // Cloud Supabase Persistence
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('notifications').delete().eq('id', `admin_grant_${clean}`).then(() => {}, () => {});
+    supabase.from('notifications').delete().eq('id', `admin_grant_${clean}`).then(() => { }, () => { });
 
-    supabase.from('profiles').update({
-      is_admin: false,
-      updated_at: new Date().toISOString(),
-    }).eq('email', clean).then(() => {}, () => {});
+    if (clean.includes('@')) {
+      supabase.from('profiles').update({
+        is_admin: false,
+        updated_at: new Date().toISOString(),
+      }).eq('email', clean).then(() => { }, () => { });
+    } else if (targetUserId) {
+      supabase.from('profiles').update({
+        is_admin: false,
+        updated_at: new Date().toISOString(),
+      }).eq('id', targetUserId).then(() => { }, () => { });
+    }
   }
 
   // Real-time broadcast
@@ -2884,21 +3040,21 @@ export const adminToggleAdminRole = async (targetUserId: string, actorEmail?: st
         post_id: null,
         is_read: false,
         created_at: new Date().toISOString(),
-      }).then(() => {}, () => {});
+      }).then(() => { }, () => { });
 
       supabase.from('profiles').update({
         is_admin: true,
         is_golden_verified: true,
         is_verified: true,
         updated_at: new Date().toISOString(),
-      }).eq('id', targetUserId).then(() => {}, () => {});
+      }).eq('id', targetUserId).then(() => { }, () => { });
     } else {
-      supabase.from('notifications').delete().eq('id', `admin_grant_${userEmail || targetUserId}`).then(() => {}, () => {});
+      supabase.from('notifications').delete().eq('id', `admin_grant_${userEmail || targetUserId}`).then(() => { }, () => { });
 
       supabase.from('profiles').update({
         is_admin: false,
         updated_at: new Date().toISOString(),
-      }).eq('id', targetUserId).then(() => {}, () => {});
+      }).eq('id', targetUserId).then(() => { }, () => { });
     }
   }
 
