@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Lock, Mail, ArrowRight, Layers, AlertCircle, Info, Wallet, Sparkles } from 'lucide-react';
+import { X, Lock, Mail, ArrowRight, Layers, AlertCircle, Info, ShieldCheck, Wallet } from 'lucide-react';
 import type { Profile } from '../../types';
-import { checkEmailExists, authenticateWithWeb3Wallet } from '../../lib/storage';
+import { checkEmailExists, authenticateWithDlicomWallet } from '../../lib/storage';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -26,24 +26,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [isConnectingWallet, setIsConnectingWallet] = useState(false);
+  const [isConnectingDlicomWallet, setIsConnectingDlicomWallet] = useState(false);
 
   if (!isOpen) return null;
 
   const handleWalletAuth = async () => {
-    setIsConnectingWallet(true);
+    setIsConnectingDlicomWallet(true);
     setValidationError(null);
     try {
-      const res = await authenticateWithWeb3Wallet();
-      setIsConnectingWallet(false);
+      const res = await authenticateWithDlicomWallet();
+      setIsConnectingDlicomWallet(false);
       if (res.success && res.user) {
         onClose();
       } else {
         setValidationError(res.message);
       }
     } catch (err: any) {
-      setIsConnectingWallet(false);
-      setValidationError(err?.message || 'Could not connect Web3 Wallet.');
+      setIsConnectingDlicomWallet(false);
+      setValidationError(err?.message || 'Could not connect Dlicom Wallet.');
     }
   };
 
@@ -111,16 +111,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* Tab Switcher: Sign In vs Create Account */}
         <div className="p-6 pt-5">
           
-          {/* 1-Click Native Web3 Wallet Button */}
+          {/* 1-Click Native Dlicom Wallet Button */}
           <div className="mb-4">
             <button
               type="button"
               onClick={handleWalletAuth}
-              disabled={isConnectingWallet}
+              disabled={isConnectingDlicomWallet}
               className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0B132B] hover:bg-[#2A3756] border border-blue-500/50 hover:border-blue-400 text-white rounded-xl text-xs font-bold shadow-glow-sm transition-all active:scale-95 cursor-pointer group"
             >
-              <Wallet className="w-4 h-4 text-blue-400 group-hover:text-blue-300 transition-colors" />
-              <span>{isConnectingWallet ? 'Connecting...' : 'Connect Web3 Wallet'}</span>
+              <ShieldCheck className="w-4 h-4 text-blue-400 group-hover:text-blue-300 transition-colors" />
+              <span>{isConnectingDlicomWallet ? 'Connecting Dlicom Wallet...' : 'Connect Dlicom Wallet'}</span>
             </button>
 
             <div className="flex items-center gap-3 my-3">

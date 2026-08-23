@@ -1659,33 +1659,43 @@ export const authenticateUser = async (
 };
 
 /**
- * 1-Click Native Web3 Wallet Authentication (MetaMask, TrustWallet, OKX, EVM)
- * Connects directly to window.ethereum without requiring email or password.
+ * 1-Click Native Dlicom Wallet Authentication (Dlicom Keyring / Web3 Extension)
+ * Connects directly to window.dlicom, window.dlicomWallet or browser Web3 provider.
  */
-export const authenticateWithWeb3Wallet = async (): Promise<{ success: boolean; user?: Profile; message: string }> => {
+export const authenticateWithDlicomWallet = async (): Promise<{ success: boolean; user?: Profile; message: string }> => {
   if (typeof window === 'undefined') {
     return { success: false, message: 'Window is not defined.' };
   }
 
-  const ethereum = (window as any).ethereum;
-  if (!ethereum) {
+  const dlicomProvider = (window as any).dlicom || (window as any).dlicomWallet || (window as any).ethereum;
+  if (!dlicomProvider) {
     return {
       success: false,
-      message: 'No Web3 Wallet detected. Please open in a Web3 browser (MetaMask, Trust Wallet, OKX) or install a wallet extension.',
+      message: 'Dlicom Wallet not detected. Please install the Dlicom Wallet extension or use Email Sign In to continue.',
     };
   }
 
   try {
-    const accounts: string[] = await ethereum.request({ method: 'eth_requestAccounts' });
+    let accounts: string[] = [];
+    if (typeof dlicomProvider.request === 'function') {
+      accounts = await dlicomProvider.request({ method: 'eth_requestAccounts' });
+    } else if (typeof dlicomProvider.getAccounts === 'function') {
+      accounts = await dlicomProvider.getAccounts();
+    } else if (typeof dlicomProvider.connect === 'function') {
+      const res = await dlicomProvider.connect();
+      if (res && res.accounts) accounts = res.accounts;
+      else if (res && res.address) accounts = [res.address];
+    }
+
     if (!accounts || accounts.length === 0) {
-      return { success: false, message: 'No Ethereum accounts authorized by wallet.' };
+      return { success: false, message: 'No Dlicom accounts authorized by wallet.' };
     }
 
     const rawAddress = accounts[0];
     const cleanAddress = rawAddress.toLowerCase();
-    const shortAddress = `${rawAddress.slice(0, 6)}...${rawAddress.slice(-4)}`;
+    const shortAddress = rawAddress.length > 12 ? `${rawAddress.slice(0, 6)}...${rawAddress.slice(-4)}` : rawAddress;
     const formattedEmail = `${cleanAddress}@wallet.dlicom.social`;
-    const walletUserId = `wallet_${cleanAddress}`;
+    const walletUserId = `dlicom_${cleanAddress}`;
 
     let existingUser: Profile | null = null;
     const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
@@ -1712,7 +1722,7 @@ export const authenticateWithWeb3Wallet = async (): Promise<{ success: boolean; 
             existingUser = supaUsers[0];
           }
         } catch (err) {
-          console.warn('[Aether Supabase] Wallet lookup notice:', err);
+          console.warn('[Aether Supabase] Dlicom wallet lookup notice:', err);
         }
       }
     }
@@ -1738,17 +1748,17 @@ export const authenticateWithWeb3Wallet = async (): Promise<{ success: boolean; 
       finalUser = {
         id: walletUserId,
         email: formattedEmail,
-        first_name: 'Web3',
-        last_name: 'Creator',
+        first_name: 'Dlicom',
+        last_name: 'Core',
         display_name: shortAddress,
-        username: `0x${cleanAddress.slice(2, 8)}`,
+        username: `dlicom_${cleanAddress.slice(2, 8)}`,
         avatar_url: generatedAvatar,
         banner_url: '',
         banner_size: 'standard',
-        bio: `Verified Web3 Member on Dlicom SocialFi • ${shortAddress}`,
+        bio: `Verified Dlicom Core Member • ${shortAddress}`,
         dlicom_address: rawAddress,
-        location: 'Web3 Ecosystem',
-        website: `https://etherscan.io/address/${rawAddress}`,
+        location: 'Dlicom Network',
+        website: `https://dlicom.social/user/${rawAddress}`,
         is_verified: true,
         is_golden_verified: false,
         is_admin: false,
@@ -1777,16 +1787,18 @@ export const authenticateWithWeb3Wallet = async (): Promise<{ success: boolean; 
     return {
       success: true,
       user: finalUser,
-      message: `Connected wallet ${shortAddress} successfully!`,
+      message: `Connected Dlicom Wallet ${shortAddress} successfully!`,
     };
   } catch (err: any) {
-    console.error('[Web3 Wallet Auth Error]:', err);
+    console.error('[Dlicom Wallet Auth Error]:', err);
     if (err?.code === 4001) {
-      return { success: false, message: 'Connection request rejected in wallet.' };
+      return { success: false, message: 'Connection request rejected in Dlicom Wallet.' };
     }
-    return { success: false, message: err?.message || 'Failed to connect Web3 Wallet.' };
+    return { success: false, message: err?.message || 'Failed to connect Dlicom Wallet.' };
   }
 };
+
+export const authenticateWithWeb3Wallet = authenticateWithDlicomWallet;
 
 export const getCurrentUser = (): Profile | null => {
   const currentId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);

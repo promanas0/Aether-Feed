@@ -15,14 +15,14 @@ import {
   LogIn,
   Sun,
   Moon,
-  Wallet,
-  Sparkles
+  ShieldCheck,
+  Wallet
 } from 'lucide-react';
 import { 
   createPendingRegistration, 
   verifyAndCreateUser, 
   authenticateUser,
-  authenticateWithWeb3Wallet,
+  authenticateWithDlicomWallet,
   syncWithServer,
   getSavedAccounts,
   switchAccountSession,
@@ -48,8 +48,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   // Views: 'home' (just buttons) | 'signin' | 'signup' | 'otp'
   const [viewState, setViewState] = useState<'home' | 'signin' | 'signup'>('home');
   
-  // Web3 Wallet Connect State
-  const [isConnectingWallet, setIsConnectingWallet] = useState(false);
+  // Dlicom Wallet Connect State
+  const [isConnectingDlicomWallet, setIsConnectingDlicomWallet] = useState(false);
 
   // Sign In State
   const [signInEmail, setSignInEmail] = useState('');
@@ -75,21 +75,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     syncWithServer();
   }, []);
 
-  // Handle 1-Click Native Web3 Wallet Login (MetaMask / TrustWallet / EVM)
-  const handleWeb3WalletConnect = async () => {
-    setIsConnectingWallet(true);
+  // Handle 1-Click Native Dlicom Core Wallet Login
+  const handleDlicomWalletConnect = async () => {
+    setIsConnectingDlicomWallet(true);
     try {
-      const res = await authenticateWithWeb3Wallet();
-      setIsConnectingWallet(false);
+      const res = await authenticateWithDlicomWallet();
+      setIsConnectingDlicomWallet(false);
       if (res.success && res.user) {
-        addToast('Web3 Wallet Connected', res.message, 'success');
+        addToast('Dlicom Wallet Connected', res.message, 'success');
         onAuthSuccess(res.user);
       } else {
-        addToast('Wallet Connection', res.message, 'info');
+        addToast('Dlicom Wallet Notice', res.message, 'info');
       }
     } catch (err: any) {
-      setIsConnectingWallet(false);
-      addToast('Wallet Error', err?.message || 'Could not connect Web3 Wallet.', 'info');
+      setIsConnectingDlicomWallet(false);
+      addToast('Dlicom Wallet Error', err?.message || 'Could not connect Dlicom Wallet.', 'info');
     }
   };
 
@@ -352,18 +352,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               );
             })()}
 
-            {/* 1-Click Web3 Wallet Connect + Email Action Buttons */}
+            {/* 1-Click Dlicom Wallet Connect + Email Action Buttons */}
             <div className="space-y-3 pt-2">
               
-              {/* Primary 1-Click Native Web3 Wallet Button */}
+              {/* Primary 1-Click Native Dlicom Wallet Button */}
               <button
                 type="button"
-                onClick={handleWeb3WalletConnect}
-                disabled={isConnectingWallet}
+                onClick={handleDlicomWalletConnect}
+                disabled={isConnectingDlicomWallet}
                 className="w-full flex items-center justify-center gap-2 py-3.5 px-6 bg-[#1C2541] hover:bg-[#2A3756] text-white border border-blue-500/50 hover:border-blue-400 rounded-2xl text-sm font-bold shadow-glow-sm transition-all active:scale-95 cursor-pointer group"
               >
-                <Wallet className="w-4 h-4 text-blue-400 group-hover:text-blue-300 transition-colors" />
-                <span>{isConnectingWallet ? 'Connecting Wallet...' : 'Connect Web3 Wallet'}</span>
+                <ShieldCheck className="w-4 h-4 text-blue-400 group-hover:text-blue-300 transition-colors" />
+                <span>{isConnectingDlicomWallet ? 'Connecting Dlicom Wallet...' : 'Connect Dlicom Wallet'}</span>
               </button>
 
               {/* Clean Divider */}
@@ -413,16 +413,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </h2>
             </div>
 
-            {/* Quick Web3 Connect inside Sign In */}
+            {/* Quick Dlicom Wallet Connect inside Sign In */}
             <div className="mb-4">
               <button
                 type="button"
-                onClick={handleWeb3WalletConnect}
-                disabled={isConnectingWallet}
+                onClick={handleDlicomWalletConnect}
+                disabled={isConnectingDlicomWallet}
                 className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0B132B] hover:bg-[#2A3756] border border-blue-500/40 text-blue-300 hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer group"
               >
-                <Wallet className="w-3.5 h-3.5 text-blue-400 group-hover:text-blue-300 transition-colors" />
-                <span>{isConnectingWallet ? 'Connecting...' : 'Connect Web3 Wallet'}</span>
+                <ShieldCheck className="w-3.5 h-3.5 text-blue-400 group-hover:text-blue-300 transition-colors" />
+                <span>{isConnectingDlicomWallet ? 'Connecting...' : 'Connect Dlicom Wallet'}</span>
               </button>
             </div>
 

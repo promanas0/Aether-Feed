@@ -439,9 +439,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                                   Admin Team
                                 </span>
                               )}
-                              {(u.dlicom_address || u.id.startsWith('wallet_')) && (
-                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/40 flex items-center gap-1 font-mono">
-                                  <Wallet className="w-3 h-3 text-amber-400" /> Web3 Wallet
+                              {(u.dlicom_address || u.id.startsWith('wallet_') || u.id.startsWith('dlicom_')) && (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/40 flex items-center gap-1 font-mono">
+                                  <ShieldCheck className="w-3 h-3 text-blue-400" /> Dlicom Wallet
                                 </span>
                               )}
                             </div>
@@ -695,11 +695,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                 <div className="flex items-center gap-2 text-blue-400">
                   <UserPlus className="w-4 h-4" />
                   <h4 className="text-xs font-bold uppercase tracking-wider">
-                    Add Team Member (Email or Web3 Wallet Address)
+                    Add Team Member (Email or Dlicom Wallet Address)
                   </h4>
                 </div>
                 <p className="text-xs text-slate-400">
-                  Authorize additional team members to access this Admin Console using their email address or Web3 wallet address (`0x...`).
+                  Authorize additional team members to access this Admin Console using their email address or Dlicom Wallet address (`0x...` / `dlicom1...`).
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-2 pt-1">
@@ -710,7 +710,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                       required
                       value={newAdminEmail}
                       onChange={(e) => setNewAdminEmail(e.target.value)}
-                      placeholder="team_admin@gmail.com or 0x71C...3a9"
+                      placeholder="team_admin@gmail.com or Dlicom Wallet (0x... / dlicom1...)"
                       className="w-full pl-9 pr-4 py-2.5 bg-[#1C2541] border border-[#334155] focus:border-blue-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none font-mono"
                     />
                   </div>
