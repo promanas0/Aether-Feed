@@ -578,8 +578,36 @@ export const syncWithServer = async (): Promise<boolean> => {
       const supabase = getSupabaseClient();
       if (supabase) {
         try {
-          // Pull ALL live profiles from Supabase
-          const { data: supaProfiles, error: profError } = await supabase.from('profiles').select('*');
+          // Pull ALL live profiles and notifications from Supabase
+          const [{ data: supaProfiles, error: profError }, { data: supaNotifs }] = await Promise.all([
+            supabase.from('profiles').select('*'),
+            supabase.from('notifications').select('*').order('created_at', { ascending: false }),
+          ]);
+
+          // Extract any cloud golden grant records
+          const cloudGoldenIds = new Set<string>();
+          if (supaNotifs && Array.isArray(supaNotifs)) {
+            supaNotifs.forEach((n: any) => {
+              if (n.type === 'golden_grant' && n.user_id) {
+                cloudGoldenIds.add(n.user_id);
+              }
+            });
+          }
+
+          if (cloudGoldenIds.size > 0) {
+            const currentGoldenList = getItem<string[]>(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, []);
+            let changed = false;
+            cloudGoldenIds.forEach(id => {
+              if (!currentGoldenList.includes(id)) {
+                currentGoldenList.push(id);
+                changed = true;
+              }
+            });
+            if (changed) {
+              setItem(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, currentGoldenList);
+            }
+          }
+
           let finalUsers: Profile[] = [];
           if (!profError && supaProfiles && supaProfiles.length > 0) {
             const cleanSupaUsers = supaProfiles.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
@@ -596,7 +624,7 @@ export const syncWithServer = async (): Promise<boolean> => {
               const localU = localUserMap.get(su.id);
               if (!localU) {
                 let suGolden = su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : false;
-                if (goldenUserIds.has(su.id)) suGolden = true;
+                if (cloudGoldenIds.has(su.id) || goldenUserIds.has(su.id)) suGolden = true;
                 if (revokedGoldenUserIds.has(su.id)) suGolden = false;
 
                 const suProfile: Profile = {
@@ -629,7 +657,9 @@ export const syncWithServer = async (): Promise<boolean> => {
                       : (su.banner_size || localU.banner_size || 'standard'));
 
                 let resolvedGolden: boolean;
-                if (goldenUserIds.has(su.id)) {
+                if (cloudGoldenIds.has(su.id)) {
+                  resolvedGolden = true;
+                } else if (goldenUserIds.has(su.id)) {
                   resolvedGolden = true;
                 } else if (revokedGoldenUserIds.has(su.id)) {
                   resolvedGolden = false;
@@ -774,13 +804,8 @@ export const syncWithServer = async (): Promise<boolean> => {
             setItem(STORAGE_KEYS.POSTS, validSupaPosts);
           }
 
-          // E. Pull live notifications from Supabase
+          // E. Process live notifications from Supabase
           const deletedNotifIds = new Set(getItem<string[]>(STORAGE_KEYS.DELETED_NOTIFICATION_IDS, []));
-          const { data: supaNotifs } = await supabase
-            .from('notifications')
-            .select('*')
-            .order('created_at', { ascending: false });
-
           if (supaNotifs && Array.isArray(supaNotifs)) {
             const currentLocalNotifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []).filter(n => !deletedNotifIds.has(n.id));
             const notifMap = new Map<string, NotificationItem>();
@@ -2657,6 +2682,7 @@ export const adminToggleGoldenVerifyUser = async (targetUserId: string, actorEma
   const updatedUser: Profile = {
     ...users[idx],
     is_golden_verified: nextGolden,
+    is_verified: true,
     updated_at: new Date().toISOString(),
   };
 
@@ -2679,8 +2705,41 @@ export const adminToggleGoldenVerifyUser = async (targetUserId: string, actorEma
     setItem(STORAGE_KEYS.REVOKED_GOLDEN_USER_IDS, revokedList);
   }
 
-  // Real-time broadcast to all connected devices/tabs
+  // Real-time websocket broadcast to all connected devices/tabs
   broadcastRealtimeEvent('user_golden_updated', { userId: targetUserId, is_golden: nextGolden });
+
+  // Cloud Supabase Persistence (Multi-Device Guarantee)
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    if (nextGolden) {
+      // 1. Write official cloud Golden Grant record into Supabase notifications table
+      supabase.from('notifications').upsert({
+        id: `golden_grant_${targetUserId}`,
+        user_id: targetUserId,
+        actor_id: actorEmail || 'admin',
+        type: 'golden_grant',
+        post_id: null,
+        is_read: false,
+        created_at: new Date().toISOString(),
+      }).then(() => {}, () => {});
+
+      // 2. Direct column update in Supabase profiles
+      supabase.from('profiles').update({
+        is_golden_verified: true,
+        is_verified: true,
+        updated_at: new Date().toISOString(),
+      }).eq('id', targetUserId).then(() => {}, () => {});
+    } else {
+      // 1. Remove cloud Golden Grant record
+      supabase.from('notifications').delete().eq('id', `golden_grant_${targetUserId}`).then(() => {}, () => {});
+
+      // 2. Direct column update in Supabase profiles
+      supabase.from('profiles').update({
+        is_golden_verified: false,
+        updated_at: new Date().toISOString(),
+      }).eq('id', targetUserId).then(() => {}, () => {});
+    }
+  }
 
   await saveProfileToCloud(updatedUser);
   window.dispatchEvent(new Event('aether_storage_sync'));
