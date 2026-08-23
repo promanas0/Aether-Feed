@@ -7,6 +7,7 @@ export interface Profile {
   username: string;
   avatar_url: string;
   banner_url?: string;
+  banner_size?: 'compact' | 'standard' | 'tall';
   bio: string;
   dlicom_address: string; // e.g., 0x71C4...98A2 or dlicom.id/username
   location?: string;
@@ -39,6 +40,8 @@ export interface Post {
   votes_down: number;
   net_votes: number; // votes_up - votes_down
   comments_count?: number;
+  is_pinned_home?: boolean; // Pinned globally to home feed by Admin
+  is_pinned_profile?: boolean; // Pinned to creator's profile
   created_at: string;
   updated_at?: string;
   is_deleted?: boolean;

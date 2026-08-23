@@ -131,6 +131,7 @@ export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
     username: p.username || '',
     avatar_url: p.avatar_url || DEFAULT_DLICOM_AVATAR,
     banner_url: p.banner_url || '',
+    banner_size: p.banner_size || 'standard',
     bio: p.bio || '',
     dlicom_address: p.dlicom_address || '',
     location: p.location || '',
@@ -181,7 +182,7 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
 
     console.warn('[Aether Supabase] Full profile upsert notice, trying core columns:', fullErr.message);
 
-    // Attempt 2: Core standard columns
+    // Attempt 2: Core standard columns (includes banner_url and banner_size)
     const coreData = {
       id: profile.id,
       email: profile.email || '',
@@ -190,6 +191,7 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
       display_name: profile.display_name || '',
       username: profile.username || '',
       avatar_url: profile.avatar_url || DEFAULT_DLICOM_AVATAR,
+      banner_url: profile.banner_url || '',
       bio: profile.bio || '',
       is_verified: profile.is_verified ?? true,
       is_golden_verified: profile.is_golden_verified ?? false,
@@ -206,7 +208,7 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
       return true;
     }
 
-    console.warn('[Aether Supabase] Core profile upsert notice, trying minimal columns:', coreErr.message);
+    console.warn('[Aether Supabase] Core profile upsert notice, trying minimal columns with banner:', coreErr.message);
 
     // Attempt 3: Minimal fields guaranteed on any Supabase table
     const minimalData = {
@@ -214,6 +216,7 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
       display_name: profile.display_name || '',
       username: profile.username || '',
       avatar_url: profile.avatar_url || DEFAULT_DLICOM_AVATAR,
+      banner_url: profile.banner_url || '',
       created_at: profile.created_at || new Date().toISOString(),
     };
 
@@ -248,6 +251,8 @@ export const sanitizePostForSupabase = (p: Post) => {
     votes_up: p.votes_up || 0,
     votes_down: p.votes_down || 0,
     net_votes: p.net_votes || 0,
+    is_pinned_home: Boolean(p.is_pinned_home),
+    is_pinned_profile: Boolean(p.is_pinned_profile),
     created_at: p.created_at || new Date().toISOString(),
   };
 };
@@ -585,6 +590,8 @@ export const syncWithServer = async (): Promise<boolean> => {
               const suProfile: Profile = {
                 ...localU,
                 ...su,
+                banner_url: su.banner_url || localU?.banner_url || '',
+                banner_size: su.banner_size || localU?.banner_size || 'standard',
                 followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : localU?.followers || [],
                 following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : localU?.following || [],
                 is_golden_verified: su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : (localU?.is_golden_verified ?? false),
@@ -661,8 +668,11 @@ export const syncWithServer = async (): Promise<boolean> => {
                 const down = pVotes.filter(v => v.type === 'down').length;
                 const freshAuthor = finalUsers.find(u => u.id === p.user_id);
                 const cCount = allComments.filter(c => c.post_id === p.id).length;
+                const localP = localPosts.find(lp => lp.id === p.id);
                 return {
                   ...p,
+                  is_pinned_home: p.is_pinned_home !== undefined ? Boolean(p.is_pinned_home) : Boolean(localP?.is_pinned_home),
+                  is_pinned_profile: p.is_pinned_profile !== undefined ? Boolean(p.is_pinned_profile) : Boolean(localP?.is_pinned_profile),
                   votes_up: up,
                   votes_down: down,
                   net_votes: up - down,
@@ -984,6 +994,22 @@ export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => vo
 
         window.dispatchEvent(new Event('aether_storage_sync'));
         onSyncNeeded();
+      })
+      .on('broadcast', { event: 'pin_post' }, ({ payload }) => {
+        if (!payload || !payload.post_id) return;
+        const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+        const idx = posts.findIndex(p => p.id === payload.post_id);
+        if (idx !== -1) {
+          if (payload.is_pinned_home !== undefined) {
+            posts[idx].is_pinned_home = payload.is_pinned_home;
+          }
+          if (payload.is_pinned_profile !== undefined) {
+            posts[idx].is_pinned_profile = payload.is_pinned_profile;
+          }
+          setItem(STORAGE_KEYS.POSTS, posts);
+          window.dispatchEvent(new Event('aether_storage_sync'));
+          onSyncNeeded();
+        }
       })
       .subscribe((status) => {
         console.log('[Supabase Realtime Channel Status]:', status);
@@ -1754,6 +1780,106 @@ export const updateRealPostText = async (
   window.dispatchEvent(new Event('aether_storage_sync'));
   if (syncChannel) syncChannel.postMessage('sync');
   return posts[idx];
+};
+
+export const togglePinHomePost = async (
+  postId: string, 
+  adminId: string
+): Promise<{ success: boolean; isPinned: boolean }> => {
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const admin = users.find(u => u.id === adminId);
+  if (!admin || !isUserAdmin(admin)) {
+    return { success: false, isPinned: false };
+  }
+
+  const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+  const idx = posts.findIndex(p => p.id === postId);
+  if (idx === -1) return { success: false, isPinned: false };
+
+  const currentPin = Boolean(posts[idx].is_pinned_home);
+  const newPinState = !currentPin;
+  posts[idx] = {
+    ...posts[idx],
+    is_pinned_home: newPinState,
+    updated_at: new Date().toISOString(),
+  };
+
+  setItem(STORAGE_KEYS.POSTS, posts);
+
+  // Sync to local server
+  try {
+    fetch('/api/posts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ post: posts[idx] }),
+    }).catch(() => {});
+  } catch {}
+
+  // Sync to Supabase Cloud
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('posts').update({
+      is_pinned_home: newPinState,
+    }).eq('id', postId).then(() => {}, (err) => console.warn('[Supabase Pin Update]', err));
+  }
+
+  await broadcastRealtimeEvent('pin_post', {
+    post_id: postId,
+    is_pinned_home: newPinState,
+    is_pinned_profile: posts[idx].is_pinned_profile,
+  });
+
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+
+  return { success: true, isPinned: newPinState };
+};
+
+export const togglePinProfilePost = async (
+  postId: string, 
+  userId: string
+): Promise<{ success: boolean; isPinned: boolean }> => {
+  const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+  const idx = posts.findIndex(p => p.id === postId && p.user_id === userId);
+  if (idx === -1) return { success: false, isPinned: false };
+
+  const currentPin = Boolean(posts[idx].is_pinned_profile);
+  const newPinState = !currentPin;
+  posts[idx] = {
+    ...posts[idx],
+    is_pinned_profile: newPinState,
+    updated_at: new Date().toISOString(),
+  };
+
+  setItem(STORAGE_KEYS.POSTS, posts);
+
+  // Sync to local server
+  try {
+    fetch('/api/posts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ post: posts[idx] }),
+    }).catch(() => {});
+  } catch {}
+
+  // Sync to Supabase Cloud
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('posts').update({
+      is_pinned_profile: newPinState,
+    }).eq('id', postId).then(() => {}, (err) => console.warn('[Supabase Pin Profile Update]', err));
+  }
+
+  await broadcastRealtimeEvent('pin_post', {
+    post_id: postId,
+    is_pinned_home: posts[idx].is_pinned_home,
+    is_pinned_profile: newPinState,
+  });
+
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+
+  return { success: true, isPinned: newPinState };
 };
 
 /* ==========================================================================

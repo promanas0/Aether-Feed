@@ -40,6 +40,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   const [website, setWebsite] = useState(currentUser.website || '');
   const [avatarUrl, setAvatarUrl] = useState(currentUser.avatar_url || DEFAULT_DLICOM_AVATAR);
   const [bannerUrl, setBannerUrl] = useState(currentUser.banner_url || '');
+  const [bannerSize, setBannerSize] = useState<'compact' | 'standard' | 'tall'>(currentUser.banner_size || 'standard');
 
   // Crop / Adjust Modal
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
@@ -95,6 +96,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
         website: website.trim(),
         avatar_url: avatarUrl,
         banner_url: bannerUrl,
+        banner_size: bannerSize,
       });
 
       addToast('Profile Updated', 'Your profile details have been saved.', 'success');
@@ -105,6 +107,8 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
       setIsSaving(false);
     }
   };
+
+  const bannerHeightClass = bannerSize === 'compact' ? 'h-24 sm:h-28' : bannerSize === 'tall' ? 'h-36 sm:h-48' : 'h-28 sm:h-36';
 
   return (
     <>
@@ -142,7 +146,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
             {/* Visual Banner & Avatar Combined Hero Editor */}
             <div className="relative rounded-2xl overflow-hidden border border-[#334155] bg-[#0B132B] mb-2">
               {/* Banner Area */}
-              <div className="h-28 sm:h-36 bg-gradient-to-r from-blue-900 via-blue-800 to-slate-900 relative group overflow-hidden">
+              <div className={`${bannerHeightClass} bg-gradient-to-r from-blue-900 via-blue-800 to-slate-900 relative group overflow-hidden transition-all duration-200`}>
                 {bannerUrl ? (
                   <img src={bannerUrl} alt="Cover Banner" className="w-full h-full object-cover" />
                 ) : (
@@ -160,14 +164,47 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                   className="hidden"
                 />
 
-                <button
-                  type="button"
-                  onClick={() => bannerInputRef.current?.click()}
-                  className="absolute top-2.5 right-2.5 px-3 py-1.5 bg-[#0B132B]/85 hover:bg-[#0B132B] text-white rounded-xl text-[11px] font-semibold border border-[#334155] backdrop-blur-md flex items-center gap-1.5 transition-all shadow-lg cursor-pointer"
-                >
-                  <Camera className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Change Banner</span>
-                </button>
+                <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+                  {bannerUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setBannerUrl('')}
+                      className="px-2.5 py-1.5 bg-rose-950/80 hover:bg-rose-900 text-rose-300 rounded-xl text-[11px] font-semibold border border-rose-600/40 backdrop-blur-md transition-all cursor-pointer"
+                      title="Remove banner"
+                    >
+                      Remove
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => bannerInputRef.current?.click()}
+                    className="px-3 py-1.5 bg-[#0B132B]/85 hover:bg-[#0B132B] text-white rounded-xl text-[11px] font-semibold border border-[#334155] backdrop-blur-md flex items-center gap-1.5 transition-all shadow-lg cursor-pointer"
+                  >
+                    <Camera className="w-3.5 h-3.5 text-blue-400" />
+                    <span>{bannerUrl ? 'Change' : 'Upload'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Banner Height & Size Selector Bar */}
+              <div className="px-3.5 py-2 bg-[#1C2541] border-t border-b border-[#334155] flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium text-slate-400">Banner Size:</span>
+                <div className="flex items-center gap-1 bg-[#0B132B] p-1 rounded-xl border border-[#334155]">
+                  {(['compact', 'standard', 'tall'] as const).map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => setBannerSize(size)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold capitalize transition-all cursor-pointer ${
+                        bannerSize === size
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Avatar Floating in Corner */}

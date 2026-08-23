@@ -33,10 +33,20 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       <div className="relative w-full max-w-2xl bg-[#1C2541] border border-[#334155] rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         
         {/* Profile Banner */}
-        <div className="h-28 bg-gradient-to-r from-blue-900 via-blue-800 to-slate-900 relative">
+        <div className="h-28 sm:h-36 bg-gradient-to-r from-blue-900 via-blue-800 to-slate-900 relative overflow-hidden">
+          {profile.banner_url && (
+            <>
+              <img
+                src={profile.banner_url}
+                alt="Cover Banner"
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#1E293B]/70 via-transparent to-black/30 pointer-events-none" />
+            </>
+          )}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 p-2 bg-[#0B132B]/80 hover:bg-[#0B132B] text-slate-300 hover:text-white rounded-xl backdrop-blur-md transition-colors"
+            className="absolute top-3 right-3 p-2 bg-[#0B132B]/80 hover:bg-[#0B132B] text-slate-300 hover:text-white rounded-xl backdrop-blur-md transition-colors z-10 cursor-pointer"
             aria-label="Close profile"
           >
             <X className="w-4 h-4" />

@@ -201,6 +201,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       website: website.trim(),
       avatar_url: avatarUrl,
       banner_url: bannerUrl,
+      banner_size: currentUser.banner_size || 'standard',
     });
     addToast('Profile Saved', 'Profile details updated.', 'success');
     onClose();

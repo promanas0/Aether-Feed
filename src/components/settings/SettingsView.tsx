@@ -112,6 +112,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [website, setWebsite] = useState(currentUser.website || '');
   const [avatarUrl, setAvatarUrl] = useState(currentUser.avatar_url || '');
   const [bannerUrl, setBannerUrl] = useState(currentUser.banner_url || '');
+  const [bannerSize, setBannerSize] = useState<'compact' | 'standard' | 'tall'>(currentUser.banner_size || 'standard');
 
   // Crop Modal States
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
@@ -188,6 +189,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       website: website.trim(),
       avatar_url: avatarUrl,
       banner_url: bannerUrl,
+      banner_size: bannerSize,
     });
     addToast('Profile Saved', 'Your public profile details have been updated.', 'success');
   };

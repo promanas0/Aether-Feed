@@ -7,6 +7,8 @@ interface FeedListProps {
   posts: Post[];
   votesList: Array<{ user_id: string; post_id: string; type: 'up' | 'down' }>;
   currentUserId: string;
+  currentUser?: Profile | null;
+  allUsers?: Profile[];
   activeFilter: FeedFilter;
   onFilterChange: (filter: FeedFilter) => void;
   filteredCreator: Profile | null;
@@ -14,15 +16,23 @@ interface FeedListProps {
   searchQuery: string;
   onClearSearch: () => void;
   onVote: (postId: string, type: 'up' | 'down') => void;
+  onDeletePost?: (postId: string) => void;
+  onEditPost?: (post: Post) => void;
+  onViewPostDetails?: (post: Post) => void;
+  onSelectTag?: (tag: string) => void;
   onOpenLightbox: (imageData: string, title: string) => void;
   onOpenProfile: (profile: Profile) => void;
   onShare: (post: Post) => void;
+  onTogglePinHome?: (postId: string) => void;
+  onTogglePinProfile?: (postId: string) => void;
 }
 
 export const FeedList: React.FC<FeedListProps> = ({
   posts,
   votesList,
   currentUserId,
+  currentUser,
+  allUsers,
   activeFilter,
   onFilterChange,
   filteredCreator,
@@ -30,9 +40,15 @@ export const FeedList: React.FC<FeedListProps> = ({
   searchQuery,
   onClearSearch,
   onVote,
+  onDeletePost,
+  onEditPost,
+  onViewPostDetails,
+  onSelectTag,
   onOpenLightbox,
   onOpenProfile,
   onShare,
+  onTogglePinHome,
+  onTogglePinProfile,
 }) => {
   const tabs: Array<{ id: FeedFilter; label: string; icon: React.ComponentType<{ className?: string }> }> = [
     { id: 'trending', label: 'Trending', icon: Flame },
@@ -105,11 +121,19 @@ export const FeedList: React.FC<FeedListProps> = ({
               <PostCard
                 key={post.id}
                 post={post}
+                currentUser={currentUser}
+                allUsers={allUsers}
                 userVote={voteMatch ? voteMatch.type : null}
                 onVote={onVote}
+                onDelete={onDeletePost}
+                onEdit={onEditPost}
+                onViewDetails={onViewPostDetails}
+                onSelectTag={onSelectTag}
                 onOpenLightbox={onOpenLightbox}
                 onOpenProfile={onOpenProfile}
                 onShare={onShare}
+                onTogglePinHome={onTogglePinHome}
+                onTogglePinProfile={onTogglePinProfile}
               />
             );
           })}

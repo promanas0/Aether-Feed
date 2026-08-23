@@ -36,6 +36,8 @@ interface UserProfileViewProps {
   onOpenSettings: () => void;
   onUpdateProfile?: (updates: Partial<Profile>) => Promise<void> | void;
   onSendMessage?: (userId: string) => void;
+  onTogglePinHome?: (postId: string) => void;
+  onTogglePinProfile?: (postId: string) => void;
   addToast?: (title: string, desc?: string, type?: ToastMessage['type']) => void;
 }
 
@@ -57,6 +59,8 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onOpenSettings,
   onUpdateProfile,
   onSendMessage,
+  onTogglePinHome,
+  onTogglePinProfile,
   addToast,
 }) => {
   const [activeTab, setActiveTab] = useState<'posts' | 'upvoted' | 'about'>('posts');
@@ -75,10 +79,14 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   const currentFollowingList = Array.isArray(currentUser?.following) ? currentUser.following : [];
   const isFollowing = currentFollowingList.includes(profile.id);
 
-  // User's own posts
-  const userPosts = posts.filter(
-    p => p && p.user_id && profile.id && p.user_id.trim() === profile.id.trim()
-  );
+  // User's own posts (Pinned to profile first, then newest)
+  const userPosts = posts
+    .filter(p => p && p.user_id && profile.id && p.user_id.trim() === profile.id.trim())
+    .sort((a, b) => {
+      if (a.is_pinned_profile && !b.is_pinned_profile) return -1;
+      if (!a.is_pinned_profile && b.is_pinned_profile) return 1;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
 
   // Posts upvoted by this user
   const upvotedPostIds = new Set(
@@ -90,6 +98,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
   const profileFollowers = Array.isArray(profile.followers) ? profile.followers : [];
   const profileFollowing = Array.isArray(profile.following) ? profile.following : [];
+
+  const bannerHeightClass = 
+    profile.banner_size === 'compact' ? 'h-28 sm:h-36' :
+    profile.banner_size === 'tall' ? 'h-48 sm:h-64' :
+    'h-36 sm:h-48';
 
   return (
     <div className="w-full">
@@ -107,13 +120,20 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       <div className="bg-[#1C2541] border border-[#334155] rounded-3xl overflow-hidden shadow-lg mb-6">
         
         {/* Cover Banner */}
-        <div className="h-36 sm:h-48 bg-gradient-to-r from-blue-900 via-blue-800 to-slate-900 relative overflow-hidden">
-          {profile.banner_url && (
-            <img
-              src={profile.banner_url}
-              alt="Cover Banner"
-              className="w-full h-full object-cover opacity-60"
-            />
+        <div className={`${bannerHeightClass} bg-gradient-to-r from-blue-900 via-blue-800 to-slate-900 relative overflow-hidden transition-all duration-300`}>
+          {profile.banner_url ? (
+            <>
+              <img
+                src={profile.banner_url}
+                alt="Cover Banner"
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#1E293B]/70 via-transparent to-black/20 pointer-events-none" />
+            </>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center opacity-30">
+              <div className="w-96 h-96 rounded-full bg-blue-500/20 blur-3xl" />
+            </div>
           )}
         </div>
 
@@ -319,6 +339,8 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   onOpenLightbox={onOpenLightbox}
                   onOpenProfile={onOpenProfile}
                   onShare={onShare}
+                  onTogglePinHome={onTogglePinHome}
+                  onTogglePinProfile={onTogglePinProfile}
                 />
               );
             })
@@ -352,6 +374,8 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   onOpenLightbox={onOpenLightbox}
                   onOpenProfile={onOpenProfile}
                   onShare={onShare}
+                  onTogglePinHome={onTogglePinHome}
+                  onTogglePinProfile={onTogglePinProfile}
                 />
               );
             })

@@ -23,7 +23,10 @@ import {
   removeSavedAccount,
   switchAccountSession,
   subscribeToSupabaseRealtime,
-  authenticateUser
+  authenticateUser,
+  togglePinHomePost,
+  togglePinProfilePost,
+  isUserAdmin
 } from './lib/storage';
 import type { 
   Profile, 
@@ -297,7 +300,42 @@ export function App() {
     const updated = await updateProfileData(currentUser.id, updates);
     if (updated) {
       setCurrentUser(updated);
+      if (selectedProfile && selectedProfile.id === currentUser.id) {
+        setSelectedProfile(updated);
+      }
       syncStateFromStorage();
+    }
+  };
+
+  // Handle Pin to Home Feed (Admin Only)
+  const handleTogglePinHome = async (postId: string) => {
+    if (!currentUser) return;
+    if (!isUserAdmin(currentUser)) {
+      addToast('Admin Permission Required', 'Only admins can pin posts to the global Home feed.', 'info');
+      return;
+    }
+    const res = await togglePinHomePost(postId, currentUser.id);
+    if (res.success) {
+      syncStateFromStorage();
+      addToast(
+        res.isPinned ? '📌 Pinned to Home Feed' : 'Unpinned from Feed',
+        res.isPinned ? 'Post is now featured at the top of the home feed.' : 'Post removed from pinned announcements.',
+        'success'
+      );
+    }
+  };
+
+  // Handle Pin to Creator Profile (Author Only)
+  const handleTogglePinProfile = async (postId: string) => {
+    if (!currentUser) return;
+    const res = await togglePinProfilePost(postId, currentUser.id);
+    if (res.success) {
+      syncStateFromStorage();
+      addToast(
+        res.isPinned ? '📌 Pinned to Profile' : 'Unpinned from Profile',
+        res.isPinned ? 'Post is now pinned to the top of your profile.' : 'Post unpinned from your profile.',
+        'success'
+      );
     }
   };
 
@@ -386,16 +424,28 @@ export function App() {
     }
 
     // Sort according to Active Filter
+    const sorted = [...result];
     switch (feedFilter) {
       case 'trending':
-        return result.sort((a, b) => b.net_votes - a.net_votes);
+        sorted.sort((a, b) => b.net_votes - a.net_votes);
+        break;
       case 'latest':
-        return result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        break;
       case 'top_voted':
-        return result.sort((a, b) => b.votes_up - a.votes_up);
+        sorted.sort((a, b) => b.votes_up - a.votes_up);
+        break;
       default:
-        return result;
+        sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        break;
     }
+
+    // Pinned to Home Feed posts always appear at the very top of the feed
+    return sorted.sort((a, b) => {
+      if (a.is_pinned_home && !b.is_pinned_home) return -1;
+      if (!a.is_pinned_home && b.is_pinned_home) return 1;
+      return 0;
+    });
   }, [posts, activeView, currentUser, selectedTagFilter, searchQuery, feedFilter]);
 
   // If user is not logged in, render Landing Page
@@ -699,6 +749,8 @@ export function App() {
                             onOpenProfile={handleOpenProfile}
                             onShare={(p: Post) => setShareModalPost(p)}
                             onSelectTag={(tag: string) => setSelectedTagFilter(tag)}
+                            onTogglePinHome={handleTogglePinHome}
+                            onTogglePinProfile={handleTogglePinProfile}
                           />
                         );
                       })
@@ -715,7 +767,7 @@ export function App() {
                     profile={selectedProfile}
                     currentUser={currentUser}
                     allUsers={users}
-                    posts={posts.filter(p => p.user_id === selectedProfile.id)}
+                    posts={posts}
                     votesList={votes}
                     onBack={() => setActiveView('feed')}
                     onToggleFollow={handleToggleFollow}
@@ -726,6 +778,8 @@ export function App() {
                     onOpenLightbox={(url, title) => setLightboxData({ isOpen: true, url, title })}
                     onOpenProfile={handleOpenProfile}
                     onShare={(p) => setShareModalPost(p)}
+                    onTogglePinHome={handleTogglePinHome}
+                    onTogglePinProfile={handleTogglePinProfile}
                     onOpenSettings={() => {
                       setActiveView('settings');
                       window.scrollTo({ top: 0, behavior: 'smooth' });

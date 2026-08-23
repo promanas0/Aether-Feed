@@ -16,6 +16,7 @@ import {
   Send,
   Reply,
   CornerDownRight,
+  Pin,
   X
 } from 'lucide-react';
 import type { Post, Profile, PostComment } from '../../types';
@@ -36,6 +37,8 @@ interface PostCardProps {
   onDelete?: (postId: string) => void;
   onViewDetails?: (post: Post) => void;
   onSelectTag?: (tag: string) => void;
+  onTogglePinHome?: (postId: string) => void;
+  onTogglePinProfile?: (postId: string) => void;
 }
 
 const formatTimeAgo = (dateStr: string): string => {
@@ -62,6 +65,8 @@ export const PostCard: React.FC<PostCardProps> = ({
   onDelete,
   onViewDetails,
   onSelectTag,
+  onTogglePinHome,
+  onTogglePinProfile,
 }) => {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isPopAnim, setIsPopAnim] = useState(false);
@@ -117,8 +122,28 @@ export const PostCard: React.FC<PostCardProps> = ({
   const hasImage = Boolean(post.image_data && post.image_data.trim().length > 0);
 
   return (
-    <article className="bg-[#1E293B] border border-[#334155] rounded-3xl overflow-hidden shadow-sm hover:border-slate-500/40 transition-all duration-150 flex flex-col mb-5">
+    <article className={`bg-[#1E293B] border ${
+      post.is_pinned_home ? 'border-amber-500/50 shadow-lg shadow-amber-500/5' : post.is_pinned_profile ? 'border-blue-500/40' : 'border-[#334155]'
+    } rounded-3xl overflow-hidden shadow-sm hover:border-slate-500/40 transition-all duration-150 flex flex-col mb-5`}>
       
+      {/* Pinned Badges */}
+      {post.is_pinned_home && (
+        <div className="flex items-center justify-between px-4 py-1.5 bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-transparent border-b border-amber-500/30 text-amber-300 text-[11px] font-semibold">
+          <div className="flex items-center gap-1.5">
+            <Pin className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+            <span>Pinned Announcement (Admin)</span>
+          </div>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400/90 bg-amber-400/15 px-2 py-0.5 rounded border border-amber-400/30">Featured</span>
+        </div>
+      )}
+
+      {!post.is_pinned_home && post.is_pinned_profile && (
+        <div className="flex items-center gap-1.5 px-4 py-1.5 bg-gradient-to-r from-blue-500/20 via-blue-500/10 to-transparent border-b border-blue-500/30 text-blue-300 text-[11px] font-semibold">
+          <Pin className="w-3.5 h-3.5 fill-blue-400 text-blue-400" />
+          <span>Pinned to Profile</span>
+        </div>
+      )}
+
       {/* Creator Header & 3-Dots Menu */}
       <div className="p-4 flex items-center justify-between gap-3 border-b border-[#334155]/50 bg-[#1C2541]/30">
         <button
@@ -172,8 +197,36 @@ export const PostCard: React.FC<PostCardProps> = ({
                   }} 
                 />
 
-                <div className="absolute right-0 top-full mt-1.5 w-48 bg-[#1C2541] border border-[#334155] rounded-2xl shadow-2xl z-40 p-1.5 text-xs text-slate-200 animate-in fade-in duration-150 backdrop-blur-xl">
+                <div className="absolute right-0 top-full mt-1.5 w-52 bg-[#1C2541] border border-[#334155] rounded-2xl shadow-2xl z-40 p-1.5 text-xs text-slate-200 animate-in fade-in duration-150 backdrop-blur-xl">
                   
+                  {/* Option: Pin to Home Feed (Admin Only) */}
+                  {isAdmin && onTogglePinHome && (
+                    <button
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        onTogglePinHome(post.id);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-amber-300 hover:text-amber-100 hover:bg-amber-950/40 rounded-xl transition-colors text-left cursor-pointer font-medium"
+                    >
+                      <Pin className={`w-3.5 h-3.5 text-amber-400 ${post.is_pinned_home ? 'fill-amber-400' : ''}`} />
+                      <span>{post.is_pinned_home ? 'Unpin from Home Feed' : 'Pin to Home Feed (Admin)'}</span>
+                    </button>
+                  )}
+
+                  {/* Option: Pin to Profile (Author Only) */}
+                  {isAuthor && onTogglePinProfile && (
+                    <button
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        onTogglePinProfile(post.id);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-blue-300 hover:text-blue-100 hover:bg-blue-950/40 rounded-xl transition-colors text-left cursor-pointer font-medium"
+                    >
+                      <Pin className={`w-3.5 h-3.5 text-blue-400 ${post.is_pinned_profile ? 'fill-blue-400' : ''}`} />
+                      <span>{post.is_pinned_profile ? 'Unpin from Profile' : 'Pin to Profile'}</span>
+                    </button>
+                  )}
+
                   {/* Option 1: Edit Post (Author Only) */}
                   {isAuthor && onEdit && (
                     <button
