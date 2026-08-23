@@ -72,6 +72,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   const [isPopAnim, setIsPopAnim] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDescExpanded, setIsDescExpanded] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<PostComment[]>(() => getPostComments(post.id));
   const [newCommentText, setNewCommentText] = useState('');
@@ -197,7 +198,7 @@ export const PostCard: React.FC<PostCardProps> = ({
                   }} 
                 />
 
-                <div className="absolute right-0 top-full mt-1.5 w-52 bg-[#1C2541] border border-[#334155] rounded-2xl shadow-2xl z-40 p-1.5 text-xs text-slate-200 animate-in fade-in duration-150 backdrop-blur-xl">
+                <div className="absolute right-0 top-full mt-1.5 w-56 max-h-72 sm:max-h-80 overflow-y-auto custom-scrollbar bg-[#1C2541] border border-[#334155] rounded-2xl shadow-2xl z-50 p-1.5 text-xs text-slate-200 animate-in fade-in duration-150 backdrop-blur-xl divide-y divide-[#334155]/30">
                   
                   {/* Option: Pin to Home Feed (Admin Only) */}
                   {isAdmin && onTogglePinHome && (
@@ -269,7 +270,7 @@ export const PostCard: React.FC<PostCardProps> = ({
 
                   {/* Option 4: Delete Post (Author or Admin) */}
                   {canDelete && onDelete && (
-                    <div className="border-t border-[#334155] pt-1 mt-1">
+                    <div className="pt-1 mt-1">
                       {!showDeleteConfirm ? (
                         <button
                           onClick={() => setShowDeleteConfirm(true)}
@@ -279,7 +280,7 @@ export const PostCard: React.FC<PostCardProps> = ({
                           <span>{isAdmin && !isAuthor ? 'Delete Post (Admin)' : 'Delete Post'}</span>
                         </button>
                       ) : (
-                        <div className="p-2 bg-rose-950/40 border border-rose-600/40 rounded-xl space-y-1.5">
+                        <div className="p-2 bg-rose-950/50 border border-rose-600/40 rounded-xl space-y-1.5">
                           <p className="text-[11px] font-bold text-rose-300">
                             {isAdmin && !isAuthor ? 'Admin delete post?' : 'Permanently delete?'}
                           </p>
@@ -312,18 +313,52 @@ export const PostCard: React.FC<PostCardProps> = ({
         </div>
       </div>
 
-      {/* Post Text / Status Description */}
+      {/* Post Text: Prominent Title + YouTube-style Expandable Description */}
       <div className="p-4 sm:p-5">
-        {post.title && post.title !== post.description && (
-          <h3 className="text-sm sm:text-base font-bold text-white tracking-tight mb-2">
+        {/* Prominent Post Title */}
+        {post.title && (
+          <h3 className="text-base sm:text-lg font-bold text-white tracking-tight leading-snug">
             {post.title}
           </h3>
         )}
 
+        {/* YouTube-style Expandable Description Box */}
         {post.description && (
-          <p className="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-line">
-            {post.description}
-          </p>
+          <div 
+            onClick={() => setIsDescExpanded(!isDescExpanded)}
+            className="mt-2.5 p-3 sm:p-3.5 bg-[#131E3A]/70 hover:bg-[#131E3A] border border-[#334155]/60 hover:border-slate-600 rounded-2xl transition-all cursor-pointer group/desc shadow-inner"
+          >
+            <div className="flex items-center justify-between mb-1.5 text-[10px] font-mono font-semibold text-slate-400">
+              <span className="uppercase tracking-wider text-slate-400">Description</span>
+              <span className="text-blue-400 group-hover/desc:text-blue-300 transition-colors">
+                {isDescExpanded ? '▲ Collapse' : '▼ Expand'}
+              </span>
+            </div>
+
+            <p className={`text-xs sm:text-sm text-slate-200 leading-relaxed ${isDescExpanded ? 'whitespace-pre-line' : 'line-clamp-2'}`}>
+              {post.description}
+            </p>
+
+            {post.description.length > 80 && (
+              <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-[#334155]/40 text-[11px]">
+                <span className="font-bold text-blue-400 group-hover/desc:text-blue-300">
+                  {isDescExpanded ? 'Show less' : '...more (Open full description)'}
+                </span>
+                {onViewDetails && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onViewDetails(post);
+                    }}
+                    className="text-[10px] font-mono text-slate-300 hover:text-white px-2.5 py-0.5 rounded-lg bg-[#1C2541] hover:bg-blue-600 border border-[#334155] hover:border-blue-500 transition-all cursor-pointer"
+                  >
+                    Post Details &rarr;
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Tagged Curators & Hashtags */}
