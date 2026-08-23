@@ -69,6 +69,15 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [timeoutModalUser, setTimeoutModalUser] = useState<Profile | null>(null);
 
+  // Auto-refresh active admin console state every 1.5s
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const interval = setInterval(() => {
+      onRefreshData();
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [isOpen, onRefreshData]);
+
   if (!isOpen) return null;
 
   const isRootAdmin = (currentUser.email || '').toLowerCase().trim() === 'promanas018@gmail.com';

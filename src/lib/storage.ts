@@ -658,46 +658,11 @@ export const syncWithServer = async (): Promise<boolean> => {
             });
           }
 
-          if (cloudGoldenIds.size > 0) {
-            const currentGoldenList = getItem<string[]>(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, []);
-            let changed = false;
-            cloudGoldenIds.forEach(id => {
-              if (!currentGoldenList.includes(id)) {
-                currentGoldenList.push(id);
-                changed = true;
-              }
-            });
-            if (changed) {
-              setItem(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, currentGoldenList);
-            }
-          }
-
-          if (cloudAdminEmails.size > 0) {
-            const currentAdminList = getItem<string[]>(STORAGE_KEYS.ADMIN_EMAILS, []);
-            let changed = false;
-            cloudAdminEmails.forEach(em => {
-              if (!currentAdminList.includes(em)) {
-                currentAdminList.push(em);
-                changed = true;
-              }
-            });
-            if (changed) {
-              setItem(STORAGE_KEYS.ADMIN_EMAILS, currentAdminList);
-            }
-          }
-
-          if (cloudBannedUserIds.size > 0) {
-            const currentBannedList = getItem<string[]>(STORAGE_KEYS.BANNED_USER_IDS, []);
-            let changed = false;
-            cloudBannedUserIds.forEach(id => {
-              if (!currentBannedList.includes(id)) {
-                currentBannedList.push(id);
-                changed = true;
-              }
-            });
-            if (changed) {
-              setItem(STORAGE_KEYS.BANNED_USER_IDS, currentBannedList);
-            }
+          // Update authoritative cloud lists
+          if (supaNotifs && Array.isArray(supaNotifs)) {
+            setItem(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, Array.from(cloudGoldenIds));
+            setItem(STORAGE_KEYS.ADMIN_EMAILS, Array.from(cloudAdminEmails));
+            setItem(STORAGE_KEYS.BANNED_USER_IDS, Array.from(cloudBannedUserIds));
           }
 
           let finalUsers: Profile[] = [];
@@ -708,10 +673,7 @@ export const syncWithServer = async (): Promise<boolean> => {
             currentLocalUsers.forEach(u => localUserMap.set(u.id, u));
 
             const mergedUserMap = new Map<string, Profile>();
-
             const goldenUserIds = new Set(getItem<string[]>(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, []));
-            const revokedGoldenUserIds = new Set(getItem<string[]>(STORAGE_KEYS.REVOKED_GOLDEN_USER_IDS, []));
-            const bannedUserIds = new Set(getItem<string[]>(STORAGE_KEYS.BANNED_USER_IDS, []));
             const adminEmailList = getAdminEmails().map(e => e.toLowerCase().trim());
 
             cleanSupaUsers.forEach((su: any) => {
@@ -719,13 +681,31 @@ export const syncWithServer = async (): Promise<boolean> => {
               const userEmail = (su.email || localU?.email || '').toLowerCase().trim();
               const isRootSuper = userEmail === ROOT_ADMIN_EMAIL.toLowerCase();
 
-              let suBanned = cloudBannedUserIds.has(su.id) || bannedUserIds.has(su.id) || Boolean(su.is_banned);
-              let suTimeout = cloudTimeoutMap.has(su.id) ? cloudTimeoutMap.get(su.id) : (su.posting_timeout_until || null);
+              const localUpdated = localU?.updated_at ? new Date(localU.updated_at).getTime() : 0;
+              const supaUpdated = su.updated_at ? new Date(su.updated_at).getTime() : 0;
+              const preferLocal = localUpdated > supaUpdated;
+
+              let resolvedBanned = false;
+              if (cloudBannedUserIds.has(su.id)) {
+                resolvedBanned = true;
+              } else if (preferLocal && localU) {
+                resolvedBanned = Boolean(localU.is_banned);
+              } else {
+                resolvedBanned = Boolean(su.is_banned);
+              }
+
+              let resolvedTimeout: string | null = null;
+              if (cloudTimeoutMap.has(su.id)) {
+                resolvedTimeout = cloudTimeoutMap.get(su.id) || null;
+              } else if (preferLocal && localU) {
+                resolvedTimeout = localU.posting_timeout_until || null;
+              } else {
+                resolvedTimeout = su.posting_timeout_until || null;
+              }
 
               if (!localU) {
                 let suGolden = su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : false;
                 if (cloudGoldenIds.has(su.id) || goldenUserIds.has(su.id)) suGolden = true;
-                if (revokedGoldenUserIds.has(su.id)) suGolden = false;
 
                 let suAdmin = isRootSuper || cloudAdminEmails.has(userEmail) || cloudAdminUserIds.has(su.id) || adminEmailList.includes(userEmail);
                 if (!suAdmin && su.is_admin !== undefined) suAdmin = Boolean(su.is_admin);
@@ -739,15 +719,11 @@ export const syncWithServer = async (): Promise<boolean> => {
                   is_golden_verified: suGolden,
                   is_admin: suAdmin,
                   is_verified: su.is_verified !== undefined ? Boolean(su.is_verified) : true,
-                  is_banned: suBanned,
-                  posting_timeout_until: suTimeout,
+                  is_banned: resolvedBanned,
+                  posting_timeout_until: resolvedTimeout,
                 };
                 mergedUserMap.set(suProfile.id, suProfile);
               } else {
-                const localUpdated = localU.updated_at ? new Date(localU.updated_at).getTime() : 0;
-                const supaUpdated = su.updated_at ? new Date(su.updated_at).getTime() : 0;
-                const preferLocal = localUpdated > supaUpdated;
-
                 // Smart banner reconciliation: If su has banner and local doesn't, pick su banner
                 const resolvedBannerUrl = (!localU.banner_url && su.banner_url)
                   ? su.banner_url
@@ -762,12 +738,8 @@ export const syncWithServer = async (): Promise<boolean> => {
                     : (su.banner_size || localU.banner_size || 'standard'));
 
                 let resolvedGolden: boolean;
-                if (cloudGoldenIds.has(su.id)) {
+                if (cloudGoldenIds.has(su.id) || goldenUserIds.has(su.id)) {
                   resolvedGolden = true;
-                } else if (goldenUserIds.has(su.id)) {
-                  resolvedGolden = true;
-                } else if (revokedGoldenUserIds.has(su.id)) {
-                  resolvedGolden = false;
                 } else if (preferLocal) {
                   resolvedGolden = localU.is_golden_verified !== undefined ? Boolean(localU.is_golden_verified) : Boolean(su.is_golden_verified);
                 } else {
@@ -786,11 +758,6 @@ export const syncWithServer = async (): Promise<boolean> => {
                 } else {
                   resolvedAdmin = su.is_admin !== undefined ? Boolean(su.is_admin) : Boolean(localU.is_admin);
                 }
-
-                const resolvedBanned = cloudBannedUserIds.has(su.id) || bannedUserIds.has(su.id) || Boolean(localU.is_banned || su.is_banned);
-                const resolvedTimeout = cloudTimeoutMap.has(su.id) 
-                  ? cloudTimeoutMap.get(su.id) 
-                  : (localU.posting_timeout_until !== undefined ? localU.posting_timeout_until : (su.posting_timeout_until || null));
 
                 const suProfile: Profile = {
                   ...su,

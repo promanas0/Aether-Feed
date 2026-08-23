@@ -156,22 +156,29 @@ export function App() {
     });
   }, []);
 
+  const handleFullRefresh = useCallback(async () => {
+    await syncWithServer();
+    syncStateFromStorage();
+  }, [syncStateFromStorage]);
+
   useEffect(() => {
     syncStateFromStorage();
-    syncWithServer();
+    syncWithServer().then(() => syncStateFromStorage());
 
     // 1. Live Instant Supabase Realtime Subscription
-    const unsubscribeRealtime = subscribeToSupabaseRealtime(() => {
+    const unsubscribeRealtime = subscribeToSupabaseRealtime(async () => {
+      await syncWithServer();
       syncStateFromStorage();
     });
 
-    // 2. Responsive Periodic Background Sync (every 1.5s for seamless multi-device sync)
+    // 2. Continuous Smooth Background Auto-Refresh (every 1.5s for seamless live multi-device sync)
     const pollInterval = setInterval(async () => {
       await syncWithServer();
       syncStateFromStorage();
     }, 1500);
 
-    const handleSync = () => {
+    const handleSync = async () => {
+      await syncWithServer();
       syncStateFromStorage();
     };
 
@@ -1022,7 +1029,7 @@ export function App() {
           currentUser={currentUser}
           allUsers={users}
           allPosts={posts}
-          onRefreshData={syncStateFromStorage}
+          onRefreshData={handleFullRefresh}
           addToast={addToast}
         />
       )}
