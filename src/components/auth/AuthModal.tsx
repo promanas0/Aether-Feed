@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Lock, Mail, ArrowRight, Layers, AlertCircle, Info, ShieldCheck, Wallet } from 'lucide-react';
 import type { Profile } from '../../types';
 import { checkEmailExists, authenticateWithDlicomWallet } from '../../lib/storage';
+import { DlicomWalletModal } from './DlicomWalletModal';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -27,24 +28,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [password, setPassword] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isConnectingDlicomWallet, setIsConnectingDlicomWallet] = useState(false);
+  const [isDlicomModalOpen, setIsDlicomModalOpen] = useState(false);
 
   if (!isOpen) return null;
 
   const handleWalletAuth = async () => {
-    setIsConnectingDlicomWallet(true);
-    setValidationError(null);
-    try {
-      const res = await authenticateWithDlicomWallet();
-      setIsConnectingDlicomWallet(false);
-      if (res.success && res.user) {
-        onClose();
-      } else {
-        setValidationError(res.message);
+    const dlicomProvider = (window as any).dlicom || (window as any).dlicomWallet || (window as any).ethereum;
+    if (dlicomProvider) {
+      setIsConnectingDlicomWallet(true);
+      setValidationError(null);
+      try {
+        const res = await authenticateWithDlicomWallet();
+        setIsConnectingDlicomWallet(false);
+        if (res.success && res.user) {
+          onClose();
+          return;
+        }
+      } catch (err: any) {
+        setIsConnectingDlicomWallet(false);
       }
-    } catch (err: any) {
-      setIsConnectingDlicomWallet(false);
-      setValidationError(err?.message || 'Could not connect Dlicom Wallet.');
     }
+    setIsDlicomModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -246,6 +250,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         </div>
 
       </div>
+
+      {/* Dlicom 0x Core Wallet Modal */}
+      <DlicomWalletModal
+        isOpen={isDlicomModalOpen}
+        onClose={() => setIsDlicomModalOpen(false)}
+        onSuccess={() => {
+          setIsDlicomModalOpen(false);
+          onClose();
+        }}
+        addToast={() => {}}
+      />
     </div>
   );
 };

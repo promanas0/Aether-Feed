@@ -23,6 +23,7 @@ import {
   verifyAndCreateUser, 
   authenticateUser,
   authenticateWithDlicomWallet,
+  authenticateWithDlicomAddress,
   syncWithServer,
   getSavedAccounts,
   switchAccountSession,
@@ -30,6 +31,7 @@ import {
 } from '../../lib/storage';
 import { sendRealVerificationEmail } from '../../lib/emailService';
 import { EmailConfigModal } from './EmailConfigModal';
+import { DlicomWalletModal } from './DlicomWalletModal';
 import type { Profile, ToastMessage, ThemeMode } from '../../types';
 
 interface LandingPageProps {
@@ -50,6 +52,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   
   // Dlicom Wallet Connect State
   const [isConnectingDlicomWallet, setIsConnectingDlicomWallet] = useState(false);
+  const [isDlicomWalletModalOpen, setIsDlicomWalletModalOpen] = useState(false);
 
   // Sign In State
   const [signInEmail, setSignInEmail] = useState('');
@@ -77,20 +80,23 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
   // Handle 1-Click Native Dlicom Core Wallet Login
   const handleDlicomWalletConnect = async () => {
-    setIsConnectingDlicomWallet(true);
-    try {
-      const res = await authenticateWithDlicomWallet();
-      setIsConnectingDlicomWallet(false);
-      if (res.success && res.user) {
-        addToast('Dlicom Wallet Connected', res.message, 'success');
-        onAuthSuccess(res.user);
-      } else {
-        addToast('Dlicom Wallet Notice', res.message, 'info');
+    const dlicomProvider = (window as any).dlicom || (window as any).dlicomWallet || (window as any).ethereum;
+    if (dlicomProvider) {
+      setIsConnectingDlicomWallet(true);
+      try {
+        const res = await authenticateWithDlicomWallet();
+        setIsConnectingDlicomWallet(false);
+        if (res.success && res.user) {
+          addToast('Dlicom Wallet Connected', res.message, 'success');
+          onAuthSuccess(res.user);
+          return;
+        }
+      } catch (err: any) {
+        setIsConnectingDlicomWallet(false);
       }
-    } catch (err: any) {
-      setIsConnectingDlicomWallet(false);
-      addToast('Dlicom Wallet Error', err?.message || 'Could not connect Dlicom Wallet.', 'info');
     }
+    // Open resilient Dlicom 0x address connect modal
+    setIsDlicomWalletModalOpen(true);
   };
 
   // Password Strength Calculation
@@ -720,6 +726,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         isOpen={isEmailConfigOpen}
         onClose={() => setIsEmailConfigOpen(false)}
         onSuccessToast={(msg) => addToast('Email Setup Complete', msg, 'success')}
+      />
+
+      {/* Dlicom 0x Core Wallet Modal */}
+      <DlicomWalletModal
+        isOpen={isDlicomWalletModalOpen}
+        onClose={() => setIsDlicomWalletModalOpen(false)}
+        onSuccess={onAuthSuccess}
+        addToast={addToast}
       />
 
       {/* Minimal Footer */}

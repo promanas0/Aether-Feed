@@ -1798,6 +1798,116 @@ export const authenticateWithDlicomWallet = async (): Promise<{ success: boolean
   }
 };
 
+/**
+ * Direct 0x Dlicom Address Authentication (Cross-Platform Mobile + PC)
+ * Authenticates or creates profile with the given 0x Dlicom Wallet address.
+ */
+export const authenticateWithDlicomAddress = async (
+  rawAddress: string
+): Promise<{ success: boolean; user?: Profile; message: string }> => {
+  const cleanAddress = (rawAddress || '').trim().toLowerCase();
+  if (!cleanAddress.startsWith('0x') || cleanAddress.length < 8) {
+    return { success: false, message: 'Please provide a valid 0x Dlicom wallet address.' };
+  }
+
+  const shortAddress = cleanAddress.length > 12 ? `${cleanAddress.slice(0, 6)}...${cleanAddress.slice(-4)}` : cleanAddress;
+  const formattedEmail = `${cleanAddress}@wallet.dlicom.social`;
+  const walletUserId = `dlicom_${cleanAddress}`;
+
+  let existingUser: Profile | null = null;
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
+
+  const localMatchIdx = users.findIndex(
+    u => u.id === walletUserId || 
+         (u.dlicom_address && u.dlicom_address.toLowerCase() === cleanAddress) ||
+         (u.email && u.email.toLowerCase() === formattedEmail)
+  );
+
+  if (localMatchIdx !== -1) {
+    existingUser = users[localMatchIdx];
+  } else {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        const { data: supaUsers } = await supabase
+          .from('profiles')
+          .select('*')
+          .or(`id.eq.${walletUserId},email.eq.${formattedEmail},dlicom_address.ilike.${cleanAddress}`)
+          .limit(1);
+
+        if (supaUsers && supaUsers.length > 0) {
+          existingUser = supaUsers[0];
+        }
+      } catch (err) {
+        console.warn('[Aether Supabase] Dlicom address lookup notice:', err);
+      }
+    }
+  }
+
+  let finalUser: Profile;
+
+  if (existingUser) {
+    finalUser = {
+      ...existingUser,
+      dlicom_address: rawAddress.trim(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const uIdx = users.findIndex(u => u.id === finalUser.id);
+    if (uIdx !== -1) {
+      users[uIdx] = finalUser;
+    } else {
+      users.unshift(finalUser);
+    }
+  } else {
+    const generatedAvatar = `https://api.dicebear.com/7.x/identicon/svg?seed=${cleanAddress}&backgroundColor=0b132b,1c2541,1e293b`;
+
+    finalUser = {
+      id: walletUserId,
+      email: formattedEmail,
+      first_name: 'Dlicom',
+      last_name: 'Core',
+      display_name: shortAddress,
+      username: `dlicom_${cleanAddress.slice(2, 8)}`,
+      avatar_url: generatedAvatar,
+      banner_url: '',
+      banner_size: 'standard',
+      bio: `Verified Dlicom Core Member • ${shortAddress}`,
+      dlicom_address: rawAddress.trim(),
+      location: 'Dlicom Network',
+      website: `https://dlicom.social/user/${rawAddress.trim()}`,
+      is_verified: true,
+      is_golden_verified: false,
+      is_admin: false,
+      followers: [],
+      following: [],
+      total_votes_received: 0,
+      password_hash: '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    users.unshift(finalUser);
+  }
+
+  setItem(STORAGE_KEYS.REAL_USERS, reconcileFollowGraph(users));
+  setItem(STORAGE_KEYS.CURRENT_USER_ID, finalUser.id);
+  addOrUpdateSavedAccount(finalUser);
+
+  await saveProfileToCloud(finalUser);
+  broadcastRealtimeEvent('user_registered', finalUser);
+
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+
+  return {
+    success: true,
+    user: finalUser,
+    message: `Connected Dlicom Wallet ${shortAddress} successfully!`,
+  };
+};
+
 export const authenticateWithWeb3Wallet = authenticateWithDlicomWallet;
 
 export const getCurrentUser = (): Profile | null => {
