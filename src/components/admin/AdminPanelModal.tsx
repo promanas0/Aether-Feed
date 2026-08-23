@@ -104,9 +104,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     }
 
     try {
-      const res = adminBanUser(targetUser.id, currentUser.email);
+      const res = await adminBanUser(targetUser.id, currentUser.email);
       if (res.success) {
-        addToast('Scammer / User Banned', `User @${targetUser.username} (${targetUser.email}) and all their posts have been purged completely.`, 'success');
+        addToast('User Banned', `User @${targetUser.username} has been banned and restricted.`, 'success');
         setBanConfirmId(null);
         onRefreshData();
       } else {
@@ -118,13 +118,17 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   };
 
   // Handle Unban User
-  const handleUnbanUser = (targetUser: Profile) => {
-    const res = adminUnbanUser(targetUser.id, currentUser.email);
-    if (res.success) {
-      addToast('User Unbanned', `@${targetUser.username} account has been restored.`, 'success');
-      onRefreshData();
-    } else {
-      addToast('Unban Failed', res.message, 'info');
+  const handleUnbanUser = async (targetUser: Profile) => {
+    try {
+      const res = await adminUnbanUser(targetUser.id, currentUser.email);
+      if (res.success) {
+        addToast('User Unbanned', `@${targetUser.username} account has been restored.`, 'success');
+        onRefreshData();
+      } else {
+        addToast('Unban Failed', res.message, 'info');
+      }
+    } catch (err: any) {
+      addToast('Error', err.message || 'Failed to unban user.', 'info');
     }
   };
 

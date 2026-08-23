@@ -630,10 +630,12 @@ export const syncWithServer = async (): Promise<boolean> => {
             supabase.from('notifications').select('*').order('created_at', { ascending: false }),
           ]);
 
-          // Extract any cloud golden & admin grant records
+          // Extract any cloud golden, admin grant, ban, and timeout records
           const cloudGoldenIds = new Set<string>();
           const cloudAdminEmails = new Set<string>();
           const cloudAdminUserIds = new Set<string>();
+          const cloudBannedUserIds = new Set<string>();
+          const cloudTimeoutMap = new Map<string, string | null>();
 
           if (supaNotifs && Array.isArray(supaNotifs)) {
             supaNotifs.forEach((n: any) => {
@@ -643,9 +645,15 @@ export const syncWithServer = async (): Promise<boolean> => {
               if (n.type === 'admin_grant') {
                 if (n.id && n.id.startsWith('admin_grant_')) {
                   const em = n.id.replace('admin_grant_', '').toLowerCase().trim();
-                  if (em.includes('@')) cloudAdminEmails.add(em);
+                  if (em.includes('@') || em.startsWith('0x')) cloudAdminEmails.add(em);
                 }
                 if (n.user_id) cloudAdminUserIds.add(n.user_id);
+              }
+              if (n.type === 'ban_record' && n.user_id) {
+                cloudBannedUserIds.add(n.user_id);
+              }
+              if (n.type === 'timeout_record' && n.user_id) {
+                cloudTimeoutMap.set(n.user_id, n.post_id || null);
               }
             });
           }
@@ -678,6 +686,20 @@ export const syncWithServer = async (): Promise<boolean> => {
             }
           }
 
+          if (cloudBannedUserIds.size > 0) {
+            const currentBannedList = getItem<string[]>(STORAGE_KEYS.BANNED_USER_IDS, []);
+            let changed = false;
+            cloudBannedUserIds.forEach(id => {
+              if (!currentBannedList.includes(id)) {
+                currentBannedList.push(id);
+                changed = true;
+              }
+            });
+            if (changed) {
+              setItem(STORAGE_KEYS.BANNED_USER_IDS, currentBannedList);
+            }
+          }
+
           let finalUsers: Profile[] = [];
           if (!profError && supaProfiles && supaProfiles.length > 0) {
             const cleanSupaUsers = supaProfiles.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
@@ -689,12 +711,16 @@ export const syncWithServer = async (): Promise<boolean> => {
 
             const goldenUserIds = new Set(getItem<string[]>(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, []));
             const revokedGoldenUserIds = new Set(getItem<string[]>(STORAGE_KEYS.REVOKED_GOLDEN_USER_IDS, []));
+            const bannedUserIds = new Set(getItem<string[]>(STORAGE_KEYS.BANNED_USER_IDS, []));
             const adminEmailList = getAdminEmails().map(e => e.toLowerCase().trim());
 
             cleanSupaUsers.forEach((su: any) => {
               const localU = localUserMap.get(su.id);
               const userEmail = (su.email || localU?.email || '').toLowerCase().trim();
               const isRootSuper = userEmail === ROOT_ADMIN_EMAIL.toLowerCase();
+
+              let suBanned = cloudBannedUserIds.has(su.id) || bannedUserIds.has(su.id) || Boolean(su.is_banned);
+              let suTimeout = cloudTimeoutMap.has(su.id) ? cloudTimeoutMap.get(su.id) : (su.posting_timeout_until || null);
 
               if (!localU) {
                 let suGolden = su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : false;
@@ -713,6 +739,8 @@ export const syncWithServer = async (): Promise<boolean> => {
                   is_golden_verified: suGolden,
                   is_admin: suAdmin,
                   is_verified: su.is_verified !== undefined ? Boolean(su.is_verified) : true,
+                  is_banned: suBanned,
+                  posting_timeout_until: suTimeout,
                 };
                 mergedUserMap.set(suProfile.id, suProfile);
               } else {
@@ -759,13 +787,10 @@ export const syncWithServer = async (): Promise<boolean> => {
                   resolvedAdmin = su.is_admin !== undefined ? Boolean(su.is_admin) : Boolean(localU.is_admin);
                 }
 
-                const resolvedBanned = preferLocal
-                  ? (localU.is_banned !== undefined ? Boolean(localU.is_banned) : Boolean(su.is_banned))
-                  : (su.is_banned !== undefined ? Boolean(su.is_banned) : Boolean(localU.is_banned));
-
-                const resolvedTimeout = preferLocal
-                  ? (localU.posting_timeout_until !== undefined ? localU.posting_timeout_until : (su.posting_timeout_until || null))
-                  : (su.posting_timeout_until !== undefined ? su.posting_timeout_until : (localU.posting_timeout_until || null));
+                const resolvedBanned = cloudBannedUserIds.has(su.id) || bannedUserIds.has(su.id) || Boolean(localU.is_banned || su.is_banned);
+                const resolvedTimeout = cloudTimeoutMap.has(su.id) 
+                  ? cloudTimeoutMap.get(su.id) 
+                  : (localU.posting_timeout_until !== undefined ? localU.posting_timeout_until : (su.posting_timeout_until || null));
 
                 const suProfile: Profile = {
                   ...su,
@@ -1342,6 +1367,46 @@ export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => vo
           window.dispatchEvent(new Event('aether_storage_sync'));
           onSyncNeeded();
         }
+      })
+      .on('broadcast', { event: 'user_banned' }, ({ payload }) => {
+        if (!payload || !payload.userId) return;
+        const bannedList = getItem<string[]>(STORAGE_KEYS.BANNED_USER_IDS, []);
+        if (!bannedList.includes(payload.userId)) {
+          bannedList.push(payload.userId);
+          setItem(STORAGE_KEYS.BANNED_USER_IDS, bannedList);
+        }
+        const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+        const idx = users.findIndex(u => u.id === payload.userId);
+        if (idx !== -1) {
+          users[idx].is_banned = true;
+          setItem(STORAGE_KEYS.REAL_USERS, users);
+        }
+        window.dispatchEvent(new Event('aether_storage_sync'));
+        onSyncNeeded();
+      })
+      .on('broadcast', { event: 'user_unbanned' }, ({ payload }) => {
+        if (!payload || !payload.userId) return;
+        const bannedList = getItem<string[]>(STORAGE_KEYS.BANNED_USER_IDS, []).filter(id => id !== payload.userId);
+        setItem(STORAGE_KEYS.BANNED_USER_IDS, bannedList);
+        const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+        const idx = users.findIndex(u => u.id === payload.userId);
+        if (idx !== -1) {
+          users[idx].is_banned = false;
+          setItem(STORAGE_KEYS.REAL_USERS, users);
+        }
+        window.dispatchEvent(new Event('aether_storage_sync'));
+        onSyncNeeded();
+      })
+      .on('broadcast', { event: 'user_timeout_updated' }, ({ payload }) => {
+        if (!payload || !payload.userId) return;
+        const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+        const idx = users.findIndex(u => u.id === payload.userId);
+        if (idx !== -1) {
+          users[idx].posting_timeout_until = payload.timeout_until || undefined;
+          setItem(STORAGE_KEYS.REAL_USERS, users);
+        }
+        window.dispatchEvent(new Event('aether_storage_sync'));
+        onSyncNeeded();
       })
       .on('broadcast', { event: 'new_post' }, ({ payload }) => {
         if (!payload || !payload.id) return;
@@ -2287,6 +2352,11 @@ export const createRealPost = async (data: {
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
   const author = getRealUsers().find(u => u.id === data.authorId);
 
+  const restriction = isUserPostingRestricted(author);
+  if (restriction.restricted) {
+    throw new Error(restriction.reason || 'You are restricted from posting.');
+  }
+
   const postId = `post_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   const newPost: Post = {
@@ -3222,74 +3292,69 @@ export const adminToggleAdminRole = async (targetUserId: string, actorEmail?: st
 };
 
 /**
- * Ban / Wipe Scammer or Bot Account Completely
- * Purges profile, all their posts, votes, and notifications platform-wide.
+ * Ban User Account & Suppress Content
+ * Sets is_banned to true, persists cloud ban record, and synchronizes platform-wide.
  */
-export const adminBanUser = (targetUserId: string, actorEmail?: string): { success: boolean; message: string } => {
+export const adminBanUser = async (targetUserId: string, actorEmail?: string): Promise<{ success: boolean; message: string }> => {
   if (actorEmail && !isUserAdmin(actorEmail)) {
     return { success: false, message: 'Unauthorized: Admin privileges required.' };
   }
 
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-  const targetUser = users.find(u => u.id === targetUserId);
-  if (!targetUser) {
+  const idx = users.findIndex(u => u.id === targetUserId);
+  if (idx === -1) {
     return { success: false, message: 'User not found.' };
   }
 
+  const targetUser = users[idx];
   if (targetUser.email.toLowerCase().trim() === ROOT_ADMIN_EMAIL.toLowerCase()) {
     return { success: false, message: 'Cannot ban the Root Super Admin.' };
   }
 
-  // 1. Remove from local real users
-  const filteredUsers = users.filter(u => u.id !== targetUserId);
-  setItem(STORAGE_KEYS.REAL_USERS, filteredUsers);
+  const updatedUser: Profile = {
+    ...targetUser,
+    is_banned: true,
+    updated_at: new Date().toISOString(),
+  };
 
-  // 2. Remove from saved accounts
-  const savedAccounts = getItem<Profile[]>(STORAGE_KEYS.SAVED_ACCOUNTS, []).filter(u => u.id !== targetUserId);
-  setItem(STORAGE_KEYS.SAVED_ACCOUNTS, savedAccounts);
+  users[idx] = updatedUser;
+  setItem(STORAGE_KEYS.REAL_USERS, users);
 
-  // 3. Find and purge all posts by this user
-  const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
-  const userPosts = posts.filter(p => p.user_id === targetUserId);
-  const userPostIds = new Set(userPosts.map(p => p.id));
-
-  const remainingPosts = posts.filter(p => p.user_id !== targetUserId);
-  setItem(STORAGE_KEYS.POSTS, remainingPosts);
-
-  // 4. Mark all their posts as deleted
-  const deletedIds = getItem<string[]>(STORAGE_KEYS.DELETED_POST_IDS, []);
-  const updatedDeletedIds = Array.from(new Set([...deletedIds, ...Array.from(userPostIds)]));
-  setItem(STORAGE_KEYS.DELETED_POST_IDS, updatedDeletedIds);
-
-  // 5. Purge all votes by or on this user's posts
-  const votes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(
-    v => v.user_id !== targetUserId && !userPostIds.has(v.post_id)
-  );
-  setItem(STORAGE_KEYS.VOTES, votes);
-
-  // 6. Purge notifications
-  const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []).filter(
-    n => n.user_id !== targetUserId && n.actor_id !== targetUserId
-  );
-  setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
-
-  // 7. Delete from Supabase Cloud DB
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    supabase.from('profiles').delete().eq('id', targetUserId).then(() => { }, () => { });
-    supabase.from('posts').delete().eq('user_id', targetUserId).then(() => { }, () => { });
-    supabase.from('votes').delete().eq('user_id', targetUserId).then(() => { }, () => { });
-    supabase.from('notifications').delete().eq('user_id', targetUserId).then(() => { }, () => { });
-    supabase.from('notifications').delete().eq('actor_id', targetUserId).then(() => { }, () => { });
+  // 1. Maintain persistent Banned list
+  const bannedList = getItem<string[]>(STORAGE_KEYS.BANNED_USER_IDS, []);
+  if (!bannedList.includes(targetUserId)) {
+    bannedList.push(targetUserId);
+    setItem(STORAGE_KEYS.BANNED_USER_IDS, bannedList);
   }
 
-  // 8. Delete from local server API
-  userPostIds.forEach(pid => {
-    fetch(`/api/posts?id=${encodeURIComponent(pid)}`, { method: 'DELETE' }).catch(() => { });
-  });
+  // 2. Real-time websocket broadcast to all connected devices/tabs
+  broadcastRealtimeEvent('user_banned', { userId: targetUserId });
 
-  syncWithServer();
-  return { success: true, message: `User @${targetUser.username} has been permanently banned and wiped.` };
+  // 3. Cloud Supabase Persistence (Multi-Device Guarantee)
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('notifications').upsert({
+      id: `ban_record_${targetUserId}`,
+      user_id: targetUserId,
+      actor_id: actorEmail || 'admin',
+      type: 'ban_record',
+      post_id: null,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    }).then(() => { }, () => { });
+
+    supabase.from('profiles').update({
+      is_banned: true,
+      updated_at: new Date().toISOString(),
+    }).eq('id', targetUserId).then(() => { }, () => { });
+  }
+
+  await saveProfileToCloud(updatedUser);
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+
+  return { success: true, message: `User @${targetUser.username} has been banned.` };
 };
 
 /**
@@ -3419,6 +3484,37 @@ export const adminSetPostingTimeout = async (
 
   users[idx] = updatedUser;
   setItem(STORAGE_KEYS.REAL_USERS, users);
+
+  // Cloud Supabase Persistence (Multi-Device Guarantee)
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    if (timeoutUntil) {
+      supabase.from('notifications').upsert({
+        id: `timeout_record_${targetUserId}`,
+        user_id: targetUserId,
+        actor_id: actorEmail || 'admin',
+        type: 'timeout_record',
+        post_id: timeoutUntil,
+        is_read: false,
+        created_at: new Date().toISOString(),
+      }).then(() => { }, () => { });
+
+      supabase.from('profiles').update({
+        posting_timeout_until: timeoutUntil,
+        updated_at: new Date().toISOString(),
+      }).eq('id', targetUserId).then(() => { }, () => { });
+    } else {
+      supabase.from('notifications').delete().eq('id', `timeout_record_${targetUserId}`).then(() => { }, () => { });
+
+      supabase.from('profiles').update({
+        posting_timeout_until: null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', targetUserId).then(() => { }, () => { });
+    }
+  }
+
+  broadcastRealtimeEvent('user_timeout_updated', { userId: targetUserId, timeout_until: timeoutUntil });
+
   await saveProfileToCloud(updatedUser);
   await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
@@ -3429,7 +3525,7 @@ export const adminSetPostingTimeout = async (
 /**
  * Unban a previously banned user
  */
-export const adminUnbanUser = (targetUserId: string, actorEmail?: string): { success: boolean; message: string } => {
+export const adminUnbanUser = async (targetUserId: string, actorEmail?: string): Promise<{ success: boolean; message: string }> => {
   if (actorEmail && !isUserAdmin(actorEmail)) {
     return { success: false, message: 'Unauthorized: Admin privileges required.' };
   }
@@ -3440,12 +3536,13 @@ export const adminUnbanUser = (targetUserId: string, actorEmail?: string): { suc
     return { success: false, message: 'User not found.' };
   }
 
-  users[idx] = {
+  const updatedUser: Profile = {
     ...users[idx],
     is_banned: false,
     updated_at: new Date().toISOString(),
   };
 
+  users[idx] = updatedUser;
   setItem(STORAGE_KEYS.REAL_USERS, users);
 
   const bannedIds = getItem<string[]>(STORAGE_KEYS.BANNED_USER_IDS, []).filter(id => id !== targetUserId);
@@ -3453,11 +3550,18 @@ export const adminUnbanUser = (targetUserId: string, actorEmail?: string): { suc
 
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('profiles').update({ is_banned: false }).eq('id', targetUserId).then(() => { }, () => { });
+    supabase.from('notifications').delete().eq('id', `ban_record_${targetUserId}`).then(() => { }, () => { });
+    supabase.from('profiles').update({ is_banned: false, updated_at: new Date().toISOString() }).eq('id', targetUserId).then(() => { }, () => { });
   }
 
-  syncWithServer();
-  return { success: true, message: `User @${users[idx].username} has been unbanned successfully.` };
+  broadcastRealtimeEvent('user_unbanned', { userId: targetUserId });
+
+  await saveProfileToCloud(updatedUser);
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+
+  return { success: true, message: `User @${updatedUser.username} has been unbanned successfully.` };
 };
 
 /**

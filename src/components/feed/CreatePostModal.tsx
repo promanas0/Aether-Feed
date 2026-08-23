@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { Profile, ToastMessage } from '../../types';
 import { compressPostImage } from '../../lib/imageUtils';
+import { isUserPostingRestricted } from '../../lib/storage';
 
 interface CreatePostModalProps {
   isOpen: boolean;
@@ -132,6 +133,12 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const restriction = isUserPostingRestricted(currentUser);
+    if (restriction.restricted) {
+      addToast('Posting Restricted', restriction.reason || 'You cannot create posts right now.', 'info');
+      return;
+    }
+
     const titleTrimmed = postTitle.trim();
     const descTrimmed = postDescription.trim();
 
