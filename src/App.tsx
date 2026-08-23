@@ -977,8 +977,12 @@ export function App() {
       />
 
       {/* Simple Clean Footer */}
-      <footer className="w-full border-t border-[#334155]/60 bg-[#0B132B] py-5 pb-20 lg:pb-5 text-center text-xs text-slate-500 font-mono">
-        <p>Aether Feed &bull; Minimalist Clean Social Platform</p>
+      <footer className="w-full border-t border-[#334155]/60 bg-[#0B132B] py-5 pb-20 lg:pb-5 text-center text-xs text-slate-400 font-mono">
+        <p className="flex items-center justify-center gap-1.5 flex-wrap">
+          <span className="font-bold text-white tracking-wide">Aether Feed</span>
+          <span className="text-slate-600">&bull;</span>
+          <span className="text-blue-400 font-semibold">by Dlicom SocialFi Eco</span>
+        </p>
       </footer>
 
     </div>

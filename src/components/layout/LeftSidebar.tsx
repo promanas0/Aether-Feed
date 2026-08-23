@@ -150,6 +150,14 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
         </button>
       </div>
 
+      {/* Official Ecosystem Badge */}
+      <div className="px-3 py-1.5 text-center">
+        <p className="text-[10px] tracking-wider uppercase font-semibold text-slate-500 flex items-center justify-center gap-1.5 font-mono">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+          <span>by <strong className="text-blue-400 font-bold">Dlicom SocialFi Eco</strong></span>
+        </p>
+      </div>
+
     </aside>
   );
 };

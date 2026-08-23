@@ -274,6 +274,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
                 Aether Feed
               </h1>
+              <p className="text-xs font-semibold text-blue-400 tracking-wider uppercase font-mono mt-1">
+                by Dlicom SocialFi Eco
+              </p>
             </div>
 
             {/* Saved Accounts on This Device (1-Click Switch) */}
@@ -663,7 +666,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
       {/* Minimal Footer */}
       <footer className="w-full py-4 text-center text-xs text-slate-500 font-mono">
-        <p>Aether Feed</p>
+        <p className="flex items-center justify-center gap-1.5">
+          <span className="text-slate-400 font-bold">Aether Feed</span>
+          <span className="text-slate-600">&bull;</span>
+          <span className="text-blue-400 font-semibold">by Dlicom SocialFi Eco</span>
+        </p>
       </footer>
 
     </div>

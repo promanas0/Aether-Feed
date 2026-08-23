@@ -127,9 +127,14 @@ export const Header: React.FC<HeaderProps> = ({
               className="w-9 h-9 rounded-xl object-cover shadow-glow-sm group-hover:scale-105 transition-transform duration-200 border border-blue-500/40"
             />
             
-            <span className="text-base font-extrabold text-white tracking-tight group-hover:text-blue-400 transition-colors">
-              Aether Feed
-            </span>
+            <div>
+              <span className="text-base font-extrabold text-white tracking-tight group-hover:text-blue-400 transition-colors block leading-tight">
+                Aether Feed
+              </span>
+              <span className="text-[9px] font-semibold text-blue-400 tracking-wider uppercase block font-mono -mt-0.5">
+                by Dlicom SocialFi Eco
+              </span>
+            </div>
           </button>
         </div>
 
