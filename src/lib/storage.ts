@@ -1694,6 +1694,32 @@ export const authenticateWithDlicomWallet = async (): Promise<{ success: boolean
     const rawAddress = accounts[0];
     const cleanAddress = rawAddress.toLowerCase();
     const shortAddress = rawAddress.length > 12 ? `${rawAddress.slice(0, 6)}...${rawAddress.slice(-4)}` : rawAddress;
+
+    // Request Cryptographic Sign-In Popup Message from Dlicom / Web3 Wallet
+    const signNonce = Math.floor(100000 + Math.random() * 900000);
+    const signMessage = `Welcome to Aether Feed by Dlicom SocialFi!
+
+Sign this cryptographic request to authenticate your Dlicom Wallet session securely.
+
+Wallet Address: ${rawAddress}
+Domain: aether-feed.vercel.app
+Nonce: ${signNonce}
+Issued At: ${new Date().toISOString()}`;
+
+    try {
+      if (typeof dlicomProvider.request === 'function') {
+        await dlicomProvider.request({
+          method: 'personal_sign',
+          params: [signMessage, rawAddress],
+        });
+      }
+    } catch (signErr: any) {
+      console.warn('[Dlicom Signature Result]:', signErr);
+      if (signErr?.code === 4001 || signErr?.message?.toLowerCase().includes('reject') || signErr?.message?.toLowerCase().includes('denied')) {
+        return { success: false, message: 'Authentication cancelled: Signature was rejected in wallet.' };
+      }
+    }
+
     const formattedEmail = `${cleanAddress}@wallet.dlicom.social`;
     const walletUserId = `dlicom_${cleanAddress}`;
 
