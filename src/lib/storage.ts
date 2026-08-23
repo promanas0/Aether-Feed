@@ -82,19 +82,21 @@ export const reconcileFollowGraph = (users: Profile[]): Profile[] => {
       try {
         const parsed = JSON.parse(arr);
         if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
-      } catch {}
+      } catch { }
     }
     return [];
   };
 
+  const validUsers = (users || []).filter(u => u && u.id);
+
   // Map: targetUserId -> Set of follower user IDs
   const followerMap = new Map<string, Set<string>>();
-  users.forEach(u => {
+  validUsers.forEach(u => {
     followerMap.set(u.id, new Set<string>());
   });
 
   // Populate strictly from each user's `following` list
-  users.forEach(u => {
+  validUsers.forEach(u => {
     const followingList = parseArray(u.following);
     followingList.forEach(targetId => {
       if (followerMap.has(targetId)) {
@@ -105,8 +107,13 @@ export const reconcileFollowGraph = (users: Profile[]): Profile[] => {
     });
   });
 
-  return users.map(u => ({
+  return validUsers.map(u => ({
     ...u,
+    display_name: u.display_name || u.username || 'Creator',
+    username: u.username || `user_${u.id.slice(-6)}`,
+    avatar_url: u.avatar_url || DEFAULT_DLICOM_AVATAR,
+    bio: u.bio || '',
+    total_votes_received: u.total_votes_received || 0,
     following: parseArray(u.following),
     followers: Array.from(followerMap.get(u.id) || []),
   }));
@@ -119,7 +126,7 @@ export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
       try {
         const parsed = JSON.parse(arr);
         if (Array.isArray(parsed)) return parsed.map(String);
-      } catch {}
+      } catch { }
     }
     return [];
   };
@@ -153,9 +160,11 @@ export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
 };
 
 /**
- * Robustly save user profile updates to Supabase Cloud DB and local API with fallback
+ * Robustly save user profile updates to Supabase Cloud DB and local API with multi-tier fallback
  */
 export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => {
+  if (!profile || !profile.id || FAKE_MOCK_IDS.includes(profile.id)) return false;
+
   const cleanData = sanitizeProfileForSupabase(profile);
 
   // 1. Local API Endpoint Update
@@ -164,15 +173,15 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user: cleanData }),
-    }).catch(() => {});
-  } catch {}
+    }).catch(() => { });
+  } catch { }
 
   // 2. Supabase Cloud DB Update
   const supabase = getSupabaseClient();
   if (!supabase) return false;
 
   try {
-    // Attempt 1: Full profile upsert
+    // Attempt 1: Full extended profile upsert
     const { error: fullErr } = await supabase
       .from('profiles')
       .upsert(cleanData, { onConflict: 'id' });
@@ -182,45 +191,71 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
       return true;
     }
 
-    console.warn('[Aether Supabase] Full profile upsert notice, trying core columns:', fullErr.message);
+    console.warn('[Aether Supabase] Full profile upsert notice, trying standard schema:', fullErr.message);
 
-    // Attempt 2: Core standard columns (includes banner_url and banner_size)
-    const coreData = {
+    // Attempt 2: Exact schema.sql standard columns (guaranteed to match standard Supabase table)
+    const standardData = {
       id: profile.id,
-      email: profile.email || '',
+      email: profile.email || `${profile.username || profile.id}@aetherfeed.io`,
       first_name: profile.first_name || '',
       last_name: profile.last_name || '',
-      display_name: profile.display_name || '',
-      username: profile.username || '',
+      display_name: profile.display_name || profile.username || 'Creator',
+      username: profile.username || `user_${profile.id.slice(-6)}`,
       avatar_url: profile.avatar_url || DEFAULT_DLICOM_AVATAR,
       banner_url: profile.banner_url || '',
-      banner_size: profile.banner_size || 'standard',
+      bio: profile.bio || '',
+      dlicom_address: profile.dlicom_address || '',
+      location: profile.location || '',
+      website: profile.website || '',
+      is_verified: profile.is_verified ?? true,
+      followers: Array.isArray(profile.followers) ? profile.followers : [],
+      following: Array.isArray(profile.following) ? profile.following : [],
+      total_votes_received: profile.total_votes_received || 0,
+      password_hash: profile.password_hash || '',
+      created_at: profile.created_at || new Date().toISOString(),
+    };
+
+    const { error: stdErr } = await supabase
+      .from('profiles')
+      .upsert(standardData, { onConflict: 'id' });
+
+    if (!stdErr) {
+      console.log('[Aether Supabase] Standard profile saved to Cloud DB:', profile.username);
+      return true;
+    }
+
+    console.warn('[Aether Supabase] Standard profile upsert notice, trying core safe schema:', stdErr.message);
+
+    // Attempt 3: Core safe schema ensuring all NOT-NULL columns (email, username, display_name) are present
+    const coreSafeData = {
+      id: profile.id,
+      email: profile.email || `${profile.username || profile.id}@aetherfeed.io`,
+      display_name: profile.display_name || profile.username || 'Creator',
+      username: profile.username || `user_${profile.id.slice(-6)}`,
+      avatar_url: profile.avatar_url || DEFAULT_DLICOM_AVATAR,
+      banner_url: profile.banner_url || '',
       bio: profile.bio || '',
       is_verified: profile.is_verified ?? true,
-      is_golden_verified: profile.is_golden_verified ?? false,
-      is_admin: profile.is_admin ?? false,
-      updated_at: profile.updated_at || new Date().toISOString(),
       created_at: profile.created_at || new Date().toISOString(),
     };
 
     const { error: coreErr } = await supabase
       .from('profiles')
-      .upsert(coreData, { onConflict: 'id' });
+      .upsert(coreSafeData, { onConflict: 'id' });
 
     if (!coreErr) {
-      console.log('[Aether Supabase] Core profile saved to Cloud DB:', profile.username);
+      console.log('[Aether Supabase] Core safe profile saved to Cloud DB:', profile.username);
       return true;
     }
 
-    console.warn('[Aether Supabase] Core profile upsert notice, trying minimal columns with banner:', coreErr.message);
+    console.warn('[Aether Supabase] Core safe upsert notice, trying minimal guaranteed schema:', coreErr.message);
 
-    // Attempt 3: Minimal fields guaranteed on any Supabase table
+    // Attempt 4: Minimal guaranteed fields
     const minimalData = {
       id: profile.id,
-      display_name: profile.display_name || '',
-      username: profile.username || '',
-      avatar_url: profile.avatar_url || DEFAULT_DLICOM_AVATAR,
-      banner_url: profile.banner_url || '',
+      email: profile.email || `${profile.id}@aetherfeed.io`,
+      display_name: profile.display_name || profile.username || 'Creator',
+      username: profile.username || `user_${profile.id.slice(-6)}`,
       created_at: profile.created_at || new Date().toISOString(),
     };
 
@@ -273,8 +308,8 @@ export const savePostToCloud = async (post: Post): Promise<boolean> => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ post }),
-    }).catch(() => {});
-  } catch {}
+    }).catch(() => { });
+  } catch { }
 
   if (!supabase) return false;
 
@@ -647,14 +682,14 @@ export const syncWithServer = async (): Promise<boolean> => {
                 const resolvedBannerUrl = (!localU.banner_url && su.banner_url)
                   ? su.banner_url
                   : (preferLocal
-                      ? (localU.banner_url !== undefined ? localU.banner_url : (su.banner_url || ''))
-                      : (su.banner_url !== undefined ? su.banner_url : (localU.banner_url || '')));
+                    ? (localU.banner_url !== undefined ? localU.banner_url : (su.banner_url || ''))
+                    : (su.banner_url !== undefined ? su.banner_url : (localU.banner_url || '')));
 
                 const resolvedBannerSize = (!localU.banner_size && su.banner_size)
                   ? su.banner_size
                   : (preferLocal
-                      ? (localU.banner_size || su.banner_size || 'standard')
-                      : (su.banner_size || localU.banner_size || 'standard'));
+                    ? (localU.banner_size || su.banner_size || 'standard')
+                    : (su.banner_size || localU.banner_size || 'standard'));
 
                 let resolvedGolden: boolean;
                 if (cloudGoldenIds.has(su.id)) {
@@ -722,10 +757,11 @@ export const syncWithServer = async (): Promise<boolean> => {
               }
             });
 
-            // Preserve any local users not yet in Supabase
+            // Preserve any local users not yet in Supabase and auto-heal by uploading to Supabase
             currentLocalUsers.forEach(lu => {
-              if (!mergedUserMap.has(lu.id)) {
+              if (lu && lu.id && !FAKE_MOCK_IDS.includes(lu.id) && !mergedUserMap.has(lu.id)) {
                 mergedUserMap.set(lu.id, lu);
+                saveProfileToCloud(lu);
               }
             });
 
@@ -741,7 +777,10 @@ export const syncWithServer = async (): Promise<boolean> => {
               }
             }
           } else {
-            finalUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+            finalUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => u && u.id && !FAKE_MOCK_IDS.includes(u.id));
+            finalUsers.forEach(lu => {
+              saveProfileToCloud(lu);
+            });
           }
 
           // C. Pull ALL live votes from Supabase
@@ -809,7 +848,7 @@ export const syncWithServer = async (): Promise<boolean> => {
           if (supaNotifs && Array.isArray(supaNotifs)) {
             const currentLocalNotifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []).filter(n => !deletedNotifIds.has(n.id));
             const notifMap = new Map<string, NotificationItem>();
-            
+
             supaNotifs
               .filter((n: any) => !deletedNotifIds.has(n.id))
               .forEach((n: any) => notifMap.set(n.id, n));
@@ -860,7 +899,7 @@ export const syncWithServer = async (): Promise<boolean> => {
 
               setItem(STORAGE_KEYS.POST_COMMENTS, Array.from(cMap.values()));
             }
-          } catch {}
+          } catch { }
 
           // G. Pull direct messages from Supabase
           try {
@@ -893,7 +932,7 @@ export const syncWithServer = async (): Promise<boolean> => {
 
               setItem(STORAGE_KEYS.DIRECT_MESSAGES, Array.from(dmMap.values()));
             }
-          } catch {}
+          } catch { }
 
           // H. Pull VIP chat messages from Supabase
           try {
@@ -926,7 +965,7 @@ export const syncWithServer = async (): Promise<boolean> => {
 
               setItem(STORAGE_KEYS.VIP_CHAT, Array.from(vMap.values()));
             }
-          } catch {}
+          } catch { }
         } catch (supaErr) {
           console.warn('[Aether Supabase] Sync notice:', supaErr);
         }
@@ -982,7 +1021,7 @@ export const broadcastRealtimeEvent = async (event: string, payload: any): Promi
  */
 export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => void) => {
   const supabase = getSupabaseClient();
-  if (!supabase) return () => {};
+  if (!supabase) return () => { };
 
   try {
     const channel = supabase
@@ -1180,6 +1219,30 @@ export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => vo
           onSyncNeeded();
         }
       })
+      .on('broadcast', { event: 'user_registered' }, ({ payload }) => {
+        if (!payload || !payload.id) return;
+        const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+        if (!users.some(u => u.id === payload.id)) {
+          users.unshift(payload);
+          setItem(STORAGE_KEYS.REAL_USERS, reconcileFollowGraph(users));
+          window.dispatchEvent(new Event('aether_storage_sync'));
+          onSyncNeeded();
+        }
+      })
+      .on('broadcast', { event: 'user_profile_updated' }, ({ payload }) => {
+        if (!payload || !payload.id) return;
+        const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+        const idx = users.findIndex(u => u.id === payload.id);
+        if (idx !== -1) {
+          users[idx] = { ...users[idx], ...payload };
+          setItem(STORAGE_KEYS.REAL_USERS, reconcileFollowGraph(users));
+          window.dispatchEvent(new Event('aether_storage_sync'));
+          onSyncNeeded();
+        }
+      })
+      .on('broadcast', { event: 'vote_updated' }, () => {
+        syncWithServer().then(() => onSyncNeeded());
+      })
       .subscribe((status) => {
         console.log('[Supabase Realtime Channel Status]:', status);
       });
@@ -1192,7 +1255,7 @@ export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => vo
     };
   } catch (err) {
     console.warn('[Aether Realtime] Subscription error:', err);
-    return () => {};
+    return () => { };
   }
 };
 
@@ -1252,7 +1315,7 @@ export const checkEmailExists = async (email: string): Promise<boolean> => {
       if (data && data.length > 0) {
         return true;
       }
-    } catch {}
+    } catch { }
   }
 
   // 3. Check Local Server API
@@ -1266,7 +1329,7 @@ export const checkEmailExists = async (email: string): Promise<boolean> => {
         }
       }
     }
-  } catch {}
+  } catch { }
 
   return false;
 };
@@ -1364,15 +1427,11 @@ export const verifyAndCreateUser = async (
   const updatedPending = pending.filter(p => p.email.toLowerCase() !== email.toLowerCase().trim());
   setItem(STORAGE_KEYS.PENDING_OTPS, updatedPending);
 
-  // Send direct registration to Supabase Cloud
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      await supabase.from('profiles').upsert(sanitizeProfileForSupabase(newProfile));
-    } catch (err) {
-      console.warn('[Aether Supabase] Profile upsert error:', err);
-    }
-  }
+  // Send resilient registration to Supabase Cloud
+  await saveProfileToCloud(newProfile);
+
+  // Broadcast instant realtime event so all open tabs and devices receive the new user immediately
+  await broadcastRealtimeEvent('user_registered', newProfile);
 
   // Direct server registration
   try {
@@ -1381,9 +1440,11 @@ export const verifyAndCreateUser = async (
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user: newProfile }),
     });
-  } catch {}
+  } catch { }
 
   await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
   return { success: true, user: newProfile, message: 'Account verified and created successfully!' };
 };
 
@@ -1455,7 +1516,7 @@ export const authenticateUser = async (
         return { success: false, message: data.message };
       }
     }
-  } catch {}
+  } catch { }
 
   // 3. Local State Fallback / Sync
   await syncWithServer();
@@ -1543,7 +1604,7 @@ export const verifyPasswordChangeOtp = (
 
     const supabase = getSupabaseClient();
     if (supabase) {
-      supabase.from('profiles').upsert(users[idx]).then(() => {}, () => {});
+      supabase.from('profiles').upsert(users[idx]).then(() => { }, () => { });
     }
   }
 
@@ -1736,13 +1797,13 @@ export const toggleFollowUser = async (targetUserId: string, currentUserId: stri
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user: sanitizeProfileForSupabase(updatedCurrent) }),
-    }).catch(() => {});
+    }).catch(() => { });
     fetch('/api/users/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user: sanitizeProfileForSupabase(updatedTarget) }),
-    }).catch(() => {});
-  } catch {}
+    }).catch(() => { });
+  } catch { }
 
   await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
@@ -1785,7 +1846,7 @@ export const getRealPosts = (): Post[] => {
       votes_up: vCounts.up,
       votes_down: vCounts.down,
       net_votes,
-    user: author || p.user,
+      user: author || p.user,
     };
   });
 };
@@ -1846,8 +1907,8 @@ export const createRealPost = async (data: {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ post: newPost }),
-    }).catch(() => {});
-  } catch {}
+    }).catch(() => { });
+  } catch { }
 
   // Send to Supabase Cloud with schema fallback
   await savePostToCloud(newPost);
@@ -1905,19 +1966,19 @@ export const deleteRealPost = async (postId: string, userId?: string): Promise<b
     await supabase.from('posts').update({
       title: '[DELETED]',
       description: '[DELETED]',
-    }).eq('id', postId).then(() => {}, () => {});
+    }).eq('id', postId).then(() => { }, () => { });
 
-    await supabase.from('posts').delete().eq('id', postId).then(() => {}, (err) => console.warn('[Supabase Delete Post]', err));
-    await supabase.from('votes').delete().eq('post_id', postId).then(() => {}, () => {});
-    await supabase.from('notifications').delete().eq('post_id', postId).then(() => {}, () => {});
+    await supabase.from('posts').delete().eq('id', postId).then(() => { }, (err) => console.warn('[Supabase Delete Post]', err));
+    await supabase.from('votes').delete().eq('post_id', postId).then(() => { }, () => { });
+    await supabase.from('notifications').delete().eq('post_id', postId).then(() => { }, () => { });
   }
 
   // 6. Delete from local server storage
   try {
     fetch(`/api/posts?id=${encodeURIComponent(postId)}`, {
       method: 'DELETE',
-    }).catch(() => {});
-  } catch {}
+    }).catch(() => { });
+  } catch { }
 
   await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
@@ -1926,9 +1987,9 @@ export const deleteRealPost = async (postId: string, userId?: string): Promise<b
 };
 
 export const updateRealPostText = async (
-  postId: string, 
-  userId: string, 
-  description: string, 
+  postId: string,
+  userId: string,
+  description: string,
   title?: string
 ): Promise<Post | null> => {
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
@@ -1952,7 +2013,7 @@ export const updateRealPostText = async (
 };
 
 export const togglePinHomePost = async (
-  postId: string, 
+  postId: string,
   adminId: string
 ): Promise<{ success: boolean; isPinned: boolean }> => {
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
@@ -1981,15 +2042,15 @@ export const togglePinHomePost = async (
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ post: posts[idx] }),
-    }).catch(() => {});
-  } catch {}
+    }).catch(() => { });
+  } catch { }
 
   // Sync to Supabase Cloud
   const supabase = getSupabaseClient();
   if (supabase) {
     supabase.from('posts').update({
       is_pinned_home: newPinState,
-    }).eq('id', postId).then(() => {}, (err) => console.warn('[Supabase Pin Update]', err));
+    }).eq('id', postId).then(() => { }, (err) => console.warn('[Supabase Pin Update]', err));
   }
 
   await broadcastRealtimeEvent('pin_post', {
@@ -2005,7 +2066,7 @@ export const togglePinHomePost = async (
 };
 
 export const togglePinProfilePost = async (
-  postId: string, 
+  postId: string,
   userId: string
 ): Promise<{ success: boolean; isPinned: boolean }> => {
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
@@ -2028,15 +2089,15 @@ export const togglePinProfilePost = async (
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ post: posts[idx] }),
-    }).catch(() => {});
-  } catch {}
+    }).catch(() => { });
+  } catch { }
 
   // Sync to Supabase Cloud
   const supabase = getSupabaseClient();
   if (supabase) {
     supabase.from('posts').update({
       is_pinned_profile: newPinState,
-    }).eq('id', postId).then(() => {}, (err) => console.warn('[Supabase Pin Profile Update]', err));
+    }).eq('id', postId).then(() => { }, (err) => console.warn('[Supabase Pin Profile Update]', err));
   }
 
   await broadcastRealtimeEvent('pin_post', {
@@ -2144,7 +2205,7 @@ export const votePostAction = async (
   if (finalUserVote === null) {
     fetch(`/api/votes?id=${encodeURIComponent(canonicalVoteId)}&post_id=${encodeURIComponent(postId)}&user_id=${encodeURIComponent(userId)}`, {
       method: 'DELETE'
-    }).catch(() => {});
+    }).catch(() => { });
   } else {
     fetch('/api/votes', {
       method: 'POST',
@@ -2156,7 +2217,7 @@ export const votePostAction = async (
         type: finalUserVote,
         created_at: new Date().toISOString(),
       })
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   // Supabase Cloud DB sync
@@ -2169,11 +2230,11 @@ export const votePostAction = async (
         votes_down: posts[postIdx].votes_down,
         net_votes: posts[postIdx].net_votes,
       })
-      .eq('id', postId).then(() => {}, (err: any) => console.warn('[Aether Supabase] Post vote update error:', err));
+      .eq('id', postId).then(() => { }, (err: any) => console.warn('[Aether Supabase] Post vote update error:', err));
 
     if (finalUserVote === null) {
-      await supabase.from('votes').delete().eq('id', canonicalVoteId).then(() => {}, () => {});
-      await supabase.from('votes').delete().match({ user_id: userId, post_id: postId }).then(() => {}, () => {});
+      await supabase.from('votes').delete().eq('id', canonicalVoteId).then(() => { }, () => { });
+      await supabase.from('votes').delete().match({ user_id: userId, post_id: postId }).then(() => { }, () => { });
     } else {
       await supabase.from('votes').upsert({
         id: canonicalVoteId,
@@ -2181,14 +2242,14 @@ export const votePostAction = async (
         post_id: postId,
         type: finalUserVote,
         created_at: new Date().toISOString(),
-      }).then(() => {}, (err: any) => console.warn('[Aether Supabase] Vote record upsert error:', err));
+      }).then(() => { }, (err: any) => console.warn('[Aether Supabase] Vote record upsert error:', err));
     }
 
     await supabase
       .from('profiles')
       .update({ total_votes_received: totalVotesReceived })
       .eq('id', authorId)
-      .then(() => {}, () => {});
+      .then(() => { }, () => { });
   }
 
   await syncWithServer();
@@ -2208,20 +2269,34 @@ export const votePostAction = async (
    ========================================================================== */
 
 export const getRealLeaderboard = (): Array<Profile & { rank: number; posts_count: number }> => {
-  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => u && u.id && !FAKE_MOCK_IDS.includes(u.id));
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
 
+  // Compute posts count and total net votes for every registered real user
   const list = users.map(user => {
     const userPosts = posts.filter(p => p.user_id === user.id);
-    const netVotes = userPosts.reduce((acc, p) => acc + p.net_votes, 0);
+    const postNetVotes = userPosts.reduce((acc, p) => acc + (p.net_votes || 0), 0);
+    const totalVotes = Math.max(user.total_votes_received || 0, postNetVotes);
     return {
       ...user,
-      total_votes_received: netVotes,
+      display_name: user.display_name || user.username || 'Creator',
+      username: user.username || `user_${user.id.slice(-6)}`,
+      avatar_url: user.avatar_url || DEFAULT_DLICOM_AVATAR,
+      bio: user.bio || '',
+      total_votes_received: totalVotes,
       posts_count: userPosts.length,
     };
   });
 
-  list.sort((a, b) => b.total_votes_received - a.total_votes_received || b.posts_count - a.posts_count);
+  list.sort((a, b) => {
+    if (b.total_votes_received !== a.total_votes_received) {
+      return b.total_votes_received - a.total_votes_received;
+    }
+    if (b.posts_count !== a.posts_count) {
+      return b.posts_count - a.posts_count;
+    }
+    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+  });
 
   return list.map((u, i) => ({
     ...u,
@@ -2359,7 +2434,7 @@ export const addNotification = (item: {
       type: newNotif.type,
       is_read: newNotif.is_read,
       created_at: newNotif.created_at,
-    }).then(() => {}, (err) => console.warn('[Supabase Notification Upsert Error]', err));
+    }).then(() => { }, (err) => console.warn('[Supabase Notification Upsert Error]', err));
   }
 
   window.dispatchEvent(new Event('aether_storage_sync'));
@@ -2388,7 +2463,7 @@ export const markNotificationAsRead = (notifId: string): void => {
   }
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('notifications').update({ is_read: true }).eq('id', notifId).then(() => {}, () => {});
+    supabase.from('notifications').update({ is_read: true }).eq('id', notifId).then(() => { }, () => { });
   }
   window.dispatchEvent(new Event('aether_storage_sync'));
   if (syncChannel) syncChannel.postMessage('sync');
@@ -2408,7 +2483,7 @@ export const markAllNotificationsRead = (userId: string): void => {
   }
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).then(() => {}, () => {});
+    supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).then(() => { }, () => { });
   }
   window.dispatchEvent(new Event('aether_storage_sync'));
   if (syncChannel) syncChannel.postMessage('sync');
@@ -2435,7 +2510,7 @@ export const clearReadNotifications = (userId: string): void => {
 
   const supabase = getSupabaseClient();
   if (supabase && clearedIds.length > 0) {
-    supabase.from('notifications').delete().in('id', clearedIds).then(() => {}, () => {});
+    supabase.from('notifications').delete().in('id', clearedIds).then(() => { }, () => { });
   }
 
   window.dispatchEvent(new Event('aether_storage_sync'));
@@ -2455,7 +2530,7 @@ export const deleteNotification = (notifId: string): void => {
 
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('notifications').delete().eq('id', notifId).then(() => {}, () => {});
+    supabase.from('notifications').delete().eq('id', notifId).then(() => { }, () => { });
   }
 
   window.dispatchEvent(new Event('aether_storage_sync'));
@@ -2626,16 +2701,16 @@ export const adminBanUser = (targetUserId: string, actorEmail?: string): { succe
   // 7. Delete from Supabase Cloud DB
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('profiles').delete().eq('id', targetUserId).then(() => {}, () => {});
-    supabase.from('posts').delete().eq('user_id', targetUserId).then(() => {}, () => {});
-    supabase.from('votes').delete().eq('user_id', targetUserId).then(() => {}, () => {});
-    supabase.from('notifications').delete().eq('user_id', targetUserId).then(() => {}, () => {});
-    supabase.from('notifications').delete().eq('actor_id', targetUserId).then(() => {}, () => {});
+    supabase.from('profiles').delete().eq('id', targetUserId).then(() => { }, () => { });
+    supabase.from('posts').delete().eq('user_id', targetUserId).then(() => { }, () => { });
+    supabase.from('votes').delete().eq('user_id', targetUserId).then(() => { }, () => { });
+    supabase.from('notifications').delete().eq('user_id', targetUserId).then(() => { }, () => { });
+    supabase.from('notifications').delete().eq('actor_id', targetUserId).then(() => { }, () => { });
   }
 
   // 8. Delete from local server API
   userPostIds.forEach(pid => {
-    fetch(`/api/posts?id=${encodeURIComponent(pid)}`, { method: 'DELETE' }).catch(() => {});
+    fetch(`/api/posts?id=${encodeURIComponent(pid)}`, { method: 'DELETE' }).catch(() => { });
   });
 
   syncWithServer();
@@ -2721,23 +2796,23 @@ export const adminToggleGoldenVerifyUser = async (targetUserId: string, actorEma
         post_id: null,
         is_read: false,
         created_at: new Date().toISOString(),
-      }).then(() => {}, () => {});
+      }).then(() => { }, () => { });
 
       // 2. Direct column update in Supabase profiles
       supabase.from('profiles').update({
         is_golden_verified: true,
         is_verified: true,
         updated_at: new Date().toISOString(),
-      }).eq('id', targetUserId).then(() => {}, () => {});
+      }).eq('id', targetUserId).then(() => { }, () => { });
     } else {
       // 1. Remove cloud Golden Grant record
-      supabase.from('notifications').delete().eq('id', `golden_grant_${targetUserId}`).then(() => {}, () => {});
+      supabase.from('notifications').delete().eq('id', `golden_grant_${targetUserId}`).then(() => { }, () => { });
 
       // 2. Direct column update in Supabase profiles
       supabase.from('profiles').update({
         is_golden_verified: false,
         updated_at: new Date().toISOString(),
-      }).eq('id', targetUserId).then(() => {}, () => {});
+      }).eq('id', targetUserId).then(() => { }, () => { });
     }
   }
 
@@ -2803,7 +2878,7 @@ export const adminUnbanUser = (targetUserId: string, actorEmail?: string): { suc
 
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase.from('profiles').update({ is_banned: false }).eq('id', targetUserId).then(() => {}, () => {});
+    supabase.from('profiles').update({ is_banned: false }).eq('id', targetUserId).then(() => { }, () => { });
   }
 
   syncWithServer();
@@ -2931,7 +3006,7 @@ export const sendVipChatMessage = async (data: {
       image_data: newMsg.image_data || null,
       code_snippet: newMsg.code_snippet || null,
       created_at: newMsg.created_at,
-    }).then(() => {}, (err) => console.warn('[Supabase VIP Chat notice]', err));
+    }).then(() => { }, (err) => console.warn('[Supabase VIP Chat notice]', err));
   }
 
   window.dispatchEvent(new Event('aether_storage_sync'));
@@ -2940,7 +3015,7 @@ export const sendVipChatMessage = async (data: {
 };
 
 export const deleteVipChatMessage = async (
-  messageId: string, 
+  messageId: string,
   actorId: string,
   mode: 'everyone' | 'me' = 'everyone'
 ): Promise<boolean> => {
@@ -2962,7 +3037,7 @@ export const deleteVipChatMessage = async (
 
     const supabase = getSupabaseClient();
     if (supabase) {
-      supabase.from('vip_messages').delete().eq('id', messageId).then(() => {}, () => {});
+      supabase.from('vip_messages').delete().eq('id', messageId).then(() => { }, () => { });
     }
   }
 
@@ -3125,11 +3200,11 @@ export const getDirectMessages = (userA: string, userB: string): DirectMessage[]
   users.forEach(u => userMap.set(u.id, u));
 
   return dms
-    .filter(m => 
+    .filter(m =>
       !deletedForMe.has(m.id) &&
       !m.is_deleted &&
       ((m.sender_id === userA && m.receiver_id === userB) ||
-       (m.sender_id === userB && m.receiver_id === userA))
+        (m.sender_id === userB && m.receiver_id === userA))
     )
     .map(m => ({
       ...m,
@@ -3203,7 +3278,7 @@ export const getDmConversations = (currentUserId: string): Array<{
   const userMap = new Map<string, Profile>();
   users.forEach(u => userMap.set(u.id, u));
 
-  const relevant = dms.filter(m => 
+  const relevant = dms.filter(m =>
     !deletedForMe.has(m.id) &&
     !m.is_deleted &&
     (m.sender_id === currentUserId || m.receiver_id === currentUserId)
@@ -3284,7 +3359,7 @@ export const sendDirectMessage = async (
       text: newDm.text,
       created_at: newDm.created_at,
       is_read: false,
-    }, { onConflict: 'id' }).then(() => {}, (err) => {
+    }, { onConflict: 'id' }).then(() => { }, (err) => {
       console.warn('[Aether Supabase] DM save notice:', err);
     });
   }
@@ -3327,7 +3402,7 @@ export const markDirectMessagesAsRead = async (
         .update({ is_read: true })
         .eq('receiver_id', currentUserId)
         .eq('sender_id', contactUserId)
-        .then(() => {}, () => {});
+        .then(() => { }, () => { });
     }
   }
 };
@@ -3355,7 +3430,7 @@ export const deleteDirectMessage = async (
 
     const supabase = getSupabaseClient();
     if (supabase) {
-      supabase.from('direct_messages').delete().eq('id', messageId).then(() => {}, () => {});
+      supabase.from('direct_messages').delete().eq('id', messageId).then(() => { }, () => { });
     }
   }
 

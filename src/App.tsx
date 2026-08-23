@@ -392,7 +392,10 @@ export function App() {
         (u.display_name && u.display_name.toLowerCase().includes(q)) ||
         (u.username && u.username.toLowerCase().includes(q)) ||
         (u.first_name && u.first_name.toLowerCase().includes(q)) ||
-        (u.bio && u.bio.toLowerCase().includes(q))
+        (u.last_name && u.last_name.toLowerCase().includes(q)) ||
+        (u.email && u.email.toLowerCase().includes(q)) ||
+        (u.bio && u.bio.toLowerCase().includes(q)) ||
+        (u.location && u.location.toLowerCase().includes(q))
     );
   }, [users, searchQuery]);
 
@@ -407,7 +410,7 @@ export function App() {
 
     // Filter by Topic Tag
     if (selectedTagFilter) {
-      result = result.filter(p => p.tags && p.tags.includes(selectedTagFilter.toLowerCase()));
+      result = result.filter(p => p.tags && p.tags.some(t => t && t.toLowerCase() === selectedTagFilter.toLowerCase()));
     }
 
     // Filter by Search Query
@@ -416,10 +419,10 @@ export function App() {
       result = result.filter(
         p =>
           (p.title && p.title.toLowerCase().includes(q)) ||
-          p.description.toLowerCase().includes(q) ||
-          p.user?.display_name.toLowerCase().includes(q) ||
-          p.user?.username.toLowerCase().includes(q) ||
-          p.tags?.some(t => t.toLowerCase().includes(q))
+          (p.description && p.description.toLowerCase().includes(q)) ||
+          (p.user?.display_name && p.user.display_name.toLowerCase().includes(q)) ||
+          (p.user?.username && p.user.username.toLowerCase().includes(q)) ||
+          (p.tags && p.tags.some(t => t && t.toLowerCase().includes(q)))
       );
     }
 

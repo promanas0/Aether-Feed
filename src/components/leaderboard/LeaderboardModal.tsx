@@ -25,11 +25,15 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
   if (!isOpen) return null;
 
+  const q = searchQuery.toLowerCase().trim();
   const filtered = leaderboard.filter(
     (item) =>
-      item.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.bio.toLowerCase().includes(searchQuery.toLowerCase())
+      !q ||
+      (item.display_name && item.display_name.toLowerCase().includes(q)) ||
+      (item.username && item.username.toLowerCase().includes(q)) ||
+      (item.bio && item.bio.toLowerCase().includes(q)) ||
+      (item.first_name && item.first_name.toLowerCase().includes(q)) ||
+      (item.last_name && item.last_name.toLowerCase().includes(q))
   );
 
   return (

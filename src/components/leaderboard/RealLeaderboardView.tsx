@@ -18,10 +18,15 @@ export const RealLeaderboardView: React.FC<RealLeaderboardViewProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
+  const q = searchQuery.toLowerCase().trim();
   const filtered = leaderboard.filter(
     (u) =>
-      u.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.username.toLowerCase().includes(searchQuery.toLowerCase())
+      !q ||
+      (u.display_name && u.display_name.toLowerCase().includes(q)) ||
+      (u.username && u.username.toLowerCase().includes(q)) ||
+      (u.first_name && u.first_name.toLowerCase().includes(q)) ||
+      (u.last_name && u.last_name.toLowerCase().includes(q)) ||
+      (u.bio && u.bio.toLowerCase().includes(q))
   );
 
   return (
@@ -34,9 +39,14 @@ export const RealLeaderboardView: React.FC<RealLeaderboardViewProps> = ({
             <Trophy className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-white tracking-tight">
-              Member Leaderboard
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-bold text-white tracking-tight">
+                Member Leaderboard
+              </h2>
+              <span className="px-2 py-0.5 bg-blue-600/30 text-blue-300 text-[10px] font-mono font-semibold rounded-lg border border-blue-500/40">
+                {leaderboard.length} Ranked
+              </span>
+            </div>
             <p className="text-xs text-slate-400">
               Ranked by net votes (▲ Upvotes &minus; ▼ Downvotes)
             </p>
@@ -50,8 +60,8 @@ export const RealLeaderboardView: React.FC<RealLeaderboardViewProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search member..."
-            className="w-full pl-8.5 pr-3 py-1.5 bg-[#0B132B] border border-[#334155] focus:border-blue-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none"
+            placeholder="Search creator by name or @handle..."
+            className="w-full pl-8.5 pr-3 py-1.5 bg-[#0B132B] border border-[#334155] focus:border-blue-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
           />
         </div>
       </div>
@@ -60,7 +70,17 @@ export const RealLeaderboardView: React.FC<RealLeaderboardViewProps> = ({
       <div className="mt-3 divide-y divide-[#334155]/60">
         {filtered.length === 0 ? (
           <div className="py-14 text-center text-slate-400">
-            <p className="text-xs font-semibold text-slate-300">No members registered yet</p>
+            <p className="text-xs font-semibold text-slate-300">
+              {q ? `No creators match "${searchQuery}"` : 'No members registered yet'}
+            </p>
+            {q && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="mt-2 text-xs text-blue-400 hover:text-blue-300 underline cursor-pointer"
+              >
+                Clear search filter
+              </button>
+            )}
           </div>
         ) : (
           filtered.map((curator) => {

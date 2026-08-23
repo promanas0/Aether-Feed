@@ -75,15 +75,18 @@ export const Header: React.FC<HeaderProps> = ({
 
   const query = searchQuery.toLowerCase().trim();
 
-  // Matched Users (Search by Name, Username, Bio)
+  // Matched Users (Search by Display Name, Username, First/Last Name, Email, Bio, Location)
   const matchedUsers = query
     ? allUsers.filter(
         u =>
           (u.display_name && u.display_name.toLowerCase().includes(query)) ||
           (u.username && u.username.toLowerCase().includes(query)) ||
           (u.first_name && u.first_name.toLowerCase().includes(query)) ||
-          (u.bio && u.bio.toLowerCase().includes(query))
-      ).slice(0, 4)
+          (u.last_name && u.last_name.toLowerCase().includes(query)) ||
+          (u.email && u.email.toLowerCase().includes(query)) ||
+          (u.bio && u.bio.toLowerCase().includes(query)) ||
+          (u.location && u.location.toLowerCase().includes(query))
+      ).slice(0, 6)
     : [];
 
   // Matched Posts (Search by Title, Description, Tags, Author Name)
@@ -93,8 +96,9 @@ export const Header: React.FC<HeaderProps> = ({
           (p.title && p.title.toLowerCase().includes(query)) ||
           (p.description && p.description.toLowerCase().includes(query)) ||
           (p.user?.display_name && p.user.display_name.toLowerCase().includes(query)) ||
-          (p.tags && p.tags.some(t => t.toLowerCase().includes(query)))
-      ).slice(0, 5)
+          (p.user?.username && p.user.username.toLowerCase().includes(query)) ||
+          (p.tags && p.tags.some(t => t && t.toLowerCase().includes(query)))
+      ).slice(0, 6)
     : [];
 
   const hasLiveResults = query.length > 0 && (matchedUsers.length > 0 || matchedPosts.length > 0);
