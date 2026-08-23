@@ -27,6 +27,7 @@ import {
   getAdminEmails, 
   addAdminEmail, 
   removeAdminEmail, 
+  adminToggleAdminRole,
   adminBanUser, 
   adminUnbanUser,
   adminToggleVerifyUser, 
@@ -123,6 +124,23 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       onRefreshData();
     } else {
       addToast('Unban Failed', res.message, 'info');
+    }
+  };
+
+  // Handle Toggle Admin Team Role
+  const handleToggleAdmin = async (targetUser: Profile) => {
+    if (targetUser.email.toLowerCase() === 'promanas018@gmail.com') {
+      addToast('Protected Account', 'Root Super Admin cannot be modified.', 'info');
+      return;
+    }
+    const updated = await adminToggleAdminRole(targetUser.id, currentUser.email);
+    if (updated) {
+      addToast(
+        updated.is_admin ? 'Admin Privileges Granted' : 'Admin Privileges Revoked',
+        `@${updated.username} (${updated.email}) is now ${updated.is_admin ? 'an Admin Team Member with full console access' : 'a regular user'}.`,
+        'success'
+      );
+      onRefreshData();
     }
   };
 
@@ -437,6 +455,23 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                         {/* Admin Actions */}
                         <div className="flex items-center gap-2 w-full md:w-auto justify-end pt-2 md:pt-0 border-t md:border-t-0 border-[#334155] flex-wrap">
                           
+                          {/* 0. Toggle Admin Team Privileges */}
+                          {!isRootSuperAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAdmin(u)}
+                              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                u.is_admin || isTeamAdmin
+                                  ? 'bg-rose-600/30 text-rose-300 border border-rose-500/60 shadow-[0_0_10px_rgba(244,63,94,0.3)]'
+                                  : 'bg-[#1C2541] hover:bg-rose-950/30 text-slate-300 border border-[#334155] hover:border-rose-500/40'
+                              }`}
+                              title="Grant / Revoke Admin Console Access"
+                            >
+                              <Crown className="w-3.5 h-3.5 text-rose-400" />
+                              <span>{u.is_admin || isTeamAdmin ? 'Admin Team' : 'Make Admin'}</span>
+                            </button>
+                          )}
+
                           {/* 1. Toggle Golden Checkmark (Gold VIP Badge) */}
                           <button
                             type="button"

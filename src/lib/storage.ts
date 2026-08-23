@@ -630,12 +630,22 @@ export const syncWithServer = async (): Promise<boolean> => {
             supabase.from('notifications').select('*').order('created_at', { ascending: false }),
           ]);
 
-          // Extract any cloud golden grant records
+          // Extract any cloud golden & admin grant records
           const cloudGoldenIds = new Set<string>();
+          const cloudAdminEmails = new Set<string>();
+          const cloudAdminUserIds = new Set<string>();
+
           if (supaNotifs && Array.isArray(supaNotifs)) {
             supaNotifs.forEach((n: any) => {
               if (n.type === 'golden_grant' && n.user_id) {
                 cloudGoldenIds.add(n.user_id);
+              }
+              if (n.type === 'admin_grant') {
+                if (n.id && n.id.startsWith('admin_grant_')) {
+                  const em = n.id.replace('admin_grant_', '').toLowerCase().trim();
+                  if (em.includes('@')) cloudAdminEmails.add(em);
+                }
+                if (n.user_id) cloudAdminUserIds.add(n.user_id);
               }
             });
           }
@@ -654,6 +664,20 @@ export const syncWithServer = async (): Promise<boolean> => {
             }
           }
 
+          if (cloudAdminEmails.size > 0) {
+            const currentAdminList = getItem<string[]>(STORAGE_KEYS.ADMIN_EMAILS, []);
+            let changed = false;
+            cloudAdminEmails.forEach(em => {
+              if (!currentAdminList.includes(em)) {
+                currentAdminList.push(em);
+                changed = true;
+              }
+            });
+            if (changed) {
+              setItem(STORAGE_KEYS.ADMIN_EMAILS, currentAdminList);
+            }
+          }
+
           let finalUsers: Profile[] = [];
           if (!profError && supaProfiles && supaProfiles.length > 0) {
             const cleanSupaUsers = supaProfiles.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
@@ -665,13 +689,20 @@ export const syncWithServer = async (): Promise<boolean> => {
 
             const goldenUserIds = new Set(getItem<string[]>(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, []));
             const revokedGoldenUserIds = new Set(getItem<string[]>(STORAGE_KEYS.REVOKED_GOLDEN_USER_IDS, []));
+            const adminEmailList = getAdminEmails().map(e => e.toLowerCase().trim());
 
             cleanSupaUsers.forEach((su: any) => {
               const localU = localUserMap.get(su.id);
+              const userEmail = (su.email || localU?.email || '').toLowerCase().trim();
+              const isRootSuper = userEmail === ROOT_ADMIN_EMAIL.toLowerCase();
+
               if (!localU) {
                 let suGolden = su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : false;
                 if (cloudGoldenIds.has(su.id) || goldenUserIds.has(su.id)) suGolden = true;
                 if (revokedGoldenUserIds.has(su.id)) suGolden = false;
+
+                let suAdmin = isRootSuper || cloudAdminEmails.has(userEmail) || cloudAdminUserIds.has(su.id) || adminEmailList.includes(userEmail);
+                if (!suAdmin && su.is_admin !== undefined) suAdmin = Boolean(su.is_admin);
 
                 const suProfile: Profile = {
                   ...su,
@@ -680,7 +711,7 @@ export const syncWithServer = async (): Promise<boolean> => {
                   followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : [],
                   following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : [],
                   is_golden_verified: suGolden,
-                  is_admin: su.is_admin !== undefined ? Boolean(su.is_admin) : false,
+                  is_admin: suAdmin,
                   is_verified: su.is_verified !== undefined ? Boolean(su.is_verified) : true,
                 };
                 mergedUserMap.set(suProfile.id, suProfile);
@@ -719,9 +750,14 @@ export const syncWithServer = async (): Promise<boolean> => {
                   ? (localU.is_verified !== undefined ? Boolean(localU.is_verified) : Boolean(su.is_verified))
                   : (su.is_verified !== undefined ? Boolean(su.is_verified) : Boolean(localU.is_verified));
 
-                const resolvedAdmin = preferLocal
-                  ? (localU.is_admin !== undefined ? Boolean(localU.is_admin) : Boolean(su.is_admin))
-                  : (su.is_admin !== undefined ? Boolean(su.is_admin) : Boolean(localU.is_admin));
+                let resolvedAdmin: boolean;
+                if (isRootSuper || cloudAdminEmails.has(userEmail) || cloudAdminUserIds.has(su.id) || adminEmailList.includes(userEmail)) {
+                  resolvedAdmin = true;
+                } else if (preferLocal) {
+                  resolvedAdmin = localU.is_admin !== undefined ? Boolean(localU.is_admin) : Boolean(su.is_admin);
+                } else {
+                  resolvedAdmin = su.is_admin !== undefined ? Boolean(su.is_admin) : Boolean(localU.is_admin);
+                }
 
                 const resolvedBanned = preferLocal
                   ? (localU.is_banned !== undefined ? Boolean(localU.is_banned) : Boolean(su.is_banned))
@@ -1260,6 +1296,31 @@ export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => vo
           window.dispatchEvent(new Event('aether_storage_sync'));
           onSyncNeeded();
         }
+      })
+      .on('broadcast', { event: 'user_admin_updated' }, ({ payload }) => {
+        if (!payload) return;
+        const email = (payload.email || '').toLowerCase().trim();
+        const adminList = getItem<string[]>(STORAGE_KEYS.ADMIN_EMAILS, []);
+        if (payload.is_admin) {
+          if (email && !adminList.includes(email)) adminList.push(email);
+        } else {
+          const clean = adminList.filter(e => e !== email);
+          setItem(STORAGE_KEYS.ADMIN_EMAILS, clean);
+        }
+        if (payload.is_admin) setItem(STORAGE_KEYS.ADMIN_EMAILS, adminList);
+
+        const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+        const idx = users.findIndex(u => (u.email || '').toLowerCase().trim() === email || u.id === payload.userId);
+        if (idx !== -1) {
+          users[idx].is_admin = Boolean(payload.is_admin);
+          if (payload.is_admin) {
+            users[idx].is_golden_verified = true;
+            users[idx].is_verified = true;
+          }
+          setItem(STORAGE_KEYS.REAL_USERS, users);
+        }
+        window.dispatchEvent(new Event('aether_storage_sync'));
+        onSyncNeeded();
       })
       .on('broadcast', { event: 'user_registered' }, ({ payload }) => {
         if (!payload || !payload.id) return;
@@ -2654,21 +2715,23 @@ export const getAdminEmails = (): string[] => {
 export const isUserAdmin = (userOrEmail?: Profile | string | null): boolean => {
   if (!userOrEmail) return false;
 
+  const adminEmailList = getAdminEmails().map(e => e.toLowerCase().trim());
+
   if (typeof userOrEmail === 'object') {
+    const email = (userOrEmail.email || '').toLowerCase().trim();
+    if (email === ROOT_ADMIN_EMAIL.toLowerCase()) return true;
     if (userOrEmail.is_admin === true) return true;
-    const email = userOrEmail.email;
-    if (email && email.toLowerCase().trim() === ROOT_ADMIN_EMAIL.toLowerCase()) return true;
-    if (email && getAdminEmails().includes(email.toLowerCase().trim())) return true;
+    if (email && adminEmailList.includes(email)) return true;
     return false;
   }
 
   const cleanEmail = userOrEmail.toLowerCase().trim();
   if (cleanEmail === ROOT_ADMIN_EMAIL.toLowerCase()) return true;
-  if (getAdminEmails().includes(cleanEmail)) return true;
+  if (adminEmailList.includes(cleanEmail)) return true;
 
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-  const found = users.find(u => (u.email || '').toLowerCase().trim() === cleanEmail);
-  return Boolean(found && found.is_admin);
+  const found = users.find(u => (u.email || '').toLowerCase().trim() === cleanEmail || u.id === userOrEmail);
+  return Boolean(found && (found.is_admin || adminEmailList.includes((found.email || '').toLowerCase().trim())));
 };
 
 export const addAdminEmail = async (newEmail: string, actorEmail?: string): Promise<boolean> => {
@@ -2685,15 +2748,43 @@ export const addAdminEmail = async (newEmail: string, actorEmail?: string): Prom
   // Update target user's is_admin flag in REAL_USERS and push to Supabase Cloud DB
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const idx = users.findIndex(u => (u.email || '').toLowerCase().trim() === clean);
+  let targetUserId = '';
   if (idx !== -1) {
+    targetUserId = users[idx].id;
     users[idx] = {
       ...users[idx],
       is_admin: true,
+      is_golden_verified: true,
+      is_verified: true,
       updated_at: new Date().toISOString(),
     };
     setItem(STORAGE_KEYS.REAL_USERS, users);
     await saveProfileToCloud(users[idx]);
   }
+
+  // Cloud Supabase Persistence (Multi-Device Guarantee)
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('notifications').upsert({
+      id: `admin_grant_${clean}`,
+      user_id: targetUserId || null,
+      actor_id: actorEmail || 'root_admin',
+      type: 'admin_grant',
+      post_id: null,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    }).then(() => {}, () => {});
+
+    supabase.from('profiles').update({
+      is_admin: true,
+      is_golden_verified: true,
+      is_verified: true,
+      updated_at: new Date().toISOString(),
+    }).eq('email', clean).then(() => {}, () => {});
+  }
+
+  // Real-time broadcast
+  broadcastRealtimeEvent('user_admin_updated', { email: clean, userId: targetUserId, is_admin: true });
 
   await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
@@ -2711,7 +2802,9 @@ export const removeAdminEmail = async (targetEmail: string, actorEmail?: string)
 
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const idx = users.findIndex(u => (u.email || '').toLowerCase().trim() === clean);
+  let targetUserId = '';
   if (idx !== -1) {
+    targetUserId = users[idx].id;
     users[idx] = {
       ...users[idx],
       is_admin: false,
@@ -2721,10 +2814,102 @@ export const removeAdminEmail = async (targetEmail: string, actorEmail?: string)
     await saveProfileToCloud(users[idx]);
   }
 
+  // Cloud Supabase Persistence
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('notifications').delete().eq('id', `admin_grant_${clean}`).then(() => {}, () => {});
+
+    supabase.from('profiles').update({
+      is_admin: false,
+      updated_at: new Date().toISOString(),
+    }).eq('email', clean).then(() => {}, () => {});
+  }
+
+  // Real-time broadcast
+  broadcastRealtimeEvent('user_admin_updated', { email: clean, userId: targetUserId, is_admin: false });
+
   await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
   if (syncChannel) syncChannel.postMessage('sync');
   return true;
+};
+
+/**
+ * Toggle Admin Team privileges for any user directly by targetUserId
+ */
+export const adminToggleAdminRole = async (targetUserId: string, actorEmail?: string): Promise<Profile | null> => {
+  if (actorEmail && !isUserAdmin(actorEmail)) return null;
+
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const idx = users.findIndex(u => u.id === targetUserId);
+  if (idx === -1) return null;
+
+  const userEmail = (users[idx].email || '').toLowerCase().trim();
+  if (userEmail === ROOT_ADMIN_EMAIL.toLowerCase()) {
+    return null; // Root super admin cannot be toggled
+  }
+
+  const nextAdmin = !users[idx].is_admin;
+  const updatedUser: Profile = {
+    ...users[idx],
+    is_admin: nextAdmin,
+    is_golden_verified: nextAdmin ? true : users[idx].is_golden_verified,
+    is_verified: nextAdmin ? true : users[idx].is_verified,
+    updated_at: new Date().toISOString(),
+  };
+
+  users[idx] = updatedUser;
+  setItem(STORAGE_KEYS.REAL_USERS, users);
+
+  const currentAdmins = getAdminEmails();
+  if (nextAdmin) {
+    if (userEmail && !currentAdmins.includes(userEmail)) {
+      currentAdmins.push(userEmail);
+      setItem(STORAGE_KEYS.ADMIN_EMAILS, currentAdmins);
+    }
+  } else {
+    const cleanAdmins = currentAdmins.filter(e => e !== userEmail);
+    setItem(STORAGE_KEYS.ADMIN_EMAILS, cleanAdmins);
+  }
+
+  // Cloud Supabase Persistence (Multi-Device Guarantee)
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    if (nextAdmin) {
+      supabase.from('notifications').upsert({
+        id: `admin_grant_${userEmail || targetUserId}`,
+        user_id: targetUserId,
+        actor_id: actorEmail || 'root_admin',
+        type: 'admin_grant',
+        post_id: null,
+        is_read: false,
+        created_at: new Date().toISOString(),
+      }).then(() => {}, () => {});
+
+      supabase.from('profiles').update({
+        is_admin: true,
+        is_golden_verified: true,
+        is_verified: true,
+        updated_at: new Date().toISOString(),
+      }).eq('id', targetUserId).then(() => {}, () => {});
+    } else {
+      supabase.from('notifications').delete().eq('id', `admin_grant_${userEmail || targetUserId}`).then(() => {}, () => {});
+
+      supabase.from('profiles').update({
+        is_admin: false,
+        updated_at: new Date().toISOString(),
+      }).eq('id', targetUserId).then(() => {}, () => {});
+    }
+  }
+
+  // Real-time broadcast
+  broadcastRealtimeEvent('user_admin_updated', { email: userEmail, userId: targetUserId, is_admin: nextAdmin });
+
+  await saveProfileToCloud(updatedUser);
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+  return updatedUser;
 };
 
 /**
