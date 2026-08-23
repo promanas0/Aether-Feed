@@ -587,19 +587,56 @@ export const syncWithServer = async (): Promise<boolean> => {
 
             cleanSupaUsers.forEach((su: any) => {
               const localU = localUserMap.get(su.id);
-              const suProfile: Profile = {
-                ...localU,
-                ...su,
-                banner_url: su.banner_url || localU?.banner_url || '',
-                banner_size: su.banner_size || localU?.banner_size || 'standard',
-                followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : localU?.followers || [],
-                following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : localU?.following || [],
-                is_golden_verified: su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : (localU?.is_golden_verified ?? false),
-                is_admin: su.is_admin !== undefined ? Boolean(su.is_admin) : (localU?.is_admin ?? false),
-                is_verified: su.is_verified !== undefined ? Boolean(su.is_verified) : (localU?.is_verified ?? true),
-              };
+              if (!localU) {
+                const suProfile: Profile = {
+                  ...su,
+                  banner_url: su.banner_url || '',
+                  banner_size: su.banner_size || 'standard',
+                  followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : [],
+                  following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : [],
+                  is_golden_verified: su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : false,
+                  is_admin: su.is_admin !== undefined ? Boolean(su.is_admin) : false,
+                  is_verified: su.is_verified !== undefined ? Boolean(su.is_verified) : true,
+                };
+                mergedUserMap.set(suProfile.id, suProfile);
+              } else {
+                const localUpdated = localU.updated_at ? new Date(localU.updated_at).getTime() : 0;
+                const supaUpdated = su.updated_at ? new Date(su.updated_at).getTime() : 0;
+                const preferLocal = localUpdated >= supaUpdated;
 
-              mergedUserMap.set(suProfile.id, suProfile);
+                const suProfile: Profile = {
+                  ...su,
+                  ...localU,
+                  ...(preferLocal ? {
+                    display_name: localU.display_name || su.display_name,
+                    first_name: localU.first_name ?? su.first_name,
+                    last_name: localU.last_name ?? su.last_name,
+                    avatar_url: localU.avatar_url || su.avatar_url,
+                    banner_url: localU.banner_url !== undefined ? localU.banner_url : (su.banner_url || ''),
+                    banner_size: localU.banner_size || su.banner_size || 'standard',
+                    bio: localU.bio !== undefined ? localU.bio : (su.bio || ''),
+                    location: localU.location !== undefined ? localU.location : (su.location || ''),
+                    website: localU.website !== undefined ? localU.website : (su.website || ''),
+                  } : {
+                    display_name: su.display_name || localU.display_name,
+                    first_name: su.first_name ?? localU.first_name,
+                    last_name: su.last_name ?? localU.last_name,
+                    avatar_url: su.avatar_url || localU.avatar_url,
+                    banner_url: su.banner_url !== undefined ? su.banner_url : (localU.banner_url || ''),
+                    banner_size: su.banner_size || localU.banner_size || 'standard',
+                    bio: su.bio !== undefined ? su.bio : (localU.bio || ''),
+                    location: su.location !== undefined ? su.location : (localU.location || ''),
+                    website: su.website !== undefined ? su.website : (localU.website || ''),
+                  }),
+                  followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : localU.followers || [],
+                  following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : localU.following || [],
+                  is_golden_verified: su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : Boolean(localU.is_golden_verified),
+                  is_admin: su.is_admin !== undefined ? Boolean(su.is_admin) : Boolean(localU.is_admin),
+                  is_verified: su.is_verified !== undefined ? Boolean(su.is_verified) : Boolean(localU.is_verified),
+                };
+
+                mergedUserMap.set(suProfile.id, suProfile);
+              }
             });
 
             // Preserve any local users not yet in Supabase

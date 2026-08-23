@@ -76,12 +76,13 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   });
 
   const isCurrentUser = Boolean(currentUser && profile && currentUser.id === profile.id);
+  const displayProfile = isCurrentUser ? currentUser : (allUsers.find(u => u.id === profile.id) || profile);
   const currentFollowingList = Array.isArray(currentUser?.following) ? currentUser.following : [];
-  const isFollowing = currentFollowingList.includes(profile.id);
+  const isFollowing = currentFollowingList.includes(displayProfile.id);
 
   // User's own posts (Pinned to profile first, then newest)
   const userPosts = posts
-    .filter(p => p && p.user_id && profile.id && p.user_id.trim() === profile.id.trim())
+    .filter(p => p && p.user_id && displayProfile.id && p.user_id.trim() === displayProfile.id.trim())
     .sort((a, b) => {
       if (a.is_pinned_profile && !b.is_pinned_profile) return -1;
       if (!a.is_pinned_profile && b.is_pinned_profile) return 1;
@@ -91,17 +92,17 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   // Posts upvoted by this user
   const upvotedPostIds = new Set(
     votesList
-      .filter(v => v && v.user_id && profile.id && v.user_id.trim() === profile.id.trim() && v.type === 'up')
+      .filter(v => v && v.user_id && displayProfile.id && v.user_id.trim() === displayProfile.id.trim() && v.type === 'up')
       .map(v => v.post_id)
   );
   const upvotedPosts = posts.filter(p => upvotedPostIds.has(p.id));
 
-  const profileFollowers = Array.isArray(profile.followers) ? profile.followers : [];
-  const profileFollowing = Array.isArray(profile.following) ? profile.following : [];
+  const profileFollowers = Array.isArray(displayProfile.followers) ? displayProfile.followers : [];
+  const profileFollowing = Array.isArray(displayProfile.following) ? displayProfile.following : [];
 
   const bannerHeightClass = 
-    profile.banner_size === 'compact' ? 'h-28 sm:h-36' :
-    profile.banner_size === 'tall' ? 'h-48 sm:h-64' :
+    displayProfile.banner_size === 'compact' ? 'h-28 sm:h-36' :
+    displayProfile.banner_size === 'tall' ? 'h-48 sm:h-64' :
     'h-36 sm:h-48';
 
   return (
@@ -121,10 +122,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         
         {/* Cover Banner */}
         <div className={`${bannerHeightClass} bg-gradient-to-r from-blue-900 via-blue-800 to-slate-900 relative overflow-hidden transition-all duration-300`}>
-          {profile.banner_url ? (
+          {displayProfile.banner_url ? (
             <>
               <img
-                src={profile.banner_url}
+                src={displayProfile.banner_url}
                 alt="Cover Banner"
                 className="w-full h-full object-cover"
               />
@@ -144,19 +145,19 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 -mt-14 sm:-mt-16 mb-4">
             <div className="flex items-end gap-3.5">
               <img
-                src={profile.avatar_url}
-                alt={profile.display_name}
+                src={displayProfile.avatar_url}
+                alt={displayProfile.display_name}
                 className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover border-4 border-[#1E293B] shadow-xl"
               />
               <div className="mb-1.5">
                 <div className="flex items-center gap-2">
                   <h1 className="text-lg sm:text-2xl font-bold text-white tracking-tight">
-                    {profile.display_name}
+                    {displayProfile.display_name}
                   </h1>
-                  <VerifiedBadge user={profile} size="md" />
+                  <VerifiedBadge user={displayProfile} size="md" />
                 </div>
                 <p className="text-xs text-blue-400 font-mono">
-                  @{profile.username}
+                  @{displayProfile.username}
                 </p>
               </div>
             </div>
@@ -174,7 +175,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 <>
                   {onSendMessage && (
                     <button
-                      onClick={() => onSendMessage(profile.id)}
+                      onClick={() => onSendMessage(displayProfile.id)}
                       className="flex items-center gap-1.5 px-4 py-2 bg-[#1C2541] hover:bg-[#2A3756] border border-[#334155] rounded-xl text-xs font-semibold text-slate-200 hover:text-white transition-colors cursor-pointer"
                       title="Send Direct Message"
                     >
@@ -184,7 +185,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   )}
 
                   <button
-                    onClick={() => onToggleFollow(profile.id)}
+                    onClick={() => onToggleFollow(displayProfile.id)}
                     className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                       isFollowing
                         ? 'bg-[#1C2541] hover:bg-rose-950/40 text-slate-200 hover:text-rose-300 border border-[#334155]'
@@ -209,36 +210,36 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           </div>
 
           {/* Bio */}
-          {profile.bio && (
+          {displayProfile.bio && (
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-4 max-w-2xl">
-              {profile.bio}
+              {displayProfile.bio}
             </p>
           )}
 
           {/* Metadata & Stats Row */}
           <div className="flex flex-wrap items-center gap-5 text-xs text-slate-400 pt-3 border-t border-[#334155]/60">
-            {profile.location && (
+            {displayProfile.location && (
               <div className="flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                <span>{profile.location}</span>
+                <span>{displayProfile.location}</span>
               </div>
             )}
 
-            {profile.website && (
+            {displayProfile.website && (
               <a
-                href={profile.website}
+                href={displayProfile.website}
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center gap-1.5 text-blue-400 hover:underline"
               >
                 <Globe className="w-3.5 h-3.5" />
-                <span>{profile.website.replace(/^https?:\/\//, '')}</span>
+                <span>{displayProfile.website.replace(/^https?:\/\//, '')}</span>
               </a>
             )}
 
             <div className="flex items-center gap-1.5 font-mono text-[11px]">
               <Calendar className="w-3.5 h-3.5" />
-              <span>Joined {new Date(profile.created_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}</span>
+              <span>Joined {new Date(displayProfile.created_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}</span>
             </div>
 
             {/* Clickable Followers & Following Counts */}
@@ -268,7 +269,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               </button>
 
               <span className="text-blue-400">
-                <strong className="text-blue-400 font-bold">▲ {profile.total_votes_received || 0}</strong> Net Votes
+                <strong className="text-blue-400 font-bold">▲ {displayProfile.total_votes_received || 0}</strong> Net Votes
               </span>
             </div>
           </div>
@@ -390,31 +391,31 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             <h4 className="font-bold text-white uppercase tracking-wider mb-1 text-[11px]">
               Full Display Name
             </h4>
-            <p className="text-slate-300 font-semibold">{profile.display_name}</p>
+            <p className="text-slate-300 font-semibold">{displayProfile.display_name}</p>
           </div>
 
           <div>
             <h4 className="font-bold text-white uppercase tracking-wider mb-1 text-[11px]">
               Handle Username
             </h4>
-            <p className="text-blue-400 font-mono">@{profile.username}</p>
+            <p className="text-blue-400 font-mono">@{displayProfile.username}</p>
           </div>
 
-          {profile.bio && (
+          {displayProfile.bio && (
             <div>
               <h4 className="font-bold text-white uppercase tracking-wider mb-1 text-[11px]">
                 Biography
               </h4>
-              <p className="text-slate-300 whitespace-pre-line">{profile.bio}</p>
+              <p className="text-slate-300 whitespace-pre-line">{displayProfile.bio}</p>
             </div>
           )}
 
-          {profile.location && (
+          {displayProfile.location && (
             <div>
               <h4 className="font-bold text-white uppercase tracking-wider mb-1 text-[11px]">
                 Location
               </h4>
-              <p className="text-slate-300">{profile.location}</p>
+              <p className="text-slate-300">{displayProfile.location}</p>
             </div>
           )}
         </div>
