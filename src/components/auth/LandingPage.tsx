@@ -275,7 +275,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 Aether Feed
               </h1>
               <p className="text-xs font-semibold text-blue-400 tracking-wider uppercase font-mono mt-1">
-                by Dlicom SocialFi Eco
+                by Dlicom SocialFi
               </p>
             </div>
 
@@ -669,7 +669,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <p className="flex items-center justify-center gap-1.5">
           <span className="text-slate-400 font-bold">Aether Feed</span>
           <span className="text-slate-600">&bull;</span>
-          <span className="text-blue-400 font-semibold">by Dlicom SocialFi Eco</span>
+          <span className="text-blue-400 font-semibold">by Dlicom SocialFi</span>
         </p>
       </footer>
 

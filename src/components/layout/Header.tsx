@@ -132,7 +132,7 @@ export const Header: React.FC<HeaderProps> = ({
                 Aether Feed
               </span>
               <span className="text-[9px] font-semibold text-blue-400 tracking-wider uppercase block font-mono -mt-0.5">
-                by Dlicom SocialFi Eco
+                by Dlicom SocialFi
               </span>
             </div>
           </button>

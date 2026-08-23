@@ -981,7 +981,7 @@ export function App() {
         <p className="flex items-center justify-center gap-1.5 flex-wrap">
           <span className="font-bold text-white tracking-wide">Aether Feed</span>
           <span className="text-slate-600">&bull;</span>
-          <span className="text-blue-400 font-semibold">by Dlicom SocialFi Eco</span>
+          <span className="text-blue-400 font-semibold">by Dlicom SocialFi</span>
         </p>
       </footer>
 
