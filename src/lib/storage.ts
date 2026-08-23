@@ -2358,20 +2358,28 @@ export const createRealPost = async (data: {
   posts.unshift(newPost);
   setItem(STORAGE_KEYS.POSTS, posts);
 
-  if (data.tagged_users && data.tagged_users.length > 0) {
-    const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-    data.tagged_users.forEach(uname => {
-      const taggedUser = users.find(u => u.username.toLowerCase() === uname.toLowerCase());
-      if (taggedUser && taggedUser.id !== data.authorId) {
-        addNotification({
-          user_id: taggedUser.id,
-          actor_id: data.authorId,
-          post_id: postId,
-          type: 'tag',
-        });
-      }
-    });
+  // Auto-extract @mentions from title, description and tagged_users list
+  const mentionUsernames = new Set<string>();
+  if (data.tagged_users && Array.isArray(data.tagged_users)) {
+    data.tagged_users.forEach(u => mentionUsernames.add(u.toLowerCase().replace('@', '').trim()));
   }
+  const textMatches = (data.description + ' ' + (data.title || '')).match(/@([a-zA-Z0-9_]+)/g);
+  if (textMatches) {
+    textMatches.forEach(m => mentionUsernames.add(m.replace('@', '').toLowerCase().trim()));
+  }
+
+  const allUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  mentionUsernames.forEach(uname => {
+    const taggedUser = allUsers.find(u => u.username.toLowerCase() === uname);
+    if (taggedUser && taggedUser.id !== data.authorId) {
+      addNotification({
+        user_id: taggedUser.id,
+        actor_id: data.authorId,
+        post_id: postId,
+        type: 'tag',
+      });
+    }
+  });
 
   // Direct Server Dispatch
   try {
@@ -2892,6 +2900,12 @@ export const addNotification = (item: {
     } else if (item.type === 'new_post') {
       notifTitle = 'New Artwork Broadcast 🎨';
       notifBody = `${actorName} shared a new post.`;
+    } else if (item.type === 'dm') {
+      notifTitle = 'New Direct Message 💬';
+      notifBody = `${actorName} sent you a direct message.`;
+    } else if (item.type === 'tag' || item.type === 'mention') {
+      notifTitle = 'You were mentioned! @';
+      notifBody = `${actorName} mentioned/tagged you in a message.`;
     }
 
     sendNativePushNotification(notifTitle, notifBody, actor?.avatar_url || '/logo.jpg');
@@ -3749,6 +3763,22 @@ export const sendVipChatMessage = async (data: {
   // 1. Instant Realtime Broadcast to all connected clients
   broadcastRealtimeEvent('new_vip_message', newMsg);
 
+  // Auto-extract @mentions in chat text and create notifications
+  const chatMentions = data.text.match(/@([a-zA-Z0-9_]+)/g);
+  if (chatMentions) {
+    const mentionedUsernames = new Set(chatMentions.map(m => m.replace('@', '').toLowerCase().trim()));
+    mentionedUsernames.forEach(uname => {
+      const mentionedUser = users.find(u => u.username.toLowerCase() === uname);
+      if (mentionedUser && mentionedUser.id !== data.user_id) {
+        addNotification({
+          user_id: mentionedUser.id,
+          actor_id: data.user_id,
+          type: 'mention',
+        });
+      }
+    });
+  }
+
   // 2. Persist to Supabase
   const supabase = getSupabaseClient();
   if (supabase) {
@@ -3834,6 +3864,11 @@ export const addPostComment = async (
   const author = users.find(u => u.id === userId);
   if (!author) return null;
 
+  const restriction = isUserPostingRestricted(author);
+  if (restriction.restricted) {
+    throw new Error(restriction.reason || 'You are restricted from posting comments.');
+  }
+
   const comments = getItem<PostComment[]>(STORAGE_KEYS.POST_COMMENTS, []);
   const commentId = `comment_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
@@ -3879,6 +3914,23 @@ export const addPostComment = async (
         actor_id: userId,
         post_id: postId,
         type: 'comment',
+      });
+    }
+
+    // Auto-extract @mentions in comment text
+    const commentMentions = cleanText.match(/@([a-zA-Z0-9_]+)/g);
+    if (commentMentions) {
+      const mentionedUsernames = new Set(commentMentions.map(m => m.replace('@', '').toLowerCase().trim()));
+      mentionedUsernames.forEach(uname => {
+        const mentionedUser = users.find(u => u.username.toLowerCase() === uname);
+        if (mentionedUser && mentionedUser.id !== userId && mentionedUser.id !== (posts[pIdx]?.user_id) && mentionedUser.id !== replyToUserId) {
+          addNotification({
+            user_id: mentionedUser.id,
+            actor_id: userId,
+            post_id: postId,
+            type: 'tag',
+          });
+        }
       });
     }
   }
@@ -4069,6 +4121,17 @@ export const getDmConversations = (currentUserId: string): Array<{
   return list.sort((a, b) => new Date(b.lastMessage.created_at).getTime() - new Date(a.lastMessage.created_at).getTime());
 };
 
+export const getTotalUnreadDmCount = (currentUserId: string): number => {
+  const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
+  const deletedForMe = new Set(getItem<string[]>(STORAGE_KEYS.DELETED_DM_MSG_IDS, []));
+  return dms.filter(m =>
+    !deletedForMe.has(m.id) &&
+    !m.is_deleted &&
+    m.receiver_id === currentUserId &&
+    !m.is_read
+  ).length;
+};
+
 export const sendDirectMessage = async (
   senderId: string,
   receiverId: string,
@@ -4107,7 +4170,14 @@ export const sendDirectMessage = async (
   // 1. Instant Realtime Broadcast to receiver
   broadcastRealtimeEvent('new_direct_message', newDm);
 
-  // 2. Sync to Supabase Cloud DB
+  // 2. Create in-app notification for receiver so it shows in Bell flyout
+  addNotification({
+    user_id: receiverId,
+    actor_id: senderId,
+    type: 'dm',
+  });
+
+  // 3. Sync to Supabase Cloud DB
   const supabase = getSupabaseClient();
   if (supabase) {
     supabase.from('direct_messages').upsert({
@@ -4140,6 +4210,19 @@ export const markDirectMessagesAsRead = async (
       hasChanges = true;
     }
   });
+
+  // Also mark any 'dm' type notifications from this contact as read
+  const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  let notifChanged = false;
+  notifs.forEach(n => {
+    if (n.user_id === currentUserId && n.actor_id === contactUserId && n.type === 'dm' && !n.is_read) {
+      n.is_read = true;
+      notifChanged = true;
+    }
+  });
+  if (notifChanged) {
+    setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
+  }
 
   if (hasChanges) {
     setItem(STORAGE_KEYS.DIRECT_MESSAGES, dms);

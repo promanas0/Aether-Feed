@@ -20,6 +20,7 @@ import { VerifiedBadge } from '../ui/VerifiedBadge';
 interface LeftSidebarProps {
   currentUser: Profile;
   activeView: ActiveView;
+  unreadDmCount?: number;
   onViewChange: (view: ActiveView) => void;
   onOpenMyProfile: () => void;
   onOpenSettings: () => void;
@@ -32,6 +33,7 @@ interface LeftSidebarProps {
 export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   currentUser,
   activeView,
+  unreadDmCount = 0,
   onViewChange,
   onOpenMyProfile,
   onOpenSettings,
@@ -98,6 +100,11 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
             >
               <Icon className="w-4 h-4 shrink-0" />
               <span className="flex-1">{item.label}</span>
+              {item.id === 'dms' && unreadDmCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-blue-500 text-white font-mono text-[10px] font-bold shadow-glow-sm animate-pulse">
+                  {unreadDmCount > 99 ? '99+' : unreadDmCount}
+                </span>
+              )}
             </button>
           );
         })}

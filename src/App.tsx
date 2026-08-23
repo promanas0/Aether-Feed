@@ -27,7 +27,8 @@ import {
   togglePinHomePost,
   togglePinProfilePost,
   isUserAdmin,
-  isUserPostingRestricted
+  isUserPostingRestricted,
+  getTotalUnreadDmCount
 } from './lib/storage';
 import type { 
   Profile, 
@@ -91,6 +92,7 @@ export function App() {
   const [posts, setPosts] = useState<Post[]>(() => getRealPosts());
   const [votes, setVotes] = useState(() => getVotesList());
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadDmCount, setUnreadDmCount] = useState<number>(0);
   const [leaderboard, setLeaderboard] = useState(() => getRealLeaderboard());
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getThemeMode());
 
@@ -145,8 +147,10 @@ export function App() {
     setThemeModeState(getThemeMode());
     if (user) {
       setNotifications(getNotificationsForRealUser(user.id));
+      setUnreadDmCount(getTotalUnreadDmCount(user.id));
     } else {
       setNotifications([]);
+      setUnreadDmCount(0);
     }
     // Keep selectedProfile in sync with latest user data if viewing a profile
     setSelectedProfile((prev) => {
@@ -612,6 +616,17 @@ export function App() {
             onSelectPostFromSearch={(post) => {
               setDetailsPost(post);
             }}
+            onOpenDms={(contactId) => {
+              if (contactId) setDmRecipientId(contactId);
+              setActiveView('dms');
+              setSelectedProfile(null);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onOpenChat={() => {
+              setActiveView('chat');
+              setSelectedProfile(null);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
           />
 
           {/* Banned User Global Sticky Alert Banner */}
@@ -650,6 +665,7 @@ export function App() {
             <LeftSidebar
               currentUser={currentUser}
               activeView={activeView}
+              unreadDmCount={unreadDmCount}
               onViewChange={(v) => {
                 if (v === 'dms') {
                   setDmRecipientId(null);
@@ -945,6 +961,7 @@ export function App() {
       <MobileBottomNav
         currentUser={currentUser}
         activeView={activeView}
+        unreadDmCount={unreadDmCount}
         onViewChange={(v) => {
           if (v === 'dms') {
             setDmRecipientId(null);

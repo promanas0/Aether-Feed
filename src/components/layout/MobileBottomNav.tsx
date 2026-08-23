@@ -6,6 +6,7 @@ import { isUserAdmin } from '../../lib/storage';
 interface MobileBottomNavProps {
   currentUser: Profile;
   activeView: ActiveView;
+  unreadDmCount?: number;
   onViewChange: (view: ActiveView) => void;
   onOpenMyProfile: () => void;
   onOpenCreateModal: () => void;
@@ -14,6 +15,7 @@ interface MobileBottomNavProps {
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   currentUser,
   activeView,
+  unreadDmCount = 0,
   onViewChange,
   onOpenMyProfile,
   onOpenCreateModal,
@@ -40,14 +42,21 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       {/* Direct Messages */}
       <button
         onClick={() => onViewChange('dms')}
-        className={`flex flex-col items-center justify-center py-1 px-2 rounded-2xl transition-all active:scale-90 ${
+        className={`relative flex flex-col items-center justify-center py-1 px-2 rounded-2xl transition-all active:scale-90 ${
           activeView === 'dms'
             ? 'text-blue-400 font-bold'
             : 'text-slate-400 hover:text-white'
         }`}
         title="Direct Messages"
       >
-        <Send className={`w-5 h-5 ${activeView === 'dms' ? 'stroke-[2.5]' : 'stroke-2'}`} />
+        <div className="relative">
+          <Send className={`w-5 h-5 ${activeView === 'dms' ? 'stroke-[2.5]' : 'stroke-2'}`} />
+          {unreadDmCount > 0 && (
+            <span className="absolute -top-1 -right-2 px-1 min-w-[15px] h-3.5 rounded-full bg-blue-500 text-white font-mono text-[9px] font-bold flex items-center justify-center shadow-glow-sm animate-pulse">
+              {unreadDmCount > 99 ? '99+' : unreadDmCount}
+            </span>
+          )}
+        </div>
         <span className="text-[10px] mt-0.5 font-medium">DMs</span>
       </button>
 

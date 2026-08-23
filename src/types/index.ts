@@ -74,7 +74,7 @@ export interface NotificationItem {
   user_id: string; // Recipient
   actor_id: string; // Sender / poster / voter / follower
   post_id?: string;
-  type: 'new_post' | 'vote_up' | 'vote_down' | 'follow' | 'tag' | 'comment';
+  type: 'new_post' | 'vote_up' | 'vote_down' | 'follow' | 'tag' | 'comment' | 'dm' | 'mention';
   is_read: boolean;
   created_at: string;
   actor?: Profile;

@@ -42,6 +42,8 @@ interface HeaderProps {
   onClearReadNotifications?: () => void;
   onSelectPostFromNotif: (postId: string) => void;
   onSelectPostFromSearch?: (post: Post) => void;
+  onOpenDms?: (userId?: string) => void;
+  onOpenChat?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -64,6 +66,8 @@ export const Header: React.FC<HeaderProps> = ({
   onClearReadNotifications,
   onSelectPostFromNotif,
   onSelectPostFromSearch,
+  onOpenDms,
+  onOpenChat,
 }) => {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -324,6 +328,8 @@ export const Header: React.FC<HeaderProps> = ({
               onMarkAllRead={onMarkAllNotificationsRead}
               onClearRead={onClearReadNotifications}
               onSelectPost={onSelectPostFromNotif}
+              onOpenDms={onOpenDms}
+              onOpenChat={onOpenChat}
             />
           </div>
 

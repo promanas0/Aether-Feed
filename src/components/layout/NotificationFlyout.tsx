@@ -13,7 +13,9 @@ import {
   Smartphone,
   CheckCheck,
   MessageSquare,
-  Sparkles
+  Sparkles,
+  Send,
+  AtSign
 } from 'lucide-react';
 import type { NotificationItem } from '../../types';
 import { 
@@ -30,6 +32,8 @@ interface NotificationFlyoutProps {
   onMarkAllRead: () => void;
   onClearRead?: () => void;
   onSelectPost: (postId: string) => void;
+  onOpenDms?: (userId?: string) => void;
+  onOpenChat?: () => void;
 }
 
 const formatTimeAgo = (dateStr: string): string => {
@@ -50,6 +54,8 @@ export const NotificationFlyout: React.FC<NotificationFlyoutProps> = ({
   onMarkAllRead,
   onClearRead,
   onSelectPost,
+  onOpenDms,
+  onOpenChat,
 }) => {
   const [filterMode, setFilterMode] = useState<'all' | 'unread'>('all');
   const [pushStatus, setPushStatus] = useState<'granted' | 'denied' | 'default' | 'unsupported'>('default');
@@ -187,8 +193,14 @@ export const NotificationFlyout: React.FC<NotificationFlyoutProps> = ({
                     if (!n.is_read) {
                       markNotificationAsRead(n.id);
                     }
-                    if (n.post_id) {
+                    if (n.type === 'dm' && onOpenDms) {
+                      onOpenDms(n.actor_id);
+                      onClose();
+                    } else if (n.post_id) {
                       onSelectPost(n.post_id);
+                      onClose();
+                    } else if ((n.type === 'tag' || n.type === 'mention') && onOpenChat) {
+                      onOpenChat();
                       onClose();
                     }
                   }}
@@ -208,6 +220,8 @@ export const NotificationFlyout: React.FC<NotificationFlyoutProps> = ({
                       {n.type === 'vote_down' && <ChevronDown className="w-2.5 h-2.5 stroke-[3]" />}
                       {n.type === 'follow' && <UserPlus className="w-2.5 h-2.5 stroke-[2.5]" />}
                       {n.type === 'tag' && <Tag className="w-2.5 h-2.5 stroke-[2.5]" />}
+                      {n.type === 'mention' && <AtSign className="w-2.5 h-2.5 stroke-[2.5]" />}
+                      {n.type === 'dm' && <Send className="w-2.5 h-2.5 stroke-[2.5]" />}
                       {n.type === 'new_post' && <FileImage className="w-2.5 h-2.5 stroke-[2.5]" />}
                       {n.type === 'comment' && <MessageSquare className="w-2.5 h-2.5 stroke-[2.5]" />}
                     </div>
@@ -217,12 +231,14 @@ export const NotificationFlyout: React.FC<NotificationFlyoutProps> = ({
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-slate-200 leading-snug">
                       <span className="font-bold text-white hover:underline">
-                        {n.actor?.display_name || 'Aether Curator'}
+                        {n.actor?.display_name || 'Aether Member'}
                       </span>{' '}
                       {n.type === 'vote_up' && <span className="text-slate-300">upvoted your artwork</span>}
                       {n.type === 'vote_down' && <span className="text-slate-300">voted on your artwork</span>}
                       {n.type === 'follow' && <span className="text-slate-300">started following your profile</span>}
-                      {n.type === 'tag' && <span className="text-slate-300">tagged you in an artwork</span>}
+                      {n.type === 'tag' && <span className="text-slate-300">tagged you in a post/comment</span>}
+                      {n.type === 'mention' && <span className="text-slate-300">mentioned you in a message</span>}
+                      {n.type === 'dm' && <span className="text-slate-300">sent you a direct message</span>}
                       {n.type === 'new_post' && <span className="text-slate-300">broadcasted a new artwork</span>}
                       {n.type === 'comment' && <span className="text-slate-300">commented / replied to your post</span>}
                     </p>
