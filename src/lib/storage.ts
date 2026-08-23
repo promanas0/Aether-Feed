@@ -192,10 +192,12 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
       username: profile.username || '',
       avatar_url: profile.avatar_url || DEFAULT_DLICOM_AVATAR,
       banner_url: profile.banner_url || '',
+      banner_size: profile.banner_size || 'standard',
       bio: profile.bio || '',
       is_verified: profile.is_verified ?? true,
       is_golden_verified: profile.is_golden_verified ?? false,
       is_admin: profile.is_admin ?? false,
+      updated_at: profile.updated_at || new Date().toISOString(),
       created_at: profile.created_at || new Date().toISOString(),
     };
 
@@ -602,7 +604,20 @@ export const syncWithServer = async (): Promise<boolean> => {
               } else {
                 const localUpdated = localU.updated_at ? new Date(localU.updated_at).getTime() : 0;
                 const supaUpdated = su.updated_at ? new Date(su.updated_at).getTime() : 0;
-                const preferLocal = localUpdated >= supaUpdated;
+                const preferLocal = localUpdated > supaUpdated;
+
+                // Smart banner reconciliation: If su has banner and local doesn't, pick su banner
+                const resolvedBannerUrl = (!localU.banner_url && su.banner_url)
+                  ? su.banner_url
+                  : (preferLocal
+                      ? (localU.banner_url !== undefined ? localU.banner_url : (su.banner_url || ''))
+                      : (su.banner_url !== undefined ? su.banner_url : (localU.banner_url || '')));
+
+                const resolvedBannerSize = (!localU.banner_size && su.banner_size)
+                  ? su.banner_size
+                  : (preferLocal
+                      ? (localU.banner_size || su.banner_size || 'standard')
+                      : (su.banner_size || localU.banner_size || 'standard'));
 
                 const suProfile: Profile = {
                   ...su,
@@ -612,8 +627,8 @@ export const syncWithServer = async (): Promise<boolean> => {
                     first_name: localU.first_name ?? su.first_name,
                     last_name: localU.last_name ?? su.last_name,
                     avatar_url: localU.avatar_url || su.avatar_url,
-                    banner_url: localU.banner_url !== undefined ? localU.banner_url : (su.banner_url || ''),
-                    banner_size: localU.banner_size || su.banner_size || 'standard',
+                    banner_url: resolvedBannerUrl,
+                    banner_size: resolvedBannerSize,
                     bio: localU.bio !== undefined ? localU.bio : (su.bio || ''),
                     location: localU.location !== undefined ? localU.location : (su.location || ''),
                     website: localU.website !== undefined ? localU.website : (su.website || ''),
@@ -622,8 +637,8 @@ export const syncWithServer = async (): Promise<boolean> => {
                     first_name: su.first_name ?? localU.first_name,
                     last_name: su.last_name ?? localU.last_name,
                     avatar_url: su.avatar_url || localU.avatar_url,
-                    banner_url: su.banner_url !== undefined ? su.banner_url : (localU.banner_url || ''),
-                    banner_size: su.banner_size || localU.banner_size || 'standard',
+                    banner_url: resolvedBannerUrl,
+                    banner_size: resolvedBannerSize,
                     bio: su.bio !== undefined ? su.bio : (localU.bio || ''),
                     location: su.location !== undefined ? su.location : (localU.location || ''),
                     website: su.website !== undefined ? su.website : (localU.website || ''),

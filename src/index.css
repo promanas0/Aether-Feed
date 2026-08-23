@@ -71,6 +71,23 @@ html.light .bg-\[\#1E293B\]\/80 {
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
 }
 
+/* YouTube Description Box & Nested Accent Cards in Light Mode */
+html.light .bg-\[\#131E3A\],
+html.light .bg-\[\#131E3A\]\/70,
+html.light .bg-\[\#131E3A\]\/80,
+html.light .bg-\[\#131E3A\]\/90 {
+  background-color: #F1F5F9 !important;
+  border-color: #E2E8F0 !important;
+}
+
+html.light .hover\:bg-\[\#131E3A\]:hover {
+  background-color: #E2E8F0 !important;
+}
+
+html.light .hover\:border-slate-600:hover {
+  border-color: #CBD5E1 !important;
+}
+
 html.light .bg-\[\#0B132B\] {
   background-color: #F8FAFC !important;
   border-color: #E2E8F0 !important;

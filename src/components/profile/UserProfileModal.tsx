@@ -40,6 +40,12 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 src={profile.banner_url}
                 alt="Cover Banner"
                 className="w-full h-full object-cover"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (profile.banner_url && !profile.banner_url.startsWith('http') && !profile.banner_url.startsWith('/') && !profile.banner_url.startsWith('data:')) {
+                    target.src = '/' + profile.banner_url;
+                  }
+                }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#1E293B]/70 via-transparent to-black/30 pointer-events-none" />
             </>

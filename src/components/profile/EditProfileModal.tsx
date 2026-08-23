@@ -207,6 +207,35 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                 </div>
               </div>
 
+              {/* Quick Founder Presets */}
+              <div className="px-3.5 py-2 bg-[#0B132B]/90 border-b border-[#334155] flex flex-wrap items-center justify-between gap-1.5">
+                <span className="text-[10px] font-mono text-slate-400">Founder Banners:</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setBannerUrl('/official_founder_banner.jpg')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all cursor-pointer ${
+                      bannerUrl === '/official_founder_banner.jpg'
+                        ? 'bg-blue-600 text-white border-blue-400 shadow-glow-sm'
+                        : 'bg-[#1C2541] text-slate-300 border-slate-700 hover:border-slate-500'
+                    }`}
+                  >
+                    Nexus v1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBannerUrl('/official_founder_banner_v2.jpg')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all cursor-pointer ${
+                      bannerUrl === '/official_founder_banner_v2.jpg'
+                        ? 'bg-blue-600 text-white border-blue-400 shadow-glow-sm'
+                        : 'bg-[#1C2541] text-slate-300 border-slate-700 hover:border-slate-500'
+                    }`}
+                  >
+                    Monarch v2
+                  </button>
+                </div>
+              </div>
+
               {/* Avatar Floating in Corner */}
               <div className="p-3 bg-[#1E293B] flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 -mt-10 sm:-mt-12">

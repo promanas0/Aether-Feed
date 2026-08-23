@@ -128,6 +128,12 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 src={displayProfile.banner_url}
                 alt="Cover Banner"
                 className="w-full h-full object-cover"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (displayProfile.banner_url && !displayProfile.banner_url.startsWith('http') && !displayProfile.banner_url.startsWith('/') && !displayProfile.banner_url.startsWith('data:')) {
+                    target.src = '/' + displayProfile.banner_url;
+                  }
+                }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#1E293B]/70 via-transparent to-black/20 pointer-events-none" />
             </>
