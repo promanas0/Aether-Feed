@@ -23,6 +23,8 @@ const STORAGE_KEYS = {
   DELETED_DM_MSG_IDS: 'aether_deleted_dm_msg_ids_v4',
   DELETED_NOTIFICATION_IDS: 'aether_deleted_notification_ids_v4',
   BANNED_USER_IDS: 'aether_banned_user_ids_v4',
+  GOLDEN_VERIFIED_USER_IDS: 'aether_golden_verified_user_ids_v4',
+  REVOKED_GOLDEN_USER_IDS: 'aether_revoked_golden_user_ids_v4',
 };
 
 // Cross-tab instant broadcast channel
@@ -587,16 +589,23 @@ export const syncWithServer = async (): Promise<boolean> => {
 
             const mergedUserMap = new Map<string, Profile>();
 
+            const goldenUserIds = new Set(getItem<string[]>(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, []));
+            const revokedGoldenUserIds = new Set(getItem<string[]>(STORAGE_KEYS.REVOKED_GOLDEN_USER_IDS, []));
+
             cleanSupaUsers.forEach((su: any) => {
               const localU = localUserMap.get(su.id);
               if (!localU) {
+                let suGolden = su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : false;
+                if (goldenUserIds.has(su.id)) suGolden = true;
+                if (revokedGoldenUserIds.has(su.id)) suGolden = false;
+
                 const suProfile: Profile = {
                   ...su,
                   banner_url: su.banner_url || '',
                   banner_size: su.banner_size || 'standard',
                   followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : [],
                   following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : [],
-                  is_golden_verified: su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : false,
+                  is_golden_verified: suGolden,
                   is_admin: su.is_admin !== undefined ? Boolean(su.is_admin) : false,
                   is_verified: su.is_verified !== undefined ? Boolean(su.is_verified) : true,
                 };
@@ -618,6 +627,33 @@ export const syncWithServer = async (): Promise<boolean> => {
                   : (preferLocal
                       ? (localU.banner_size || su.banner_size || 'standard')
                       : (su.banner_size || localU.banner_size || 'standard'));
+
+                let resolvedGolden: boolean;
+                if (goldenUserIds.has(su.id)) {
+                  resolvedGolden = true;
+                } else if (revokedGoldenUserIds.has(su.id)) {
+                  resolvedGolden = false;
+                } else if (preferLocal) {
+                  resolvedGolden = localU.is_golden_verified !== undefined ? Boolean(localU.is_golden_verified) : Boolean(su.is_golden_verified);
+                } else {
+                  resolvedGolden = su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : Boolean(localU.is_golden_verified);
+                }
+
+                const resolvedVerified = preferLocal
+                  ? (localU.is_verified !== undefined ? Boolean(localU.is_verified) : Boolean(su.is_verified))
+                  : (su.is_verified !== undefined ? Boolean(su.is_verified) : Boolean(localU.is_verified));
+
+                const resolvedAdmin = preferLocal
+                  ? (localU.is_admin !== undefined ? Boolean(localU.is_admin) : Boolean(su.is_admin))
+                  : (su.is_admin !== undefined ? Boolean(su.is_admin) : Boolean(localU.is_admin));
+
+                const resolvedBanned = preferLocal
+                  ? (localU.is_banned !== undefined ? Boolean(localU.is_banned) : Boolean(su.is_banned))
+                  : (su.is_banned !== undefined ? Boolean(su.is_banned) : Boolean(localU.is_banned));
+
+                const resolvedTimeout = preferLocal
+                  ? (localU.posting_timeout_until !== undefined ? localU.posting_timeout_until : (su.posting_timeout_until || null))
+                  : (su.posting_timeout_until !== undefined ? su.posting_timeout_until : (localU.posting_timeout_until || null));
 
                 const suProfile: Profile = {
                   ...su,
@@ -645,9 +681,11 @@ export const syncWithServer = async (): Promise<boolean> => {
                   }),
                   followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : localU.followers || [],
                   following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : localU.following || [],
-                  is_golden_verified: su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : Boolean(localU.is_golden_verified),
-                  is_admin: su.is_admin !== undefined ? Boolean(su.is_admin) : Boolean(localU.is_admin),
-                  is_verified: su.is_verified !== undefined ? Boolean(su.is_verified) : Boolean(localU.is_verified),
+                  is_golden_verified: resolvedGolden,
+                  is_verified: resolvedVerified,
+                  is_admin: resolvedAdmin,
+                  is_banned: resolvedBanned,
+                  posting_timeout_until: resolvedTimeout,
                 };
 
                 mergedUserMap.set(suProfile.id, suProfile);
@@ -1089,6 +1127,30 @@ export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => vo
             posts[idx].is_pinned_profile = payload.is_pinned_profile;
           }
           setItem(STORAGE_KEYS.POSTS, posts);
+          window.dispatchEvent(new Event('aether_storage_sync'));
+          onSyncNeeded();
+        }
+      })
+      .on('broadcast', { event: 'user_golden_updated' }, ({ payload }) => {
+        if (!payload || !payload.userId) return;
+        const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+        const idx = users.findIndex(u => u.id === payload.userId);
+        if (idx !== -1) {
+          users[idx].is_golden_verified = Boolean(payload.is_golden);
+          setItem(STORAGE_KEYS.REAL_USERS, users);
+
+          const goldenList = getItem<string[]>(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, []);
+          const revokedList = getItem<string[]>(STORAGE_KEYS.REVOKED_GOLDEN_USER_IDS, []);
+          if (payload.is_golden) {
+            if (!goldenList.includes(payload.userId)) goldenList.push(payload.userId);
+            setItem(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, goldenList);
+            setItem(STORAGE_KEYS.REVOKED_GOLDEN_USER_IDS, revokedList.filter(id => id !== payload.userId));
+          } else {
+            if (!revokedList.includes(payload.userId)) revokedList.push(payload.userId);
+            setItem(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, goldenList.filter(id => id !== payload.userId));
+            setItem(STORAGE_KEYS.REVOKED_GOLDEN_USER_IDS, revokedList);
+          }
+
           window.dispatchEvent(new Event('aether_storage_sync'));
           onSyncNeeded();
         }
@@ -2600,8 +2662,27 @@ export const adminToggleGoldenVerifyUser = async (targetUserId: string, actorEma
 
   users[idx] = updatedUser;
   setItem(STORAGE_KEYS.REAL_USERS, users);
+
+  // Maintain persistent Admin verification override list
+  const goldenList = getItem<string[]>(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, []);
+  const revokedList = getItem<string[]>(STORAGE_KEYS.REVOKED_GOLDEN_USER_IDS, []);
+
+  if (nextGolden) {
+    if (!goldenList.includes(targetUserId)) goldenList.push(targetUserId);
+    const cleanRevoked = revokedList.filter(id => id !== targetUserId);
+    setItem(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, goldenList);
+    setItem(STORAGE_KEYS.REVOKED_GOLDEN_USER_IDS, cleanRevoked);
+  } else {
+    const cleanGolden = goldenList.filter(id => id !== targetUserId);
+    if (!revokedList.includes(targetUserId)) revokedList.push(targetUserId);
+    setItem(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, cleanGolden);
+    setItem(STORAGE_KEYS.REVOKED_GOLDEN_USER_IDS, revokedList);
+  }
+
+  // Real-time broadcast to all connected devices/tabs
+  broadcastRealtimeEvent('user_golden_updated', { userId: targetUserId, is_golden: nextGolden });
+
   await saveProfileToCloud(updatedUser);
-  await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
   if (syncChannel) syncChannel.postMessage('sync');
   return updatedUser;
