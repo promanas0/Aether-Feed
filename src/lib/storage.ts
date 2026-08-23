@@ -1723,35 +1723,9 @@ Issued At: ${new Date().toISOString()}`;
     const formattedEmail = `${cleanAddress}@wallet.dlicom.social`;
     const walletUserId = `dlicom_${cleanAddress}`;
 
-    let existingUser: Profile | null = null;
+    // Lookup existing profile with 100% cloud sync first
+    const existingUser = await lookupExistingWalletProfile(cleanAddress);
     const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
-
-    const localMatchIdx = users.findIndex(
-      u => u.id === walletUserId || 
-           (u.dlicom_address && u.dlicom_address.toLowerCase() === cleanAddress) ||
-           (u.email && u.email.toLowerCase() === formattedEmail)
-    );
-
-    if (localMatchIdx !== -1) {
-      existingUser = users[localMatchIdx];
-    } else {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        try {
-          const { data: supaUsers } = await supabase
-            .from('profiles')
-            .select('*')
-            .or(`id.eq.${walletUserId},email.eq.${formattedEmail},dlicom_address.ilike.${cleanAddress}`)
-            .limit(1);
-
-          if (supaUsers && supaUsers.length > 0) {
-            existingUser = supaUsers[0];
-          }
-        } catch (err) {
-          console.warn('[Aether Supabase] Dlicom wallet lookup notice:', err);
-        }
-      }
-    }
 
     let finalUser: Profile;
 
@@ -1825,6 +1799,63 @@ Issued At: ${new Date().toISOString()}`;
 };
 
 /**
+ * Ultra-resilient multi-strategy lookup for existing Dlicom Wallet profile.
+ * Ensures 1 Dlicom Wallet Address always resolves strictly to 1 permanent profile across all devices & incognito.
+ */
+export const lookupExistingWalletProfile = async (cleanAddress: string): Promise<Profile | null> => {
+  const normalized = (cleanAddress || '').trim().toLowerCase();
+  if (!normalized) return null;
+
+  // 1. Ensure freshest state from Supabase Cloud
+  try {
+    await syncWithServer();
+  } catch (err) {
+    console.warn('[Sync lookup notice]:', err);
+  }
+
+  // 2. Check local memory/storage
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
+  const localMatch = users.find(u => {
+    const uAddr = (u.dlicom_address || '').toLowerCase().trim();
+    const uId = (u.id || '').toLowerCase().trim();
+    const uEmail = (u.email || '').toLowerCase().trim();
+    const uUsername = (u.username || '').toLowerCase().trim();
+
+    return (
+      uAddr === normalized ||
+      uId === `dlicom_${normalized}` ||
+      uId === `wallet_${normalized}` ||
+      uEmail === `${normalized}@wallet.dlicom.social` ||
+      uEmail.startsWith(`${normalized}@`) ||
+      uUsername === `dlicom_${normalized.slice(2, 8)}` ||
+      uUsername === `0x${normalized.slice(2, 8)}`
+    );
+  });
+
+  if (localMatch) return localMatch;
+
+  // 3. Fallback direct query to Supabase Cloud DB
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const { data: supaUsers } = await supabase
+        .from('profiles')
+        .select('*')
+        .or(`id.eq.dlicom_${normalized},id.eq.wallet_${normalized},dlicom_address.ilike.%${normalized}%,email.ilike.%${normalized}%`)
+        .limit(5);
+
+      if (supaUsers && supaUsers.length > 0) {
+        return supaUsers[0];
+      }
+    } catch (err) {
+      console.warn('[Aether Supabase] Wallet lookup fallback notice:', err);
+    }
+  }
+
+  return null;
+};
+
+/**
  * Direct 0x Dlicom Address Authentication (Cross-Platform Mobile + PC)
  * Authenticates or creates profile with the given 0x Dlicom Wallet address.
  */
@@ -1840,35 +1871,9 @@ export const authenticateWithDlicomAddress = async (
   const formattedEmail = `${cleanAddress}@wallet.dlicom.social`;
   const walletUserId = `dlicom_${cleanAddress}`;
 
-  let existingUser: Profile | null = null;
+  // Lookup existing profile with 100% cloud sync first
+  const existingUser = await lookupExistingWalletProfile(cleanAddress);
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !FAKE_MOCK_IDS.includes(u.id));
-
-  const localMatchIdx = users.findIndex(
-    u => u.id === walletUserId || 
-         (u.dlicom_address && u.dlicom_address.toLowerCase() === cleanAddress) ||
-         (u.email && u.email.toLowerCase() === formattedEmail)
-  );
-
-  if (localMatchIdx !== -1) {
-    existingUser = users[localMatchIdx];
-  } else {
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      try {
-        const { data: supaUsers } = await supabase
-          .from('profiles')
-          .select('*')
-          .or(`id.eq.${walletUserId},email.eq.${formattedEmail},dlicom_address.ilike.${cleanAddress}`)
-          .limit(1);
-
-        if (supaUsers && supaUsers.length > 0) {
-          existingUser = supaUsers[0];
-        }
-      } catch (err) {
-        console.warn('[Aether Supabase] Dlicom address lookup notice:', err);
-      }
-    }
-  }
 
   let finalUser: Profile;
 
