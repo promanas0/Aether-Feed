@@ -117,11 +117,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               type="button"
               onClick={handleWalletAuth}
               disabled={isConnectingWallet}
-              className="w-full flex items-center justify-center gap-2.5 py-3 px-4 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black rounded-xl text-xs shadow-[0_0_15px_rgba(245,158,11,0.35)] transition-all active:scale-95 cursor-pointer border border-amber-300/60"
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0B132B] hover:bg-[#2A3756] border border-blue-500/50 hover:border-blue-400 text-white rounded-xl text-xs font-bold shadow-glow-sm transition-all active:scale-95 cursor-pointer group"
             >
-              <Wallet className="w-4 h-4 text-slate-950 stroke-[2.5]" />
-              <span>{isConnectingWallet ? 'Connecting Wallet...' : 'Connect Web3 Wallet (1-Click Login)'}</span>
-              <Sparkles className="w-3 h-3 text-amber-900" />
+              <Wallet className="w-4 h-4 text-blue-400 group-hover:text-blue-300 transition-colors" />
+              <span>{isConnectingWallet ? 'Connecting...' : 'Connect Web3 Wallet'}</span>
             </button>
 
             <div className="flex items-center gap-3 my-3">

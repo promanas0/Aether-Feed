@@ -360,11 +360,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 type="button"
                 onClick={handleWeb3WalletConnect}
                 disabled={isConnectingWallet}
-                className="w-full flex items-center justify-center gap-2.5 py-3.5 px-6 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black rounded-2xl text-sm shadow-[0_0_20px_rgba(245,158,11,0.4)] hover:shadow-[0_0_25px_rgba(245,158,11,0.6)] transition-all active:scale-95 cursor-pointer border border-amber-300/60"
+                className="w-full flex items-center justify-center gap-2 py-3.5 px-6 bg-[#1C2541] hover:bg-[#2A3756] text-white border border-blue-500/50 hover:border-blue-400 rounded-2xl text-sm font-bold shadow-glow-sm transition-all active:scale-95 cursor-pointer group"
               >
-                <Wallet className="w-4 h-4 text-slate-950 stroke-[2.5]" />
-                <span>{isConnectingWallet ? 'Connecting Wallet...' : 'Connect Web3 Wallet (MetaMask / EVM)'}</span>
-                <Sparkles className="w-3.5 h-3.5 text-amber-900 ml-0.5" />
+                <Wallet className="w-4 h-4 text-blue-400 group-hover:text-blue-300 transition-colors" />
+                <span>{isConnectingWallet ? 'Connecting Wallet...' : 'Connect Web3 Wallet'}</span>
               </button>
 
               {/* Clean Divider */}
@@ -420,10 +419,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 type="button"
                 onClick={handleWeb3WalletConnect}
                 disabled={isConnectingWallet}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/50 text-amber-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0B132B] hover:bg-[#2A3756] border border-blue-500/40 text-blue-300 hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer group"
               >
-                <Wallet className="w-3.5 h-3.5 text-amber-400" />
-                <span>{isConnectingWallet ? 'Connecting...' : '1-Click Web3 Wallet Login'}</span>
+                <Wallet className="w-3.5 h-3.5 text-blue-400 group-hover:text-blue-300 transition-colors" />
+                <span>{isConnectingWallet ? 'Connecting...' : 'Connect Web3 Wallet'}</span>
               </button>
             </div>
 
