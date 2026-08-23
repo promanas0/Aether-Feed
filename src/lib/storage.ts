@@ -801,6 +801,7 @@ export const syncWithServer = async (): Promise<boolean> => {
 
           // G. Pull direct messages from Supabase
           try {
+            const deletedDmIds = new Set(getItem<string[]>(STORAGE_KEYS.DELETED_DM_MSG_IDS, []));
             const { data: supaDms } = await supabase
               .from('direct_messages')
               .select('*')
@@ -809,16 +810,31 @@ export const syncWithServer = async (): Promise<boolean> => {
             if (supaDms && Array.isArray(supaDms)) {
               const localDms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
               const dmMap = new Map<string, DirectMessage>();
-              supaDms.forEach((d: any) => dmMap.set(d.id, d));
-              localDms.forEach(d => {
-                if (!dmMap.has(d.id)) dmMap.set(d.id, d);
+
+              supaDms.forEach((d: any) => {
+                if (!deletedDmIds.has(d.id) && !d.is_deleted) {
+                  dmMap.set(d.id, d);
+                }
               });
+
+              // Only preserve recent local DMs (< 30s) that are still in-flight
+              const now = Date.now();
+              localDms.forEach(d => {
+                if (!deletedDmIds.has(d.id) && !d.is_deleted && !dmMap.has(d.id)) {
+                  const age = now - new Date(d.created_at).getTime();
+                  if (age < 30000) {
+                    dmMap.set(d.id, d);
+                  }
+                }
+              });
+
               setItem(STORAGE_KEYS.DIRECT_MESSAGES, Array.from(dmMap.values()));
             }
           } catch {}
 
           // H. Pull VIP chat messages from Supabase
           try {
+            const deletedChatIds = new Set(getItem<string[]>(STORAGE_KEYS.DELETED_CHAT_MSG_IDS, []));
             const { data: supaVipMsgs } = await supabase
               .from('vip_messages')
               .select('*')
@@ -827,10 +843,24 @@ export const syncWithServer = async (): Promise<boolean> => {
             if (supaVipMsgs && Array.isArray(supaVipMsgs)) {
               const localVip = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
               const vMap = new Map<string, ChatMessage>();
-              supaVipMsgs.forEach((m: any) => vMap.set(m.id, m));
-              localVip.forEach(m => {
-                if (!vMap.has(m.id)) vMap.set(m.id, m);
+
+              supaVipMsgs.forEach((m: any) => {
+                if (!deletedChatIds.has(m.id) && !m.is_deleted) {
+                  vMap.set(m.id, m);
+                }
               });
+
+              // Only preserve recent local messages (< 30s) that are still in-flight
+              const now = Date.now();
+              localVip.forEach(m => {
+                if (!deletedChatIds.has(m.id) && !m.is_deleted && !vMap.has(m.id)) {
+                  const age = now - new Date(m.created_at).getTime();
+                  if (age < 30000) {
+                    vMap.set(m.id, m);
+                  }
+                }
+              });
+
               setItem(STORAGE_KEYS.VIP_CHAT, Array.from(vMap.values()));
             }
           } catch {}
@@ -2774,39 +2804,26 @@ export const deleteVipChatMessage = async (
   actorId: string,
   mode: 'everyone' | 'me' = 'everyone'
 ): Promise<boolean> => {
-  if (mode === 'me') {
-    const deletedForMe = getItem<string[]>(STORAGE_KEYS.DELETED_CHAT_MSG_IDS, []);
-    if (!deletedForMe.includes(messageId)) {
-      deletedForMe.push(messageId);
-      setItem(STORAGE_KEYS.DELETED_CHAT_MSG_IDS, deletedForMe);
-    }
-    window.dispatchEvent(new Event('aether_storage_sync'));
-    if (syncChannel) syncChannel.postMessage('sync');
-    return true;
+  // Always mark deleted locally so it never resurfaces in this session
+  const deletedChatIds = getItem<string[]>(STORAGE_KEYS.DELETED_CHAT_MSG_IDS, []);
+  if (!deletedChatIds.includes(messageId)) {
+    deletedChatIds.push(messageId);
+    setItem(STORAGE_KEYS.DELETED_CHAT_MSG_IDS, deletedChatIds);
   }
 
-  // Delete for everyone
+  // Remove immediately from local VIP_CHAT cache
   const messages = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
-  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-  const actor = users.find(u => u.id === actorId);
-  const isAdmin = isUserAdmin(actor);
+  const updated = messages.filter(m => m.id !== messageId);
+  setItem(STORAGE_KEYS.VIP_CHAT, updated);
 
-  const idx = messages.findIndex(m => m.id === messageId);
-  if (idx === -1) return false;
+  if (mode === 'everyone') {
+    // Instant broadcast deletion across all open tabs and devices
+    broadcastRealtimeEvent('delete_message', { message_id: messageId, type: 'vip' });
 
-  if (!isAdmin && messages[idx].user_id !== actorId) {
-    return false;
-  }
-
-  messages.splice(idx, 1);
-  setItem(STORAGE_KEYS.VIP_CHAT, messages);
-
-  // Instant broadcast
-  broadcastRealtimeEvent('delete_message', { message_id: messageId, type: 'vip' });
-
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    supabase.from('vip_messages').delete().eq('id', messageId).then(() => {}, () => {});
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('vip_messages').delete().eq('id', messageId).then(() => {}, () => {});
+    }
   }
 
   window.dispatchEvent(new Event('aether_storage_sync'));
@@ -3180,39 +3197,26 @@ export const deleteDirectMessage = async (
   mode: 'everyone' | 'me',
   userId: string
 ): Promise<boolean> => {
-  if (mode === 'me') {
-    const deletedForMe = getItem<string[]>(STORAGE_KEYS.DELETED_DM_MSG_IDS, []);
-    if (!deletedForMe.includes(messageId)) {
-      deletedForMe.push(messageId);
-      setItem(STORAGE_KEYS.DELETED_DM_MSG_IDS, deletedForMe);
-    }
-    window.dispatchEvent(new Event('aether_storage_sync'));
-    if (syncChannel) syncChannel.postMessage('sync');
-    return true;
+  // Always mark deleted locally so it never resurfaces in this session
+  const deletedDmIds = getItem<string[]>(STORAGE_KEYS.DELETED_DM_MSG_IDS, []);
+  if (!deletedDmIds.includes(messageId)) {
+    deletedDmIds.push(messageId);
+    setItem(STORAGE_KEYS.DELETED_DM_MSG_IDS, deletedDmIds);
   }
 
-  // Delete for everyone
+  // Remove immediately from local DIRECT_MESSAGES cache
   const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
-  const idx = dms.findIndex(m => m.id === messageId);
-  if (idx === -1) return false;
+  const updated = dms.filter(m => m.id !== messageId);
+  setItem(STORAGE_KEYS.DIRECT_MESSAGES, updated);
 
-  const users = getRealUsers();
-  const actor = users.find(u => u.id === userId);
-  const isAdmin = isUserAdmin(actor);
+  if (mode === 'everyone') {
+    // Broadcast deletion across all connected tabs & devices
+    broadcastRealtimeEvent('delete_message', { message_id: messageId, type: 'dm' });
 
-  if (!isAdmin && dms[idx].sender_id !== userId) {
-    return false;
-  }
-
-  dms.splice(idx, 1);
-  setItem(STORAGE_KEYS.DIRECT_MESSAGES, dms);
-
-  // Broadcast deletion
-  broadcastRealtimeEvent('delete_message', { message_id: messageId, type: 'dm' });
-
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    supabase.from('direct_messages').delete().eq('id', messageId).then(() => {}, () => {});
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('direct_messages').delete().eq('id', messageId).then(() => {}, () => {});
+    }
   }
 
   window.dispatchEvent(new Event('aether_storage_sync'));

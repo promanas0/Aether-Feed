@@ -130,6 +130,7 @@ export const VipChatView: React.FC<VipChatViewProps> = ({
 
   const handleDeleteForEveryone = async (msgId: string) => {
     setActiveMenuMsgId(null);
+    setMessages(prev => prev.filter(m => m.id !== msgId));
     const ok = await deleteVipChatMessage(msgId, currentUser.id, 'everyone');
     if (ok) {
       setMessages(getVipChatMessages());
@@ -139,6 +140,7 @@ export const VipChatView: React.FC<VipChatViewProps> = ({
 
   const handleDeleteForMe = async (msgId: string) => {
     setActiveMenuMsgId(null);
+    setMessages(prev => prev.filter(m => m.id !== msgId));
     const ok = await deleteVipChatMessage(msgId, currentUser.id, 'me');
     if (ok) {
       setMessages(getVipChatMessages());

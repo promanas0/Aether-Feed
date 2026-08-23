@@ -155,6 +155,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   const handleDeleteForEveryone = async (msgId: string) => {
     setActiveMenuMsgId(null);
     if (!selectedUser) return;
+    setMessages(prev => prev.filter(m => m.id !== msgId));
     const ok = await deleteDirectMessage(msgId, 'everyone', currentUser.id);
     if (ok) {
       setMessages(getDirectMessages(currentUser.id, selectedUser.id));
@@ -166,6 +167,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   const handleDeleteForMe = async (msgId: string) => {
     setActiveMenuMsgId(null);
     if (!selectedUser) return;
+    setMessages(prev => prev.filter(m => m.id !== msgId));
     const ok = await deleteDirectMessage(msgId, 'me', currentUser.id);
     if (ok) {
       setMessages(getDirectMessages(currentUser.id, selectedUser.id));
