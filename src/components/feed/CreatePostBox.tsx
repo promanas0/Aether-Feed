@@ -34,7 +34,8 @@ export const CreatePostBox: React.FC<CreatePostBoxProps> = ({
   onSubmitPost,
   addToast,
 }) => {
-  const [statusText, setStatusText] = useState('');
+  const [postTitle, setPostTitle] = useState('');
+  const [postDescription, setPostDescription] = useState('');
   const [imageData, setImageData] = useState<string | null>(null);
   const [videoData, setVideoData] = useState<string | null>(null);
   const [mediaFileName, setMediaFileName] = useState('');
@@ -132,19 +133,22 @@ export const CreatePostBox: React.FC<CreatePostBoxProps> = ({
       return;
     }
 
-    if (!statusText.trim() && !imageData && !videoData) {
-      addToast('Empty Status', 'Please write a status update or attach a photo/video.', 'info');
+    const titleTrimmed = postTitle.trim();
+    const descTrimmed = postDescription.trim();
+
+    if (!titleTrimmed && !descTrimmed && !imageData && !videoData) {
+      addToast('Empty Post', 'Please write a post title, description, or attach media.', 'info');
       return;
     }
 
     setIsPublishing(true);
 
-    const firstLine = statusText.trim().split('\n')[0] || '';
-    const title = firstLine.length > 60 ? `${firstLine.slice(0, 60)}...` : firstLine;
+    const finalTitle = titleTrimmed || (descTrimmed.length > 60 ? `${descTrimmed.slice(0, 60)}...` : descTrimmed);
+    const finalDescription = descTrimmed || titleTrimmed;
 
     onSubmitPost({
-      title,
-      description: statusText.trim(),
+      title: finalTitle,
+      description: finalDescription,
       image_data: imageData || '',
       video_data: videoData || '',
       media_type: videoData ? 'video' : imageData ? 'image' : 'text',
@@ -153,7 +157,8 @@ export const CreatePostBox: React.FC<CreatePostBoxProps> = ({
     });
 
     // Reset Form
-    setStatusText('');
+    setPostTitle('');
+    setPostDescription('');
     setImageData(null);
     setVideoData(null);
     setMediaFileName('');
@@ -167,7 +172,7 @@ export const CreatePostBox: React.FC<CreatePostBoxProps> = ({
     <div className="bg-[#1C2541] border border-[#334155] rounded-3xl p-4 sm:p-5 shadow-lg mb-6">
       <form onSubmit={handleSubmit}>
         
-        {/* User Avatar + Input Area */}
+        {/* User Avatar + Separate Inputs Area */}
         <div className="flex items-start gap-3">
           <img
             src={currentUser.avatar_url}
@@ -175,13 +180,23 @@ export const CreatePostBox: React.FC<CreatePostBoxProps> = ({
             className="w-10 h-10 rounded-2xl object-cover border border-[#334155] shrink-0"
           />
 
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 space-y-2">
+            {/* 1. Post Title (Separate Field) */}
+            <input
+              type="text"
+              value={postTitle}
+              onChange={(e) => setPostTitle(e.target.value)}
+              placeholder="Post Title / Subject (e.g. Aether Feed Announcement, Alpha...)"
+              className="w-full px-3 py-2 bg-[#0B132B] border border-[#334155] focus:border-blue-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-400 focus:outline-none transition-all"
+            />
+
+            {/* 2. Post Description / Status (Separate Field) */}
             <textarea
-              rows={2}
-              value={statusText}
-              onChange={(e) => setStatusText(e.target.value)}
-              placeholder="What's on your mind? Share a status, photo, or video..."
-              className="w-full bg-transparent border-0 text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none resize-none leading-relaxed"
+              rows={3}
+              value={postDescription}
+              onChange={(e) => setPostDescription(e.target.value)}
+              placeholder="Post Description: What's on your mind? Share details, context, thoughts..."
+              className="w-full px-3 py-2 bg-[#0B132B] border border-[#334155] focus:border-blue-500 rounded-xl text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none resize-none leading-relaxed transition-all"
             />
 
             {/* Attached Photo Preview */}
@@ -384,7 +399,7 @@ export const CreatePostBox: React.FC<CreatePostBoxProps> = ({
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={isPublishing || (!statusText.trim() && !imageData && !videoData)}
+            disabled={isPublishing || (!postTitle.trim() && !postDescription.trim() && !imageData && !videoData)}
             className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-glow transition-all active:scale-95 cursor-pointer"
           >
             <Send className="w-3.5 h-3.5" />

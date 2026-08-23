@@ -38,7 +38,8 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
   allUsers,
   addToast,
 }) => {
-  const [statusText, setStatusText] = useState('');
+  const [postTitle, setPostTitle] = useState('');
+  const [postDescription, setPostDescription] = useState('');
   const [imageData, setImageData] = useState<string | null>(null);
   const [videoData, setVideoData] = useState<string | null>(null);
   const [mediaFileName, setMediaFileName] = useState('');
@@ -131,19 +132,22 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!statusText.trim() && !imageData && !videoData) {
-      addToast('Empty Status', 'Please write a status or attach a photo/video.', 'info');
+    const titleTrimmed = postTitle.trim();
+    const descTrimmed = postDescription.trim();
+
+    if (!titleTrimmed && !descTrimmed && !imageData && !videoData) {
+      addToast('Empty Post', 'Please write a post title, description, or attach media.', 'info');
       return;
     }
 
     setIsPublishing(true);
 
-    const firstLine = statusText.trim().split('\n')[0] || '';
-    const title = firstLine.length > 60 ? `${firstLine.slice(0, 60)}...` : firstLine;
+    const finalTitle = titleTrimmed || (descTrimmed.length > 60 ? `${descTrimmed.slice(0, 60)}...` : descTrimmed);
+    const finalDescription = descTrimmed || titleTrimmed;
 
     onSubmit({
-      title,
-      description: statusText.trim(),
+      title: finalTitle,
+      description: finalDescription,
       image_data: imageData || '',
       video_data: videoData || '',
       media_type: videoData ? 'video' : imageData ? 'image' : 'text',
@@ -152,7 +156,8 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
     });
 
     // Reset Form & Close
-    setStatusText('');
+    setPostTitle('');
+    setPostDescription('');
     setImageData(null);
     setVideoData(null);
     setMediaFileName('');
@@ -177,10 +182,10 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-white tracking-tight">
-                Create Post / Status
+                Create Post
               </h3>
               <p className="text-[11px] text-slate-400">
-                Share a thought, status, photo, or video
+                Share a post with title, description, and media
               </p>
             </div>
           </div>
@@ -213,14 +218,33 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
             </div>
           </div>
 
-          {/* Status Textarea */}
-          <textarea
-            rows={4}
-            value={statusText}
-            onChange={(e) => setStatusText(e.target.value)}
-            placeholder="What's on your mind? Type your status or thought..."
-            className="w-full bg-[#0B132B] border border-[#334155] focus:border-blue-500 rounded-2xl p-3.5 text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none resize-none leading-relaxed"
-          />
+          {/* 1. Dedicated Post Title */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Post Title / Heading
+            </label>
+            <input
+              type="text"
+              value={postTitle}
+              onChange={(e) => setPostTitle(e.target.value)}
+              placeholder="e.g. Launching Aether Feed, Art Highlight, Alpha Drop..."
+              className="w-full bg-[#0B132B] border border-[#334155] focus:border-blue-500 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-white placeholder-slate-400 focus:outline-none transition-all"
+            />
+          </div>
+
+          {/* 2. Dedicated Post Description */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Post Description / Content
+            </label>
+            <textarea
+              rows={4}
+              value={postDescription}
+              onChange={(e) => setPostDescription(e.target.value)}
+              placeholder="Write your complete post description, explanation, or story..."
+              className="w-full bg-[#0B132B] border border-[#334155] focus:border-blue-500 rounded-xl p-3.5 text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none resize-none leading-relaxed transition-all"
+            />
+          </div>
 
           {/* Attached Photo Preview */}
           {imageData && (
@@ -413,11 +437,11 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
 
             <button
               type="submit"
-              disabled={isPublishing || (!statusText.trim() && !imageData && !videoData)}
+              disabled={isPublishing || (!postTitle.trim() && !postDescription.trim() && !imageData && !videoData)}
               className="flex items-center gap-1.5 px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-glow transition-all active:scale-95 cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>Publish Post / Status</span>
+              <span>Publish Post</span>
             </button>
           </div>
 
