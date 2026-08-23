@@ -1408,6 +1408,18 @@ export const subscribeToSupabaseRealtime = (onSyncNeeded: () => void): (() => vo
         window.dispatchEvent(new Event('aether_storage_sync'));
         onSyncNeeded();
       })
+      .on('broadcast', { event: 'user_deleted' }, ({ payload }) => {
+        if (!payload || !payload.userId) return;
+        const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+        const updated = users.filter(u => u.id !== payload.userId);
+        setItem(STORAGE_KEYS.REAL_USERS, updated);
+        const curr = getCurrentUser();
+        if (curr && curr.id === payload.userId) {
+          setCurrentUserSession(null);
+        }
+        window.dispatchEvent(new Event('aether_storage_sync'));
+        onSyncNeeded();
+      })
       .on('broadcast', { event: 'new_post' }, ({ payload }) => {
         if (!payload || !payload.id) return;
         const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
@@ -3565,6 +3577,96 @@ export const adminUnbanUser = async (targetUserId: string, actorEmail?: string):
 };
 
 /**
+ * Permanently Delete / Purge User Account (Admin Feature)
+ * Removes profile, posts, votes, notifications from Supabase and local storage.
+ */
+export const adminDeleteUser = async (targetUserId: string, actorEmail?: string): Promise<{ success: boolean; message: string }> => {
+  if (actorEmail && !isUserAdmin(actorEmail)) {
+    return { success: false, message: 'Unauthorized: Admin privileges required.' };
+  }
+
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const targetUser = users.find(u => u.id === targetUserId);
+  if (!targetUser) {
+    return { success: false, message: 'User not found.' };
+  }
+
+  if (targetUser.email.toLowerCase().trim() === ROOT_ADMIN_EMAIL.toLowerCase()) {
+    return { success: false, message: 'Cannot delete the Root Super Admin.' };
+  }
+
+  // 1. Remove from local real users
+  const filteredUsers = users.filter(u => u.id !== targetUserId);
+  setItem(STORAGE_KEYS.REAL_USERS, filteredUsers);
+
+  // 2. Remove from saved accounts
+  const savedAccounts = getItem<Profile[]>(STORAGE_KEYS.SAVED_ACCOUNTS, []).filter(u => u.id !== targetUserId);
+  setItem(STORAGE_KEYS.SAVED_ACCOUNTS, savedAccounts);
+
+  // 3. Remove from admin emails / golden lists / banned lists
+  const adminEmails = getItem<string[]>(STORAGE_KEYS.ADMIN_EMAILS, []).filter(e => e.toLowerCase() !== targetUser.email.toLowerCase());
+  setItem(STORAGE_KEYS.ADMIN_EMAILS, adminEmails);
+
+  const goldenList = getItem<string[]>(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, []).filter(id => id !== targetUserId);
+  setItem(STORAGE_KEYS.GOLDEN_VERIFIED_USER_IDS, goldenList);
+
+  const bannedList = getItem<string[]>(STORAGE_KEYS.BANNED_USER_IDS, []).filter(id => id !== targetUserId);
+  setItem(STORAGE_KEYS.BANNED_USER_IDS, bannedList);
+
+  // 4. Purge all posts by this user
+  const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+  const userPosts = posts.filter(p => p.user_id === targetUserId);
+  const userPostIds = new Set(userPosts.map(p => p.id));
+  const remainingPosts = posts.filter(p => p.user_id !== targetUserId);
+  setItem(STORAGE_KEYS.POSTS, remainingPosts);
+
+  // 5. Purge deleted post ids tracking
+  const deletedIds = getItem<string[]>(STORAGE_KEYS.DELETED_POST_IDS, []);
+  setItem(STORAGE_KEYS.DELETED_POST_IDS, Array.from(new Set([...deletedIds, ...Array.from(userPostIds)])));
+
+  // 6. Purge votes
+  const votes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []).filter(
+    v => v.user_id !== targetUserId && !userPostIds.has(v.post_id)
+  );
+  setItem(STORAGE_KEYS.VOTES, votes);
+
+  // 7. Purge notifications
+  const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []).filter(
+    n => n.user_id !== targetUserId && n.actor_id !== targetUserId
+  );
+  setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
+
+  // 8. Delete from Supabase Cloud DB
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase.from('profiles').delete().eq('id', targetUserId).then(() => { }, () => { });
+    supabase.from('posts').delete().eq('user_id', targetUserId).then(() => { }, () => { });
+    supabase.from('votes').delete().eq('user_id', targetUserId).then(() => { }, () => { });
+    supabase.from('notifications').delete().eq('user_id', targetUserId).then(() => { }, () => { });
+    supabase.from('notifications').delete().eq('actor_id', targetUserId).then(() => { }, () => { });
+    supabase.from('notifications').delete().eq('id', `admin_grant_${targetUser.email}`).then(() => { }, () => { });
+    supabase.from('notifications').delete().eq('id', `golden_grant_${targetUserId}`).then(() => { }, () => { });
+    supabase.from('notifications').delete().eq('id', `ban_record_${targetUserId}`).then(() => { }, () => { });
+    supabase.from('notifications').delete().eq('id', `timeout_record_${targetUserId}`).then(() => { }, () => { });
+  }
+
+  // 9. Realtime broadcast to other clients
+  broadcastRealtimeEvent('user_deleted', { userId: targetUserId });
+
+  // 10. If current session is deleted user, clear
+  const curr = getCurrentUser();
+  if (curr && curr.id === targetUserId) {
+    setCurrentUserSession(null);
+  }
+
+  await syncWithServer();
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+
+  return { success: true, message: `Account @${targetUser.username} has been permanently deleted.` };
+};
+
+/**
  * Check whether a user is restricted from creating posts or comments
  */
 export const isUserPostingRestricted = (user?: Profile | null): { restricted: boolean; reason?: string } => {
@@ -3653,6 +3755,11 @@ export const sendVipChatMessage = async (data: {
   const messages = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const user = users.find(u => u.id === data.user_id);
+
+  const restriction = isUserPostingRestricted(user);
+  if (restriction.restricted) {
+    throw new Error(restriction.reason || 'You are restricted from participating in chat.');
+  }
 
   const newMsg: ChatMessage = {
     id: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -4007,6 +4114,11 @@ export const sendDirectMessage = async (
   const sender = users.find(u => u.id === senderId);
   const receiver = users.find(u => u.id === receiverId);
   if (!sender || !receiver) return null;
+
+  const restriction = isUserPostingRestricted(sender);
+  if (restriction.restricted) {
+    throw new Error(restriction.reason || 'You are restricted from sending messages.');
+  }
 
   const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
   const msgId = `dm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;

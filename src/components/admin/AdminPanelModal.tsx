@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { 
   X, 
-  ShieldAlert, 
   Users, 
   Trash2, 
   ShieldCheck, 
@@ -21,7 +20,9 @@ import {
   Clock,
   UserCheck,
   UserX,
-  Wallet
+  Wallet,
+  EyeOff,
+  ShieldAlert
 } from 'lucide-react';
 import type { Profile, Post, ToastMessage } from '../../types';
 import { 
@@ -31,6 +32,7 @@ import {
   adminToggleAdminRole,
   adminBanUser, 
   adminUnbanUser,
+  adminDeleteUser,
   adminToggleVerifyUser, 
   adminToggleGoldenVerifyUser,
   adminSetPostingTimeout,
@@ -62,11 +64,26 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [postSearch, setPostSearch] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [banConfirmId, setBanConfirmId] = useState<string | null>(null);
+  const [deleteUserConfirmId, setDeleteUserConfirmId] = useState<string | null>(null);
   const [deletePostId, setDeletePostId] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [timeoutModalUser, setTimeoutModalUser] = useState<Profile | null>(null);
 
   if (!isOpen) return null;
+
+  const isRootAdmin = (currentUser.email || '').toLowerCase().trim() === 'promanas018@gmail.com';
+
+  const renderMaskedEmail = (email: string) => {
+    if (!email) return 'N/A';
+    if (isRootAdmin) return email;
+    const atIdx = email.indexOf('@');
+    if (atIdx > 0) {
+      const prefix = email.slice(0, Math.min(2, atIdx));
+      const domain = email.slice(atIdx);
+      return `${prefix}••••${domain}`;
+    }
+    return '••••••••@••••.com';
+  };
 
   const adminEmails = getAdminEmails();
 
@@ -129,6 +146,28 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       }
     } catch (err: any) {
       addToast('Error', err.message || 'Failed to unban user.', 'info');
+    }
+  };
+
+  // Handle Permanently Delete User Account
+  const handleDeleteUser = async (targetUser: Profile) => {
+    if (targetUser.email.toLowerCase() === 'promanas018@gmail.com') {
+      addToast('Protected Account', 'The Root Super Admin cannot be deleted.', 'info');
+      setDeleteUserConfirmId(null);
+      return;
+    }
+
+    try {
+      const res = await adminDeleteUser(targetUser.id, currentUser.email);
+      if (res.success) {
+        addToast('Account Deleted', `Account @${targetUser.username} and all content permanently deleted.`, 'success');
+        setDeleteUserConfirmId(null);
+        onRefreshData();
+      } else {
+        addToast('Delete Failed', res.message, 'info');
+      }
+    } catch (err: any) {
+      addToast('Error', err.message || 'Failed to delete user.', 'info');
     }
   };
 
@@ -451,7 +490,15 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                             </div>
 
                             <p className="text-xs text-slate-400 font-mono truncate">
-                              @{u.username} &bull; <span className="text-slate-300">{u.email}</span>
+                              @{u.username} &bull;{' '}
+                              {isRootAdmin ? (
+                                <span className="text-slate-300 font-mono">{u.email}</span>
+                              ) : (
+                                <span className="text-slate-400 inline-flex items-center gap-1 font-mono" title="Protected: Email hidden for privacy (Root Admin only)">
+                                  <EyeOff className="w-3 h-3 text-slate-500 inline shrink-0" />
+                                  <span>{renderMaskedEmail(u.email)}</span>
+                                </span>
+                              )}
                             </p>
 
                             <p className="text-[11px] text-slate-500 mt-0.5 font-mono">
@@ -563,13 +610,48 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                                       type="button"
                                       onClick={() => setBanConfirmId(u.id)}
                                       className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                                      title="Ban User & Purge All Content"
+                                      title="Ban User & Block Access"
                                     >
                                       <UserX className="w-3.5 h-3.5" />
-                                      <span>Ban User</span>
+                                      <span>Ban</span>
                                     </button>
                                   )}
                                 </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 5. Permanently Delete User Account */}
+                          {!isRootSuperAdmin && (
+                            <div>
+                              {deleteUserConfirmId === u.id ? (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteUser(u)}
+                                    className="px-2 py-1 bg-red-700 hover:bg-red-600 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+                                    title="Confirm permanent deletion"
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeleteUserConfirmId(null)}
+                                    className="px-2 py-1 bg-slate-700 text-slate-300 rounded-lg text-xs hover:text-white transition-all cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteUserConfirmId(u.id)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 bg-red-950/40 hover:bg-red-700/60 text-red-400 hover:text-white border border-red-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                  title="Permanently Delete & Wipe User Account"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Delete</span>
+                                </button>
                               )}
                             </div>
                           )}
@@ -755,8 +837,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                             {isRoot ? <Crown className="w-4 h-4" /> : <ShieldCheck className="w-4 h-4" />}
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs font-bold text-white truncate">
-                              {email}
+                            <p className="text-xs font-bold text-white truncate font-mono">
+                              {isRootAdmin || email.toLowerCase() === (currentUser.email || '').toLowerCase()
+                                ? email
+                                : renderMaskedEmail(email)}
                             </p>
                             <p className="text-[11px] text-slate-400 font-mono truncate">
                               {isRoot ? 'Root Super Admin (Owner)' : 'Team Moderator'} 

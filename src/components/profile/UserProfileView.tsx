@@ -10,7 +10,10 @@ import {
   FileText,
   ArrowLeft,
   Users,
-  MessageSquare
+  MessageSquare,
+  UserX,
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import type { Profile, Post, ToastMessage } from '../../types';
 import { PostCard } from '../feed/PostCard';
@@ -214,6 +217,44 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               )}
             </div>
           </div>
+
+          {/* Banned Alert Banner on Profile */}
+          {displayProfile.is_banned && (
+            <div className="mb-4 p-3.5 bg-rose-500/15 border border-rose-500/40 rounded-2xl flex items-center gap-3 text-rose-200 text-xs shadow-[0_0_15px_rgba(244,63,94,0.15)]">
+              <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400 shrink-0">
+                <UserX className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-rose-300 flex items-center gap-1.5">
+                  <span>Account Suspended by Administrator</span>
+                  <span className="px-1.5 py-0.2 bg-rose-600/40 text-white rounded text-[10px] uppercase font-mono">Banned</span>
+                </h4>
+                <p className="text-[11px] text-rose-200/80 mt-0.5">
+                  This user account has been banned for policy violations. All interactions and posting privileges are restricted.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Posting Timeout Alert Banner on Profile */}
+          {displayProfile.posting_timeout_until && (
+            <div className="mb-4 p-3.5 bg-orange-500/15 border border-orange-500/40 rounded-2xl flex items-center gap-3 text-orange-200 text-xs shadow-[0_0_15px_rgba(249,115,22,0.15)]">
+              <div className="p-2 rounded-xl bg-orange-500/20 text-orange-400 shrink-0">
+                <Clock className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-orange-300 flex items-center gap-1.5">
+                  <span>Posting Timeout Active</span>
+                  <span className="px-1.5 py-0.2 bg-orange-600/40 text-white rounded text-[10px] uppercase font-mono">Restricted</span>
+                </h4>
+                <p className="text-[11px] text-orange-200/80 mt-0.5">
+                  {displayProfile.posting_timeout_until === 'indefinite'
+                    ? 'This account has been placed on indefinite posting restriction by Administrator.'
+                    : `Posting privileges restricted until ${new Date(displayProfile.posting_timeout_until).toLocaleString()}.`}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Bio */}
           {displayProfile.bio && (

@@ -26,7 +26,8 @@ import {
   authenticateUser,
   togglePinHomePost,
   togglePinProfilePost,
-  isUserAdmin
+  isUserAdmin,
+  isUserPostingRestricted
 } from './lib/storage';
 import type { 
   Profile, 
@@ -71,7 +72,9 @@ import {
   User, 
   ShieldCheck, 
   UserPlus, 
-  UserCheck 
+  UserCheck,
+  UserX,
+  AlertTriangle
 } from 'lucide-react';
 
 export function App() {
@@ -215,6 +218,43 @@ export function App() {
     };
   }, [syncStateFromStorage, addToast]);
 
+  // Real-time clock for timeout countdown
+  const [currentTime, setCurrentTime] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const timeoutInfo = useMemo(() => {
+    if (!currentUser?.posting_timeout_until) return null;
+    if (currentUser.posting_timeout_until === 'indefinite') {
+      return {
+        isActive: true,
+        text: 'Indefinite Restriction (Active until reviewed by Administrator)',
+      };
+    }
+    const target = new Date(currentUser.posting_timeout_until).getTime();
+    if (isNaN(target) || target <= currentTime) return null;
+
+    const diff = target - currentTime;
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+    const formattedTarget = new Date(target).toLocaleString();
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0 || days > 0) parts.push(`${hours}h`);
+    if (minutes > 0 || hours > 0 || days > 0) parts.push(`${minutes}m`);
+    parts.push(`${seconds}s`);
+
+    return {
+      isActive: true,
+      text: `Remaining: ${parts.join(' ')} (Until: ${formattedTarget})`,
+    };
+  }, [currentUser?.posting_timeout_until, currentTime]);
+
   // Handle Theme Toggle
   const handleToggleTheme = () => {
     const nextMode: ThemeMode = themeMode === 'dark' ? 'light' : 'dark';
@@ -226,6 +266,11 @@ export function App() {
   // Handle Dual Upvote / Downvote Action
   const handleVote = async (postId: string, type: 'up' | 'down') => {
     if (!currentUser) return;
+    const restriction = isUserPostingRestricted(currentUser);
+    if (restriction.restricted) {
+      addToast('Action Restricted', restriction.reason, 'info');
+      return;
+    }
     const res = await votePostAction(postId, currentUser.id, type);
     syncStateFromStorage();
 
@@ -249,6 +294,11 @@ export function App() {
     tags: string[];
   }) => {
     if (!currentUser) return;
+    const restriction = isUserPostingRestricted(currentUser);
+    if (restriction.restricted) {
+      addToast('Action Restricted', restriction.reason, 'info');
+      return;
+    }
     await createRealPost({
       ...data,
       authorId: currentUser.id,
@@ -270,6 +320,11 @@ export function App() {
   // Handle Save Edited Post (Text Only)
   const handleSaveEditedPost = async (postId: string, description: string, title?: string) => {
     if (!currentUser) return;
+    const restriction = isUserPostingRestricted(currentUser);
+    if (restriction.restricted) {
+      addToast('Action Restricted', restriction.reason, 'info');
+      return;
+    }
     const updated = await updateRealPostText(postId, currentUser.id, description, title);
     if (updated) {
       syncStateFromStorage();
@@ -280,6 +335,11 @@ export function App() {
   // Handle Follow / Unfollow
   const handleToggleFollow = async (targetUserId: string) => {
     if (!currentUser) return;
+    const restriction = isUserPostingRestricted(currentUser);
+    if (restriction.restricted) {
+      addToast('Action Restricted', restriction.reason, 'info');
+      return;
+    }
     const res = await toggleFollowUser(targetUserId, currentUser.id);
     syncStateFromStorage();
 
@@ -297,6 +357,10 @@ export function App() {
   // Handle Profile Update
   const handleUpdateProfile = async (updates: Partial<Profile>) => {
     if (!currentUser) return;
+    if (currentUser.is_banned) {
+      addToast('Account Suspended', 'Banned accounts cannot edit profile settings.', 'info');
+      return;
+    }
     const updated = await updateProfileData(currentUser.id, updates);
     if (updated) {
       setCurrentUser(updated);
@@ -542,6 +606,35 @@ export function App() {
               setDetailsPost(post);
             }}
           />
+
+          {/* Banned User Global Sticky Alert Banner */}
+          {currentUser?.is_banned && (
+            <div className="w-full bg-gradient-to-r from-rose-950 via-rose-900 to-rose-950 border-b border-rose-500/50 py-3 px-4 text-white shadow-xl z-40 sticky top-[65px]">
+              <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-rose-600/30 text-rose-300 border border-rose-500/40 shrink-0 animate-pulse">
+                    <UserX className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-white text-sm flex items-center gap-2">
+                      <span>Account Suspended by Administrator</span>
+                      <span className="px-2 py-0.5 rounded bg-rose-600 text-white font-mono text-[10px] uppercase font-bold tracking-wider">Banned</span>
+                    </h4>
+                    <p className="text-rose-200/90 text-xs mt-0.5">
+                      Your account is banned. All posting, voting, commenting, following, and chat interactions are blocked.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shrink-0 shadow-glow-sm"
+                >
+                  Log Out / Switch Account
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Main Content Layout: Modern Edge-to-Edge Desktop Layout (Left Nav on side + Expansive Focused Stream) */}
           <div className="w-full max-w-[1720px] mx-auto px-3 sm:px-6 lg:px-8 xl:px-10 py-5 pb-24 lg:pb-8 flex gap-6 lg:gap-8 flex-1">
@@ -978,6 +1071,31 @@ export function App() {
         title={lightboxData.title}
         onClose={() => setLightboxData({ isOpen: false, url: '', title: '' })}
       />
+
+      {/* Floating Bottom Timeout Notice Bar */}
+      {timeoutInfo?.isActive && (
+        <div className="fixed bottom-0 inset-x-0 z-50 bg-gradient-to-r from-slate-950 via-orange-950/95 to-slate-950 border-t border-orange-500/60 p-3.5 backdrop-blur-md shadow-2xl animate-in slide-in-from-bottom duration-300">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-white">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-orange-500/20 text-orange-400 border border-orange-500/40 shrink-0 animate-pulse">
+                <Clock className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-orange-300 flex items-center gap-2 text-xs sm:text-sm">
+                  <span>Posting & Interaction Timeout Active</span>
+                  <span className="px-2 py-0.5 rounded bg-orange-600/40 text-orange-200 font-mono text-[10px] font-bold">Restricted</span>
+                </h4>
+                <p className="text-slate-300 text-xs mt-0.5">
+                  {timeoutInfo.text} &bull; All posting, voting, and follow interactions are temporarily restricted by Admin.
+                </p>
+              </div>
+            </div>
+            <div className="text-[11px] font-mono text-orange-300/90 shrink-0 bg-orange-950/80 px-3 py-1.5 rounded-lg border border-orange-500/40">
+              Admin Restriction Active
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Simple Clean Footer */}
       <footer className="w-full border-t border-[#334155]/60 bg-[#0B132B] py-5 pb-20 lg:pb-5 text-center text-xs text-slate-400 font-mono">
