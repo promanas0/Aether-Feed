@@ -341,6 +341,7 @@ export const sanitizePostForSupabase = (p: Post) => {
     description: p.description || '',
     tagged_users: p.tagged_users || [],
     tags: p.tags || [],
+    poll: p.poll || null,
     votes_up: p.votes_up || 0,
     votes_down: p.votes_down || 0,
     net_votes: p.net_votes || 0,
