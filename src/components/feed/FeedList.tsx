@@ -16,6 +16,7 @@ interface FeedListProps {
   searchQuery: string;
   onClearSearch: () => void;
   onVote: (postId: string, type: 'up' | 'down') => void;
+  onVotePoll?: (postId: string, optionId: string) => void;
   onDeletePost?: (postId: string) => void;
   onEditPost?: (post: Post) => void;
   onViewPostDetails?: (post: Post) => void;
@@ -40,6 +41,7 @@ export const FeedList: React.FC<FeedListProps> = ({
   searchQuery,
   onClearSearch,
   onVote,
+  onVotePoll,
   onDeletePost,
   onEditPost,
   onViewPostDetails,
@@ -125,6 +127,7 @@ export const FeedList: React.FC<FeedListProps> = ({
                 allUsers={allUsers}
                 userVote={voteMatch ? voteMatch.type : null}
                 onVote={onVote}
+                onVotePoll={onVotePoll}
                 onDelete={onDeletePost}
                 onEdit={onEditPost}
                 onViewDetails={onViewPostDetails}

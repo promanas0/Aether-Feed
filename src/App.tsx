@@ -28,7 +28,8 @@ import {
   togglePinProfilePost,
   isUserAdmin,
   isUserPostingRestricted,
-  getTotalUnreadDmCount
+  getTotalUnreadDmCount,
+  votePollAction
 } from './lib/storage';
 import type { 
   Profile, 
@@ -37,7 +38,8 @@ import type {
   ActiveView, 
   FeedFilter, 
   ThemeMode, 
-  ToastMessage 
+  ToastMessage,
+  PollData
 } from './types';
 
 // Components
@@ -294,6 +296,22 @@ export function App() {
     }
   };
 
+  // Handle Community Poll Voting
+  const handleVotePoll = async (postId: string, optionId: string) => {
+    if (!currentUser) {
+      addToast('Sign In Required', 'Please connect your wallet or sign in to vote on polls.', 'info');
+      return;
+    }
+    const restriction = isUserPostingRestricted(currentUser);
+    if (restriction.restricted) {
+      addToast('Action Restricted', restriction.reason, 'info');
+      return;
+    }
+    await votePollAction(postId, optionId, currentUser.id);
+    syncStateFromStorage();
+    addToast('Poll Vote Recorded', 'Your vote has been counted!', 'success');
+  };
+
   // Handle Create Post / Status
   const handleCreatePost = async (data: {
     title: string;
@@ -303,6 +321,7 @@ export function App() {
     media_type?: 'image' | 'video' | 'text';
     tagged_users: string[];
     tags: string[];
+    poll?: PollData;
   }) => {
     if (!currentUser) return;
     const restriction = isUserPostingRestricted(currentUser);
@@ -861,6 +880,7 @@ export function App() {
                             allUsers={users}
                             userVote={userVote}
                             onVote={handleVote}
+                            onVotePoll={handleVotePoll}
                             onDelete={handleDeletePost}
                             onEdit={(p: Post) => setEditingPost(p)}
                             onViewDetails={(p: Post) => setDetailsPost(p)}
@@ -891,6 +911,7 @@ export function App() {
                     onBack={() => setActiveView('feed')}
                     onToggleFollow={handleToggleFollow}
                     onVote={handleVote}
+                    onVotePoll={handleVotePoll}
                     onDeletePost={handleDeletePost}
                     onEditPost={(p) => setEditingPost(p)}
                     onViewPostDetails={(p) => setDetailsPost(p)}

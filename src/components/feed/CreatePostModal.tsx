@@ -8,9 +8,11 @@ import {
   Send, 
   Sparkles, 
   FileText,
-  Plus
+  Plus,
+  BarChart2,
+  Trash2
 } from 'lucide-react';
-import type { Profile, ToastMessage } from '../../types';
+import type { Profile, ToastMessage, PollData } from '../../types';
 import { compressPostImage } from '../../lib/imageUtils';
 import { isUserPostingRestricted } from '../../lib/storage';
 
@@ -25,6 +27,7 @@ interface CreatePostModalProps {
     media_type?: 'image' | 'video' | 'text';
     tagged_users: string[];
     tags: string[];
+    poll?: PollData;
   }) => void;
   currentUser: Profile;
   allUsers: Profile[];
@@ -48,6 +51,8 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
   const [selectedTaggedUsers, setSelectedTaggedUsers] = useState<string[]>([]);
   const [hashtagInput, setHashtagInput] = useState('');
   const [hashtags, setHashtags] = useState<string[]>([]);
+  const [showPollCreator, setShowPollCreator] = useState(false);
+  const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
   const [isPublishing, setIsPublishing] = useState(false);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -149,6 +154,21 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
 
     setIsPublishing(true);
 
+    let pollData: PollData | undefined = undefined;
+    if (showPollCreator) {
+      const validOptions = pollOptions.map(opt => opt.trim()).filter(Boolean);
+      if (validOptions.length >= 2) {
+        pollData = {
+          options: validOptions.map((text, idx) => ({
+            id: `opt_${idx + 1}_${Math.random().toString(36).substring(2, 6)}`,
+            text,
+            votes: [],
+          })),
+          total_votes: 0,
+        };
+      }
+    }
+
     const finalTitle = titleTrimmed || (descTrimmed.length > 60 ? `${descTrimmed.slice(0, 60)}...` : descTrimmed);
     const finalDescription = descTrimmed || titleTrimmed;
 
@@ -160,6 +180,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
       media_type: videoData ? 'video' : imageData ? 'image' : 'text',
       tagged_users: selectedTaggedUsers,
       tags: hashtags,
+      poll: pollData,
     });
 
     // Reset Form & Close
@@ -170,6 +191,8 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
     setMediaFileName('');
     setSelectedTaggedUsers([]);
     setHashtags([]);
+    setShowPollCreator(false);
+    setPollOptions(['', '']);
     setIsPublishing(false);
     onClose();
   };
@@ -335,6 +358,21 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
               <span>Attach Video</span>
             </button>
 
+            {/* Poll Button */}
+            <button
+              type="button"
+              onClick={() => setShowPollCreator(!showPollCreator)}
+              className={`px-4 py-2.5 border rounded-2xl text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                showPollCreator
+                  ? 'bg-purple-600/20 border-purple-500 text-purple-300'
+                  : 'bg-[#0B132B] hover:bg-[#1E293B] border-[#334155] text-slate-300 hover:text-white'
+              }`}
+              title="Add a Community Poll"
+            >
+              <BarChart2 className="w-4 h-4 text-purple-400" />
+              <span className="hidden sm:inline">Poll</span>
+            </button>
+
             {/* Tag Button */}
             <button
               type="button"
@@ -350,6 +388,69 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
             </button>
 
           </div>
+
+          {/* Interactive Poll Builder */}
+          {showPollCreator && (
+            <div className="p-4 bg-[#0B132B] border border-purple-500/40 rounded-2xl space-y-3 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <BarChart2 className="w-4 h-4 text-purple-400" />
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">
+                    Community Poll Options
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPollCreator(false)}
+                  className="text-xs text-slate-400 hover:text-rose-400 cursor-pointer"
+                >
+                  Remove Poll
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {pollOptions.map((optText, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-bold text-purple-400 w-5 text-center">
+                      {idx + 1}.
+                    </span>
+                    <input
+                      type="text"
+                      value={optText}
+                      onChange={(e) => {
+                        const updated = [...pollOptions];
+                        updated[idx] = e.target.value;
+                        setPollOptions(updated);
+                      }}
+                      placeholder={`Option ${idx + 1} (e.g. Yes / No / Feature Name)`}
+                      className="flex-1 px-3 py-2 bg-[#1C2541] border border-[#334155] focus:border-purple-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none"
+                    />
+                    {pollOptions.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() => setPollOptions(pollOptions.filter((_, i) => i !== idx))}
+                        className="p-2 text-slate-400 hover:text-rose-400 hover:bg-[#1C2541] rounded-lg transition-colors cursor-pointer"
+                        title="Delete option"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {pollOptions.length < 4 && (
+                <button
+                  type="button"
+                  onClick={() => setPollOptions([...pollOptions, ''])}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-purple-400 hover:text-purple-300 pt-1 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Option ({pollOptions.length}/4)</span>
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Selected Tag Badges */}
           {(selectedTaggedUsers.length > 0 || hashtags.length > 0) && (

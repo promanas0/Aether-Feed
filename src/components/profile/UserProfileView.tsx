@@ -13,7 +13,10 @@ import {
   MessageSquare,
   UserX,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  LayoutGrid,
+  Play,
+  Maximize2
 } from 'lucide-react';
 import type { Profile, Post, ToastMessage } from '../../types';
 import { PostCard } from '../feed/PostCard';
@@ -31,6 +34,7 @@ interface UserProfileViewProps {
   onBack: () => void;
   onToggleFollow: (targetUserId: string) => void;
   onVote: (postId: string, type: 'up' | 'down') => void;
+  onVotePoll?: (postId: string, optionId: string) => void;
   onDeletePost?: (postId: string) => void;
   onEditPost?: (post: Post) => void;
   onViewPostDetails?: (post: Post) => void;
@@ -54,6 +58,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onBack,
   onToggleFollow,
   onVote,
+  onVotePoll,
   onDeletePost,
   onEditPost,
   onViewPostDetails,
@@ -67,7 +72,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onTogglePinProfile,
   addToast,
 }) => {
-  const [activeTab, setActiveTab] = useState<'posts' | 'upvoted' | 'about'>('posts');
+  const [activeTab, setActiveTab] = useState<'posts' | 'gallery' | 'upvoted' | 'about'>('posts');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [followersModal, setFollowersModal] = useState<{
     isOpen: boolean;
@@ -92,6 +97,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       if (!a.is_pinned_profile && b.is_pinned_profile) return 1;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
+
+  // User's visual artworks & videos (For Art Gallery Tab)
+  const userArtMediaPosts = userPosts.filter(
+    p => (p.image_data && p.image_data.trim().length > 0) || (p.video_data && p.video_data.trim().length > 0)
+  );
 
   // Posts upvoted by this user
   const upvotedPostIds = new Set(
@@ -328,32 +338,46 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         </div>
 
         {/* Profile Tabs Navigation */}
-        <div className="flex border-t border-[#334155] bg-[#1C2541] px-5 sm:px-6">
+        <div className="flex border-t border-[#334155] bg-[#1C2541] px-3 sm:px-6 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveTab('posts')}
-            className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+            className={`py-3 px-3 sm:px-4 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
               activeTab === 'posts'
                 ? 'border-blue-500 text-white'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            Posts ({userPosts.length})
+            <FileText className="w-3.5 h-3.5" />
+            <span>Posts ({userPosts.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('gallery')}
+            className={`py-3 px-3 sm:px-4 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              activeTab === 'gallery'
+                ? 'border-blue-500 text-white'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5 text-purple-400" />
+            <span>Art Gallery ({userArtMediaPosts.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('upvoted')}
-            className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+            className={`py-3 px-3 sm:px-4 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
               activeTab === 'upvoted'
                 ? 'border-blue-500 text-white'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            Upvoted ({upvotedPosts.length})
+            <ArrowUpCircle className="w-3.5 h-3.5" />
+            <span>Upvoted ({upvotedPosts.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('about')}
-            className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+            className={`py-3 px-3 sm:px-4 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'about'
                 ? 'border-blue-500 text-white'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -385,6 +409,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   allUsers={allUsers}
                   userVote={userVoteMatch ? userVoteMatch.type : null}
                   onVote={onVote}
+                  onVotePoll={onVotePoll}
                   onDelete={onDeletePost}
                   onEdit={onEditPost}
                   onViewDetails={onViewPostDetails}
@@ -400,7 +425,95 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         </div>
       )}
 
-      {/* Tab Content 2: Upvoted Posts */}
+      {/* Tab Content 2: Art Gallery (Instagram / ArtStation Grid) */}
+      {activeTab === 'gallery' && (
+        <div>
+          {userArtMediaPosts.length === 0 ? (
+            <div className="py-16 text-center bg-[#1C2541] border border-[#334155] rounded-3xl p-8">
+              <LayoutGrid className="w-8 h-8 mx-auto text-slate-600 mb-2" />
+              <p className="text-xs font-bold text-white">No artworks or videos found</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Media and digital creations shared by this creator will show here in a portfolio grid.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 animate-in fade-in">
+              {userArtMediaPosts.map((post) => {
+                const isVideo = Boolean(post.video_data && post.video_data.trim().length > 0);
+                const hasImg = Boolean(post.image_data && post.image_data.trim().length > 0);
+
+                return (
+                  <div
+                    key={post.id}
+                    onClick={() => {
+                      if (hasImg) {
+                        onOpenLightbox(post.image_data!, post.title || 'Artwork');
+                      } else if (onViewPostDetails) {
+                        onViewPostDetails(post);
+                      }
+                    }}
+                    className="group relative aspect-square rounded-2xl overflow-hidden border border-[#334155] bg-[#0B132B] hover:border-purple-500/80 shadow-md hover:shadow-glow-sm transition-all duration-300 cursor-pointer"
+                  >
+                    {/* Media Display */}
+                    {hasImg ? (
+                      <img
+                        src={post.image_data}
+                        alt={post.title || 'Artwork'}
+                        loading="lazy"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : isVideo ? (
+                      <div className="w-full h-full bg-slate-900 relative flex items-center justify-center">
+                        <video
+                          src={post.video_data}
+                          preload="metadata"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                          <div className="w-10 h-10 rounded-full bg-blue-600/80 flex items-center justify-center text-white shadow-lg">
+                            <Play className="w-5 h-5 ml-0.5 fill-white" />
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* Top Type Indicator Pill */}
+                    {isVideo && (
+                      <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-lg bg-black/70 backdrop-blur-md border border-white/10 text-[10px] text-white font-mono flex items-center gap-1 z-10">
+                        <Play className="w-3 h-3 fill-white" />
+                        <span>Video</span>
+                      </div>
+                    )}
+
+                    {/* Dark Glass Hover Overlay (Instagram/ArtStation Style) */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-3 sm:p-4 flex flex-col justify-between">
+                      {/* Top Action Pills */}
+                      <div className="flex items-center justify-between text-xs text-white">
+                        <span className="px-2 py-0.5 bg-blue-600/80 backdrop-blur-md rounded-lg font-mono font-bold text-[11px] shadow">
+                          ▲ {post.net_votes || 0}
+                        </span>
+                        <div className="p-1.5 bg-[#0B132B]/80 rounded-lg text-slate-300 hover:text-white">
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </div>
+                      </div>
+
+                      {/* Bottom Title & Details */}
+                      <div>
+                        <p className="text-xs font-bold text-white line-clamp-1">
+                          {post.title || post.description || 'Visual Artwork'}
+                        </p>
+                        <p className="text-[10px] text-slate-300 font-mono mt-0.5">
+                          {post.comments_count || 0} {post.comments_count === 1 ? 'comment' : 'comments'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab Content 3: Upvoted Posts */}
       {activeTab === 'upvoted' && (
         <div className="space-y-4">
           {upvotedPosts.length === 0 ? (
@@ -420,6 +533,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   allUsers={allUsers}
                   userVote={userVoteMatch ? userVoteMatch.type : null}
                   onVote={onVote}
+                  onVotePoll={onVotePoll}
                   onDelete={onDeletePost}
                   onEdit={onEditPost}
                   onViewDetails={onViewPostDetails}

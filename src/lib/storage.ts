@@ -1,4 +1,4 @@
-import type { Profile, Post, VoteRecord, NotificationItem, ThemeMode, ChatMessage, PostComment, DirectMessage } from '../types';
+import type { Profile, Post, VoteRecord, NotificationItem, ThemeMode, ChatMessage, PostComment, DirectMessage, PollData, PollOption } from '../types';
 import { getSupabaseClient } from './supabaseClient';
 
 const STORAGE_KEYS = {
@@ -2404,6 +2404,7 @@ export const createRealPost = async (data: {
   authorId: string;
   tagged_users?: string[];
   tags?: string[];
+  poll?: PollData;
 }): Promise<Post> => {
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
   const author = getRealUsers().find(u => u.id === data.authorId);
@@ -2426,6 +2427,7 @@ export const createRealPost = async (data: {
     media_type: data.media_type || (data.video_data ? 'video' : 'image'),
     tagged_users: data.tagged_users || [],
     tags: data.tags || [],
+    poll: data.poll,
     votes_up: 0,
     votes_down: 0,
     net_votes: 0,
@@ -2822,6 +2824,63 @@ export const votePostAction = async (
     votesUp: posts[postIdx].votes_up,
     votesDown: posts[postIdx].votes_down,
   };
+};
+
+export const votePollAction = async (postId: string, optionId: string, userId: string): Promise<Post | null> => {
+  const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+  const postIdx = posts.findIndex(p => p.id === postId);
+  if (postIdx === -1) return null;
+
+  const post = posts[postIdx];
+  if (!post.poll || !Array.isArray(post.poll.options)) return null;
+
+  const updatedOptions: PollOption[] = post.poll.options.map(opt => {
+    const cleanVotes = Array.isArray(opt.votes) ? opt.votes.filter(uId => uId !== userId) : [];
+    if (opt.id === optionId) {
+      cleanVotes.push(userId);
+    }
+    return {
+      ...opt,
+      votes: cleanVotes,
+    };
+  });
+
+  const totalVotes = updatedOptions.reduce((acc, opt) => acc + opt.votes.length, 0);
+
+  const updatedPoll: PollData = {
+    ...post.poll,
+    options: updatedOptions,
+    total_votes: totalVotes,
+  };
+
+  posts[postIdx].poll = updatedPoll;
+  posts[postIdx].updated_at = new Date().toISOString();
+
+  setItem(STORAGE_KEYS.POSTS, posts);
+  window.dispatchEvent(new Event('aether_storage_sync'));
+  if (syncChannel) syncChannel.postMessage('sync');
+
+  // Supabase background sync
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase
+      .from('posts')
+      .update({
+        poll: updatedPoll,
+        updated_at: posts[postIdx].updated_at,
+      })
+      .eq('id', postId)
+      .then(() => { }, () => { });
+  }
+
+  return posts[postIdx];
+};
+
+export const getUserUpvotedPosts = (userId: string): Post[] => {
+  const votes = getItem<VoteRecord[]>(STORAGE_KEYS.VOTES, []);
+  const upvotedPostIds = new Set(votes.filter(v => v.user_id === userId && v.type === 'up').map(v => v.post_id));
+  const posts = getRealPosts();
+  return posts.filter(p => upvotedPostIds.has(p.id));
 };
 
 /* ==========================================================================

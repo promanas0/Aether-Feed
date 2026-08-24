@@ -135,8 +135,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
         {/* User Artworks Feed Preview */}
         <div className="p-6 overflow-y-auto flex-1">
-          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3.5">
-            Broadcasted Artworks ({userPosts.length})
+          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3.5 flex items-center justify-between">
+            <span>Broadcasted Creations ({userPosts.length})</span>
+            <span className="text-[10px] text-purple-400 font-mono font-normal">Gallery View</span>
           </h4>
 
           {userPosts.length === 0 ? (
@@ -149,20 +150,28 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 <div
                   key={post.id}
                   onClick={() => post.image_data && onOpenLightbox(post.image_data, post.title || 'Post')}
-                  className="group relative aspect-[4/3] rounded-xl overflow-hidden border border-[#334155] cursor-pointer bg-[#0B132B] p-2 flex flex-col justify-between"
+                  className="group relative aspect-square rounded-2xl overflow-hidden border border-[#334155] cursor-pointer bg-[#0B132B] hover:border-purple-500/80 transition-all shadow-md"
                 >
                   {post.image_data ? (
                     <img
                       src={post.image_data}
                       alt={post.title || 'Post'}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 rounded"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                   ) : (
-                    <p className="text-[11px] text-slate-300 line-clamp-3">{post.description}</p>
+                    <div className="p-3 h-full flex flex-col justify-between bg-[#1E293B]">
+                      <p className="text-[11px] text-slate-300 line-clamp-4 leading-relaxed">{post.description}</p>
+                      <span className="text-[10px] text-purple-400 font-mono">Status Post</span>
+                    </div>
                   )}
-                  <div className="mt-1 flex items-center justify-between text-[10px] text-blue-300 font-mono">
-                    <span className="truncate">{post.title || 'Status'}</span>
-                    <span>▲ {post.net_votes}</span>
+
+                  {/* Dark Glass Overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-2.5 flex flex-col justify-end text-white">
+                    <p className="text-[11px] font-bold truncate">{post.title || 'Artwork'}</p>
+                    <div className="flex items-center justify-between text-[10px] text-blue-300 font-mono mt-0.5">
+                      <span>▲ {post.net_votes || 0}</span>
+                      <span>{post.comments_count || 0} 💬</span>
+                    </div>
                   </div>
                 </div>
               ))}

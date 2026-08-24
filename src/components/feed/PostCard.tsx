@@ -17,7 +17,8 @@ import {
   Reply,
   CornerDownRight,
   Pin,
-  X
+  X,
+  BarChart2
 } from 'lucide-react';
 import type { Post, Profile, PostComment } from '../../types';
 
@@ -30,6 +31,7 @@ interface PostCardProps {
   currentUser?: Profile | null;
   allUsers?: Profile[];
   onVote: (postId: string, type: 'up' | 'down') => void;
+  onVotePoll?: (postId: string, optionId: string) => void;
   onOpenLightbox: (imageData: string, title: string) => void;
   onOpenProfile: (profile: Profile) => void;
   onShare: (post: Post) => void;
@@ -76,6 +78,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   currentUser,
   allUsers,
   onVote,
+  onVotePoll,
   onOpenLightbox,
   onOpenProfile,
   onShare,
@@ -424,6 +427,73 @@ export const PostCard: React.FC<PostCardProps> = ({
                 #{t}
               </button>
             ))}
+          </div>
+        )}
+
+        {/* Interactive Community Live Poll */}
+        {post.poll && post.poll.options && post.poll.options.length > 0 && (
+          <div className="mt-3.5 pt-3 border-t border-[#334155]/40">
+            <div className="bg-[#0B132B]/80 border border-purple-500/30 rounded-2xl p-3.5 sm:p-4 space-y-2.5 shadow-inner">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-300 pb-1.5 border-b border-[#334155]/50">
+                <div className="flex items-center gap-1.5 text-purple-400">
+                  <BarChart2 className="w-3.5 h-3.5" />
+                  <span className="uppercase tracking-wider text-[11px] font-bold">Community Poll</span>
+                </div>
+                <span className="text-[11px] font-mono text-slate-400">
+                  {post.poll.total_votes} {post.poll.total_votes === 1 ? 'vote' : 'votes'}
+                </span>
+              </div>
+
+              <div className="space-y-2 pt-1">
+                {post.poll.options.map((option) => {
+                  const isVoted = Boolean(currentUser && option.votes && option.votes.includes(currentUser.id));
+                  const optVotes = option.votes ? option.votes.length : 0;
+                  const percentage = post.poll!.total_votes > 0 ? Math.round((optVotes / post.poll!.total_votes) * 100) : 0;
+
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => onVotePoll?.(post.id, option.id)}
+                      className={`relative w-full overflow-hidden text-left p-3 rounded-xl border transition-all cursor-pointer group ${
+                        isVoted
+                          ? 'border-purple-500/80 bg-purple-950/40 shadow-glow-sm ring-1 ring-purple-500/30'
+                          : 'border-[#334155] bg-[#1C2541]/70 hover:border-purple-500/50 hover:bg-[#1C2541]'
+                      }`}
+                    >
+                      {/* Animated Progress Bar Fill */}
+                      <div
+                        className={`absolute inset-y-0 left-0 transition-all duration-500 rounded-l-xl ${
+                          isVoted ? 'bg-purple-600/35' : 'bg-blue-600/15 group-hover:bg-purple-600/20'
+                        }`}
+                        style={{ width: `${percentage}%` }}
+                      />
+
+                      <div className="relative z-10 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-4 h-4 rounded-full border flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                            isVoted ? 'border-purple-400 bg-purple-500 text-white' : 'border-slate-500 text-transparent'
+                          }`}>
+                            ✓
+                          </div>
+                          <span className={`text-xs ${isVoted ? 'text-white font-bold' : 'text-slate-200 font-semibold'}`}>
+                            {option.text}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[11px] font-mono text-slate-400">
+                            {optVotes}
+                          </span>
+                          <span className={`text-xs font-mono font-bold ${isVoted ? 'text-purple-300' : 'text-slate-400'}`}>
+                            {percentage}%
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
       </div>

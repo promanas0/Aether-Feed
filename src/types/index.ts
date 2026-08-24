@@ -26,6 +26,18 @@ export interface Profile {
   posts_count?: number;
 }
 
+export interface PollOption {
+  id: string;
+  text: string;
+  votes: string[]; // User IDs who voted for this option
+}
+
+export interface PollData {
+  options: PollOption[];
+  total_votes: number;
+  ends_at?: string;
+}
+
 export interface Post {
   id: string;
   user_id: string;
@@ -36,6 +48,7 @@ export interface Post {
   description: string;
   tagged_users?: string[]; // User IDs or usernames tagged
   tags?: string[]; // Hashtags (e.g., ['dlicom', 'web3', 'design'])
+  poll?: PollData; // Interactive Community Poll
   votes_up: number;
   votes_down: number;
   net_votes: number; // votes_up - votes_down
