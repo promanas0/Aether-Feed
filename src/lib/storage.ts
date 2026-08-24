@@ -87,12 +87,25 @@ export const reconcileFollowGraph = (users: Profile[]): Profile[] => {
     return [];
   };
 
-  const validUsers = (users || []).filter(u => {
-    if (!u || !u.id || FAKE_MOCK_IDS.includes(u.id)) return false;
-    if (typeof u.display_name === 'string' && u.display_name.startsWith('Member_') && typeof u.username === 'string' && (u.username.startsWith('user__') || u.username.startsWith('user_'))) return false;
-    if (u.display_name === 'Member_l.com' || u.username === 'user_l1.com' || u.username === 'user__l1.com' || u.display_name === 'Member_rvzym' || u.display_name === 'Member_58dii' || u.display_name === 'Member_592e7' || u.display_name === 'Member_5fay6') return false;
-    return true;
+  const isGhost = (u: any): boolean => {
+    if (!u || !u.id || FAKE_MOCK_IDS.includes(u.id)) return true;
+    const dName = typeof u.display_name === 'string' ? u.display_name : '';
+    const uName = typeof u.username === 'string' ? u.username : '';
+    if (dName.startsWith('Member_') && (uName.startsWith('user__') || uName.startsWith('user_'))) return true;
+    if (dName === 'Member_l.com' || uName === 'user_l1.com' || uName === 'user__l1.com' || dName === 'Member_rvzym' || dName === 'Member_58dii' || dName === 'Member_592e7' || dName === 'Member_5fay6') return true;
+    return false;
+  };
+
+  // Deduplicate strictly by ID & prevent ghosts
+  const dedupMap = new Map<string, Profile>();
+  (users || []).forEach(u => {
+    if (isGhost(u)) return;
+    if (!dedupMap.has(u.id)) {
+      dedupMap.set(u.id, u);
+    }
   });
+
+  const validUsers = Array.from(dedupMap.values());
 
   // Map: targetUserId -> Set of follower user IDs
   const followerMap = new Map<string, Set<string>>();
@@ -2057,15 +2070,11 @@ export const setCurrentUserSession = (userId: string | null): void => {
 
 export const getRealUsers = (): Profile[] => {
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-  const clean = users.filter(u => {
-    if (!u || !u.id || FAKE_MOCK_IDS.includes(u.id)) return false;
-    const dName = typeof u.display_name === 'string' ? u.display_name : '';
-    const uName = typeof u.username === 'string' ? u.username : '';
-    if (dName.startsWith('Member_') && (uName.startsWith('user__') || uName.startsWith('user_'))) return false;
-    if (dName === 'Member_l.com' || uName === 'user_l1.com' || uName === 'user__l1.com' || dName === 'Member_rvzym' || dName === 'Member_58dii' || dName === 'Member_592e7' || dName === 'Member_5fay6') return false;
-    return true;
-  });
-  return reconcileFollowGraph(clean);
+  const clean = reconcileFollowGraph(users);
+  if (clean.length !== users.length) {
+    setItem(STORAGE_KEYS.REAL_USERS, clean);
+  }
+  return clean;
 };
 
 export const createPasswordChangeOtp = (userId: string, email: string): { otp_code: string } => {
@@ -2793,7 +2802,7 @@ export const votePostAction = async (
    ========================================================================== */
 
 export const getRealLeaderboard = (): Array<Profile & { rank: number; posts_count: number }> => {
-  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => u && u.id && !FAKE_MOCK_IDS.includes(u.id));
+  const users = getRealUsers();
   const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
 
   // Compute posts count and total net votes for every registered real user
@@ -2804,7 +2813,7 @@ export const getRealLeaderboard = (): Array<Profile & { rank: number; posts_coun
     return {
       ...user,
       display_name: user.display_name || user.username || 'Creator',
-      username: user.username || `user_${user.id.slice(-6)}`,
+      username: user.username || `creator_${user.id.slice(-4)}`,
       avatar_url: user.avatar_url || DEFAULT_DLICOM_AVATAR,
       bio: user.bio || '',
       total_votes_received: totalVotes,
