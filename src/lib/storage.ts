@@ -87,7 +87,12 @@ export const reconcileFollowGraph = (users: Profile[]): Profile[] => {
     return [];
   };
 
-  const validUsers = (users || []).filter(u => u && u.id);
+  const validUsers = (users || []).filter(u => {
+    if (!u || !u.id || FAKE_MOCK_IDS.includes(u.id)) return false;
+    if (typeof u.display_name === 'string' && u.display_name.startsWith('Member_') && typeof u.username === 'string' && (u.username.startsWith('user__') || u.username.startsWith('user_'))) return false;
+    if (u.display_name === 'Member_l.com' || u.username === 'user_l1.com' || u.username === 'user__l1.com' || u.display_name === 'Member_rvzym' || u.display_name === 'Member_58dii' || u.display_name === 'Member_592e7' || u.display_name === 'Member_5fay6') return false;
+    return true;
+  });
 
   // Map: targetUserId -> Set of follower user IDs
   const followerMap = new Map<string, Set<string>>();
@@ -111,12 +116,12 @@ export const reconcileFollowGraph = (users: Profile[]): Profile[] => {
     const isDlicom = (u.id || '').startsWith('dlicom_0x') || (u.id || '').startsWith('0x');
     const rawAddr = (u.id || '').startsWith('dlicom_0x') ? (u.id || '').replace('dlicom_', '') : ((u.id || '').startsWith('0x') ? u.id || '' : (u.dlicom_address || ''));
     const shortAddr = rawAddr.length > 10 ? `${rawAddr.slice(0, 6)}...${rawAddr.slice(-4)}` : rawAddr;
-    const resolvedDisplay = (u.display_name && u.display_name.trim().length > 0)
+    const resolvedDisplay = (u.display_name && u.display_name.trim().length > 0 && !u.display_name.startsWith('Member_'))
       ? u.display_name.trim()
-      : (u.first_name && u.last_name ? `${u.first_name} ${u.last_name}`.trim() : (isDlicom && shortAddr ? shortAddr : (u.username || `Member_${(u.id || '').slice(-5)}`)));
-    const resolvedUsername = (u.username && u.username.trim().length > 0)
+      : (u.first_name && u.last_name ? `${u.first_name} ${u.last_name}`.trim() : (isDlicom && shortAddr ? shortAddr : (u.username || 'Aether Creator')));
+    const resolvedUsername = (u.username && u.username.trim().length > 0 && !u.username.startsWith('user__'))
       ? u.username.trim()
-      : (isDlicom && rawAddr ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}` : `user_${(u.id || '').slice(-6)}`);
+      : (isDlicom && rawAddr ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}` : `creator_${(u.id || '').replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase()}`);
     const resolvedAvatar = (u.avatar_url && u.avatar_url.trim().length > 0 && !u.avatar_url.includes('placeholder'))
       ? u.avatar_url.trim()
       : `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(u.id || resolvedUsername)}&backgroundColor=0b132b,1c2541,1e293b`;
@@ -124,7 +129,7 @@ export const reconcileFollowGraph = (users: Profile[]): Profile[] => {
     return {
       ...u,
       display_name: resolvedDisplay || 'Aether Creator',
-      username: resolvedUsername || `user_${(u.id || '').slice(-6)}`,
+      username: resolvedUsername || `creator_${(u.id || '').slice(-4)}`,
       avatar_url: resolvedAvatar,
       bio: u.bio || '',
       total_votes_received: u.total_votes_received || 0,
@@ -151,13 +156,13 @@ export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
   const rawAddr = id.startsWith('dlicom_0x') ? id.replace('dlicom_', '') : (id.startsWith('0x') ? id : (p.dlicom_address || ''));
   const shortAddr = rawAddr.length > 10 ? `${rawAddr.slice(0, 6)}...${rawAddr.slice(-4)}` : rawAddr;
 
-  const resolvedDisplay = (p.display_name && p.display_name.trim().length > 0)
+  const resolvedDisplay = (p.display_name && p.display_name.trim().length > 0 && !p.display_name.startsWith('Member_'))
     ? p.display_name.trim()
-    : (p.first_name && p.last_name ? `${p.first_name} ${p.last_name}`.trim() : (isDlicom && shortAddr ? shortAddr : (p.username || `Member_${id.slice(-5)}`)));
+    : (p.first_name && p.last_name ? `${p.first_name} ${p.last_name}`.trim() : (isDlicom && shortAddr ? shortAddr : (p.username || 'Aether Creator')));
 
-  const resolvedUsername = (p.username && p.username.trim().length > 0)
+  const resolvedUsername = (p.username && p.username.trim().length > 0 && !p.username.startsWith('user__'))
     ? p.username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '')
-    : (isDlicom && rawAddr ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}` : `user_${id.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toLowerCase()}`);
+    : (isDlicom && rawAddr ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}` : `creator_${id.replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase()}`);
 
   const resolvedEmail = (p.email && p.email.includes('@'))
     ? p.email.trim().toLowerCase()
@@ -173,7 +178,7 @@ export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
     first_name: p.first_name || '',
     last_name: p.last_name || '',
     display_name: resolvedDisplay || 'Aether Creator',
-    username: resolvedUsername || `user_${id.slice(-6)}`,
+    username: resolvedUsername || `creator_${id.slice(-4)}`,
     avatar_url: resolvedAvatar,
     banner_url: p.banner_url || '',
     banner_size: p.banner_size || 'standard',
@@ -703,8 +708,23 @@ export const syncWithServer = async (): Promise<boolean> => {
 
           let finalUsers: Profile[] = [];
           if (!profError && supaProfiles && supaProfiles.length > 0) {
-            const cleanSupaUsers = supaProfiles.filter((u: any) => !FAKE_MOCK_IDS.includes(u.id));
-            const currentLocalUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+            const isGhostUser = (u: any): boolean => {
+              if (!u || !u.id || FAKE_MOCK_IDS.includes(u.id)) return true;
+              const dName = typeof u.display_name === 'string' ? u.display_name : '';
+              const uName = typeof u.username === 'string' ? u.username : '';
+              if (dName.startsWith('Member_') && (uName.startsWith('user__') || uName.startsWith('user_'))) return true;
+              if (dName === 'Member_l.com' || uName === 'user_l1.com' || uName === 'user__l1.com' || dName === 'Member_rvzym' || dName === 'Member_58dii' || dName === 'Member_592e7' || dName === 'Member_5fay6') return true;
+              return false;
+            };
+
+            // Purge any ghost profiles from Supabase Cloud
+            const ghostIds = supaProfiles.filter(isGhostUser).map((u: any) => u.id);
+            if (ghostIds.length > 0) {
+              supabase.from('profiles').delete().in('id', ghostIds).then(() => {}, () => {});
+            }
+
+            const cleanSupaUsers = supaProfiles.filter((u: any) => !isGhostUser(u));
+            const currentLocalUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => !isGhostUser(u));
             const localUserMap = new Map<string, Profile>();
             currentLocalUsers.forEach(u => localUserMap.set(u.id, u));
 
@@ -749,13 +769,13 @@ export const syncWithServer = async (): Promise<boolean> => {
                 let suAdmin = isRootSuper || cloudAdminEmails.has(userEmail) || cloudAdminUserIds.has(su.id) || adminEmailList.includes(userEmail);
                 if (!suAdmin && su.is_admin !== undefined) suAdmin = Boolean(su.is_admin);
 
-                const resolvedDisplayName = (su.display_name && su.display_name.trim().length > 0)
+                const resolvedDisplayName = (su.display_name && su.display_name.trim().length > 0 && !su.display_name.startsWith('Member_'))
                   ? su.display_name.trim()
-                  : (su.first_name && su.last_name ? `${su.first_name} ${su.last_name}`.trim() : (isDlicom && shortAddr ? shortAddr : (su.username || `Member_${(su.id || '').slice(-5)}`)));
+                  : (su.first_name && su.last_name ? `${su.first_name} ${su.last_name}`.trim() : (isDlicom && shortAddr ? shortAddr : (su.username || 'Aether Creator')));
 
-                const resolvedUsername = (su.username && su.username.trim().length > 0)
+                const resolvedUsername = (su.username && su.username.trim().length > 0 && !su.username.startsWith('user__'))
                   ? su.username.trim()
-                  : (isDlicom && rawAddr ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}` : `user_${(su.id || '').slice(-6)}`);
+                  : (isDlicom && rawAddr ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}` : `creator_${(su.id || '').replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase()}`);
 
                 const resolvedAvatarUrl = (su.avatar_url && su.avatar_url.trim().length > 0 && !su.avatar_url.includes('placeholder'))
                   ? su.avatar_url.trim()
@@ -764,7 +784,7 @@ export const syncWithServer = async (): Promise<boolean> => {
                 const suProfile: Profile = {
                   ...su,
                   display_name: resolvedDisplayName || 'Aether Creator',
-                  username: resolvedUsername || `user_${(su.id || '').slice(-6)}`,
+                  username: resolvedUsername || `creator_${(su.id || '').slice(-4)}`,
                   avatar_url: resolvedAvatarUrl,
                   banner_url: su.banner_url || '',
                   banner_size: su.banner_size || 'standard',
@@ -816,11 +836,11 @@ export const syncWithServer = async (): Promise<boolean> => {
                 const resolvedDisplayName = (preferLocal ? localU.display_name : su.display_name)
                   || (preferLocal ? su.display_name : localU.display_name)
                   || (localU.first_name && localU.last_name ? `${localU.first_name} ${localU.last_name}`.trim() : '')
-                  || (isDlicom && shortAddr ? shortAddr : (su.username || `Member_${(su.id || '').slice(-5)}`));
+                  || (isDlicom && shortAddr ? shortAddr : (su.username || 'Aether Creator'));
 
                 const resolvedUsername = (preferLocal ? localU.username : su.username)
                   || (preferLocal ? su.username : localU.username)
-                  || (isDlicom && rawAddr ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}` : `user_${(su.id || '').slice(-6)}`);
+                  || (isDlicom && rawAddr ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}` : `creator_${(su.id || '').replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase()}`);
 
                 const resolvedAvatarUrl = (preferLocal ? localU.avatar_url : su.avatar_url)
                   || (preferLocal ? su.avatar_url : localU.avatar_url)
@@ -830,7 +850,7 @@ export const syncWithServer = async (): Promise<boolean> => {
                   ...su,
                   ...localU,
                   display_name: resolvedDisplayName || 'Aether Creator',
-                  username: resolvedUsername || `user_${(su.id || '').slice(-6)}`,
+                  username: resolvedUsername || `creator_${(su.id || '').slice(-4)}`,
                   avatar_url: resolvedAvatarUrl,
                   banner_url: resolvedBannerUrl,
                   banner_size: resolvedBannerSize,
@@ -852,7 +872,7 @@ export const syncWithServer = async (): Promise<boolean> => {
 
             // Preserve any local users not yet in Supabase and auto-heal by uploading to Supabase
             currentLocalUsers.forEach(lu => {
-              if (lu && lu.id && !FAKE_MOCK_IDS.includes(lu.id) && !mergedUserMap.has(lu.id)) {
+              if (lu && lu.id && !isGhostUser(lu) && !mergedUserMap.has(lu.id)) {
                 mergedUserMap.set(lu.id, lu);
                 saveProfileToCloud(lu);
               }
@@ -870,7 +890,7 @@ export const syncWithServer = async (): Promise<boolean> => {
               }
             }
           } else {
-            finalUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => u && u.id && !FAKE_MOCK_IDS.includes(u.id));
+            finalUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []).filter(u => u && u.id && !FAKE_MOCK_IDS.includes(u.id) && !u.display_name?.startsWith('Member_'));
             finalUsers.forEach(lu => {
               saveProfileToCloud(lu);
             });
@@ -1070,75 +1090,6 @@ export const syncWithServer = async (): Promise<boolean> => {
               setItem(STORAGE_KEYS.VIP_CHAT, Array.from(vMap.values()));
             }
           } catch { }
-
-          // I. Auto-harvest any missing user profiles from all Supabase data streams
-          try {
-            const allUsersMap = new Map<string, Profile>();
-            const currentUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-            currentUsers.forEach(u => {
-              if (u && u.id && !FAKE_MOCK_IDS.includes(u.id)) {
-                allUsersMap.set(u.id, u);
-              }
-            });
-
-            // 1. Scan DMs
-            const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
-            dms.forEach(d => {
-              [d.sender_id, d.receiver_id].forEach(uid => {
-                if (uid && !allUsersMap.has(uid) && !FAKE_MOCK_IDS.includes(uid)) {
-                  const synth = resolveProfileOrFallback(uid, d.sender_id === uid ? d.sender : d.receiver);
-                  allUsersMap.set(uid, synth);
-                }
-              });
-            });
-
-            // 2. Scan Posts
-            const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
-            posts.forEach(p => {
-              if (p.user_id && !allUsersMap.has(p.user_id) && !FAKE_MOCK_IDS.includes(p.user_id)) {
-                const synth = resolveProfileOrFallback(p.user_id, p.user);
-                allUsersMap.set(p.user_id, synth);
-              }
-            });
-
-            // 3. Scan Comments
-            const comments = getItem<PostComment[]>(STORAGE_KEYS.POST_COMMENTS, []);
-            comments.forEach(c => {
-              if (c.user_id && !allUsersMap.has(c.user_id) && !FAKE_MOCK_IDS.includes(c.user_id)) {
-                const synth = resolveProfileOrFallback(c.user_id, c.user);
-                allUsersMap.set(c.user_id, synth);
-              }
-              if (c.reply_to_user_id && !allUsersMap.has(c.reply_to_user_id) && !FAKE_MOCK_IDS.includes(c.reply_to_user_id)) {
-                const synth = resolveProfileOrFallback(c.reply_to_user_id, c.reply_to_user);
-                allUsersMap.set(c.reply_to_user_id, synth);
-              }
-            });
-
-            // 4. Scan VIP Chat
-            const vipMsgs = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
-            vipMsgs.forEach(m => {
-              if (m.user_id && !allUsersMap.has(m.user_id) && !FAKE_MOCK_IDS.includes(m.user_id)) {
-                const synth = resolveProfileOrFallback(m.user_id, m.user);
-                allUsersMap.set(m.user_id, synth);
-              }
-            });
-
-            // 5. Scan Notifications
-            const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
-            notifs.forEach(n => {
-              if (n.actor_id && !allUsersMap.has(n.actor_id) && !FAKE_MOCK_IDS.includes(n.actor_id)) {
-                const synth = resolveProfileOrFallback(n.actor_id, n.actor);
-                allUsersMap.set(n.actor_id, synth);
-              }
-            });
-
-            const reconciledList = reconcileFollowGraph(Array.from(allUsersMap.values()));
-            if (reconciledList.length !== currentUsers.length) {
-              setItem(STORAGE_KEYS.REAL_USERS, reconciledList);
-            }
-          } catch (harvestErr) {
-            console.warn('[User Harvest Notice]:', harvestErr);
-          }
         } catch (supaErr) {
           console.warn('[Aether Supabase] Sync notice:', supaErr);
         }
@@ -2106,7 +2057,14 @@ export const setCurrentUserSession = (userId: string | null): void => {
 
 export const getRealUsers = (): Profile[] => {
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
-  const clean = users.filter(u => !FAKE_MOCK_IDS.includes(u.id));
+  const clean = users.filter(u => {
+    if (!u || !u.id || FAKE_MOCK_IDS.includes(u.id)) return false;
+    const dName = typeof u.display_name === 'string' ? u.display_name : '';
+    const uName = typeof u.username === 'string' ? u.username : '';
+    if (dName.startsWith('Member_') && (uName.startsWith('user__') || uName.startsWith('user_'))) return false;
+    if (dName === 'Member_l.com' || uName === 'user_l1.com' || uName === 'user__l1.com' || dName === 'Member_rvzym' || dName === 'Member_58dii' || dName === 'Member_592e7' || dName === 'Member_5fay6') return false;
+    return true;
+  });
   return reconcileFollowGraph(clean);
 };
 
@@ -4157,30 +4115,38 @@ export const isUserOnline = (userId: string, currentUserId?: string): boolean =>
 };
 
 export const resolveProfileOrFallback = (userId: string, embedded?: Partial<Profile> | null): Profile => {
-  if (embedded && embedded.id === userId && embedded.username) {
+  if (embedded && embedded.id === userId && embedded.username && !embedded.username.startsWith('user__')) {
     return embedded as Profile;
   }
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const found = users.find(u => u.id === userId);
-  if (found) return found;
+  if (found && !found.display_name?.startsWith('Member_')) return found;
 
   const isDlicomWallet = userId.startsWith('dlicom_0x') || userId.startsWith('0x');
   const rawAddr = userId.startsWith('dlicom_0x') ? userId.replace('dlicom_', '') : (userId.startsWith('0x') ? userId : '');
   const shortAddr = rawAddr.length > 10 ? `${rawAddr.slice(0, 6)}...${rawAddr.slice(-4)}` : rawAddr;
 
+  const resolvedDisplay = isDlicomWallet
+    ? shortAddr
+    : (embedded?.display_name && !embedded.display_name.startsWith('Member_') ? embedded.display_name : (embedded?.username && !embedded.username.startsWith('user__') ? embedded.username : 'Creator'));
+
+  const resolvedUsername = isDlicomWallet
+    ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}`
+    : (embedded?.username && !embedded.username.startsWith('user__') ? embedded.username : `creator_${userId.replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase()}`);
+
   const fallback: Profile = {
     id: userId,
-    email: isDlicomWallet ? `${rawAddr}@wallet.dlicom.social` : `${userId}@aetherfeed.io`,
+    email: isDlicomWallet ? `${rawAddr}@wallet.dlicom.social` : `${userId.replace(/[^a-zA-Z0-9]/g, '')}@aetherfeed.io`,
     first_name: isDlicomWallet ? 'Dlicom' : 'Aether',
     last_name: 'Member',
-    display_name: isDlicomWallet ? shortAddr : `Member_${userId.slice(-5)}`,
-    username: isDlicomWallet ? `dlicom_${rawAddr.slice(2, 8)}` : `user_${userId.slice(-6)}`,
-    avatar_url: `https://api.dicebear.com/7.x/identicon/svg?seed=${userId}&backgroundColor=0b132b,1c2541,1e293b`,
+    display_name: resolvedDisplay,
+    username: resolvedUsername,
+    avatar_url: `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(userId || resolvedUsername)}&backgroundColor=0b132b,1c2541,1e293b`,
     banner_url: '',
     banner_size: 'standard',
     bio: isDlicomWallet ? `Verified Dlicom Member • ${shortAddr}` : 'Aether Feed Community Member',
     dlicom_address: rawAddr,
-    location: isDlicomWallet ? 'Dlicom Network' : 'Metaverse',
+    location: isDlicomWallet ? 'Dlicom Network' : '',
     website: isDlicomWallet ? `https://dlicom.social/user/${rawAddr}` : '',
     is_verified: true,
     is_golden_verified: false,
@@ -4191,13 +4157,6 @@ export const resolveProfileOrFallback = (userId: string, embedded?: Partial<Prof
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
-
-  // Auto-heal local users table so the entire app immediately recognizes this user
-  if (!users.some(u => u.id === userId) && !FAKE_MOCK_IDS.includes(userId)) {
-    users.unshift(fallback);
-    setItem(STORAGE_KEYS.REAL_USERS, users);
-    saveProfileToCloud(fallback);
-  }
 
   return fallback;
 };

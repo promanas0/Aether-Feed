@@ -27,7 +27,8 @@ import {
   syncWithServer,
   isUserAdmin,
   isUserOnline,
-  updateUserPresence
+  updateUserPresence,
+  resolveProfileOrFallback
 } from '../../lib/storage';
 
 interface DirectMessagesViewProps {
@@ -46,26 +47,24 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   onOpenProfile,
 }) => {
   const isAdmin = isUserAdmin(currentUser);
-  const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [conversations, setConversations] = useState<Array<{
     contact: Profile;
     lastMessage: DirectMessage;
     unreadCount: number;
   }>>(() => getDmConversations(currentUser.id));
+  const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [pinnedMessage, setPinnedMessage] = useState<DirectMessage | null>(null);
   const [inputText, setInputText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [activeMenuMsgId, setActiveMenuMsgId] = useState<string | null>(null);
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const desktopAutoSelectedRef = useRef(false);
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   };
-
-  const desktopAutoSelectedRef = useRef(false);
 
   // Set initial selected user if provided via prop OR only once on desktop on mount
   useEffect(() => {
@@ -76,30 +75,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
       if (target && target.id !== currentUser.id) {
         setSelectedUser(target);
       } else if (initialRecipientId !== currentUser.id) {
-        const isDlicom = initialRecipientId.startsWith('dlicom_0x') || initialRecipientId.startsWith('0x');
-        const rawAddr = initialRecipientId.startsWith('dlicom_0x') ? initialRecipientId.replace('dlicom_', '') : (initialRecipientId.startsWith('0x') ? initialRecipientId : '');
-        const shortAddr = rawAddr.length > 10 ? `${rawAddr.slice(0, 6)}...${rawAddr.slice(-4)}` : rawAddr;
-        const fallbackUser: Profile = {
-          id: initialRecipientId,
-          email: isDlicom ? `${rawAddr}@wallet.dlicom.social` : `${initialRecipientId}@aetherfeed.io`,
-          first_name: isDlicom ? 'Dlicom' : 'Aether',
-          last_name: 'Member',
-          display_name: isDlicom ? shortAddr : `Member_${initialRecipientId.slice(-5)}`,
-          username: isDlicom ? `dlicom_${rawAddr.slice(2, 8)}` : `user_${initialRecipientId.slice(-6)}`,
-          avatar_url: `https://api.dicebear.com/7.x/identicon/svg?seed=${initialRecipientId}&backgroundColor=0b132b,1c2541,1e293b`,
-          banner_url: '',
-          banner_size: 'standard',
-          bio: 'Verified Dlicom Member',
-          dlicom_address: rawAddr,
-          location: 'Dlicom Network',
-          website: '',
-          is_verified: true,
-          followers: [],
-          following: [],
-          total_votes_received: 0,
-          created_at: new Date().toISOString(),
-        };
-        setSelectedUser(fallbackUser);
+        setSelectedUser(resolveProfileOrFallback(initialRecipientId));
       }
     } else if (!desktopAutoSelectedRef.current && typeof window !== 'undefined' && window.innerWidth >= 768) {
       const initialConvs = getDmConversations(currentUser.id);
