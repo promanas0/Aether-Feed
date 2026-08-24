@@ -107,44 +107,80 @@ export const reconcileFollowGraph = (users: Profile[]): Profile[] => {
     });
   });
 
-  return validUsers.map(u => ({
-    ...u,
-    display_name: u.display_name || u.username || 'Creator',
-    username: u.username || `user_${u.id.slice(-6)}`,
-    avatar_url: u.avatar_url || DEFAULT_DLICOM_AVATAR,
-    bio: u.bio || '',
-    total_votes_received: u.total_votes_received || 0,
-    following: parseArray(u.following),
-    followers: Array.from(followerMap.get(u.id) || []),
-  }));
+  return validUsers.map(u => {
+    const isDlicom = (u.id || '').startsWith('dlicom_0x') || (u.id || '').startsWith('0x');
+    const rawAddr = (u.id || '').startsWith('dlicom_0x') ? (u.id || '').replace('dlicom_', '') : ((u.id || '').startsWith('0x') ? u.id || '' : (u.dlicom_address || ''));
+    const shortAddr = rawAddr.length > 10 ? `${rawAddr.slice(0, 6)}...${rawAddr.slice(-4)}` : rawAddr;
+    const resolvedDisplay = (u.display_name && u.display_name.trim().length > 0)
+      ? u.display_name.trim()
+      : (u.first_name && u.last_name ? `${u.first_name} ${u.last_name}`.trim() : (isDlicom && shortAddr ? shortAddr : (u.username || `Member_${(u.id || '').slice(-5)}`)));
+    const resolvedUsername = (u.username && u.username.trim().length > 0)
+      ? u.username.trim()
+      : (isDlicom && rawAddr ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}` : `user_${(u.id || '').slice(-6)}`);
+    const resolvedAvatar = (u.avatar_url && u.avatar_url.trim().length > 0 && !u.avatar_url.includes('placeholder'))
+      ? u.avatar_url.trim()
+      : `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(u.id || resolvedUsername)}&backgroundColor=0b132b,1c2541,1e293b`;
+
+    return {
+      ...u,
+      display_name: resolvedDisplay || 'Aether Creator',
+      username: resolvedUsername || `user_${(u.id || '').slice(-6)}`,
+      avatar_url: resolvedAvatar,
+      bio: u.bio || '',
+      total_votes_received: u.total_votes_received || 0,
+      following: parseArray(u.following),
+      followers: Array.from(followerMap.get(u.id) || []),
+    };
+  });
 };
 
 export const sanitizeProfileForSupabase = (p: Partial<Profile>) => {
   const parseArray = (arr: any): string[] => {
-    if (Array.isArray(arr)) return arr.map(String);
+    if (Array.isArray(arr)) return arr.map(String).filter(Boolean);
     if (typeof arr === 'string') {
       try {
         const parsed = JSON.parse(arr);
-        if (Array.isArray(parsed)) return parsed.map(String);
+        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
       } catch { }
     }
     return [];
   };
 
+  const id = p.id || `usr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const isDlicom = id.startsWith('dlicom_0x') || id.startsWith('0x');
+  const rawAddr = id.startsWith('dlicom_0x') ? id.replace('dlicom_', '') : (id.startsWith('0x') ? id : (p.dlicom_address || ''));
+  const shortAddr = rawAddr.length > 10 ? `${rawAddr.slice(0, 6)}...${rawAddr.slice(-4)}` : rawAddr;
+
+  const resolvedDisplay = (p.display_name && p.display_name.trim().length > 0)
+    ? p.display_name.trim()
+    : (p.first_name && p.last_name ? `${p.first_name} ${p.last_name}`.trim() : (isDlicom && shortAddr ? shortAddr : (p.username || `Member_${id.slice(-5)}`)));
+
+  const resolvedUsername = (p.username && p.username.trim().length > 0)
+    ? p.username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '')
+    : (isDlicom && rawAddr ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}` : `user_${id.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toLowerCase()}`);
+
+  const resolvedEmail = (p.email && p.email.includes('@'))
+    ? p.email.trim().toLowerCase()
+    : (isDlicom && rawAddr ? `${rawAddr.toLowerCase()}@wallet.dlicom.social` : `${id.replace(/[^a-zA-Z0-9]/g, '')}@aetherfeed.io`);
+
+  const resolvedAvatar = (p.avatar_url && p.avatar_url.trim().length > 0 && !p.avatar_url.includes('placeholder'))
+    ? p.avatar_url.trim()
+    : `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(id || resolvedUsername)}&backgroundColor=0b132b,1c2541,1e293b`;
+
   return {
-    id: p.id,
-    email: p.email,
+    id,
+    email: resolvedEmail,
     first_name: p.first_name || '',
     last_name: p.last_name || '',
-    display_name: p.display_name || '',
-    username: p.username || '',
-    avatar_url: p.avatar_url || DEFAULT_DLICOM_AVATAR,
+    display_name: resolvedDisplay || 'Aether Creator',
+    username: resolvedUsername || `user_${id.slice(-6)}`,
+    avatar_url: resolvedAvatar,
     banner_url: p.banner_url || '',
     banner_size: p.banner_size || 'standard',
-    bio: p.bio || '',
-    dlicom_address: p.dlicom_address || '',
-    location: p.location || '',
-    website: p.website || '',
+    bio: p.bio || (isDlicom ? `Verified Dlicom Member • ${shortAddr}` : 'Hey, I just joined Aether Feed!'),
+    dlicom_address: rawAddr,
+    location: p.location || (isDlicom ? 'Dlicom Network' : ''),
+    website: p.website || (isDlicom && rawAddr ? `https://dlicom.social/user/${rawAddr}` : ''),
     is_verified: p.is_verified ?? true,
     is_golden_verified: p.is_golden_verified ?? false,
     is_admin: p.is_admin ?? false,
@@ -187,7 +223,7 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
       .upsert(cleanData, { onConflict: 'id' });
 
     if (!fullErr) {
-      console.log('[Aether Supabase] Full profile updated/inserted in Cloud DB:', profile.username);
+      console.log('[Aether Supabase] Full profile updated/inserted in Cloud DB:', cleanData.username);
       return true;
     }
 
@@ -195,24 +231,24 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
 
     // Attempt 2: Exact schema.sql standard columns (guaranteed to match standard Supabase table)
     const standardData = {
-      id: profile.id,
-      email: profile.email || `${profile.username || profile.id}@aetherfeed.io`,
-      first_name: profile.first_name || '',
-      last_name: profile.last_name || '',
-      display_name: profile.display_name || profile.username || 'Creator',
-      username: profile.username || `user_${profile.id.slice(-6)}`,
-      avatar_url: profile.avatar_url || DEFAULT_DLICOM_AVATAR,
-      banner_url: profile.banner_url || '',
-      bio: profile.bio || '',
-      dlicom_address: profile.dlicom_address || '',
-      location: profile.location || '',
-      website: profile.website || '',
-      is_verified: profile.is_verified ?? true,
-      followers: Array.isArray(profile.followers) ? profile.followers : [],
-      following: Array.isArray(profile.following) ? profile.following : [],
-      total_votes_received: profile.total_votes_received || 0,
-      password_hash: profile.password_hash || '',
-      created_at: profile.created_at || new Date().toISOString(),
+      id: cleanData.id,
+      email: cleanData.email,
+      first_name: cleanData.first_name,
+      last_name: cleanData.last_name,
+      display_name: cleanData.display_name,
+      username: cleanData.username,
+      avatar_url: cleanData.avatar_url,
+      banner_url: cleanData.banner_url,
+      bio: cleanData.bio,
+      dlicom_address: cleanData.dlicom_address,
+      location: cleanData.location,
+      website: cleanData.website,
+      is_verified: cleanData.is_verified,
+      followers: cleanData.followers,
+      following: cleanData.following,
+      total_votes_received: cleanData.total_votes_received,
+      password_hash: cleanData.password_hash,
+      created_at: cleanData.created_at,
     };
 
     const { error: stdErr } = await supabase
@@ -220,7 +256,7 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
       .upsert(standardData, { onConflict: 'id' });
 
     if (!stdErr) {
-      console.log('[Aether Supabase] Standard profile saved to Cloud DB:', profile.username);
+      console.log('[Aether Supabase] Standard profile saved to Cloud DB:', cleanData.username);
       return true;
     }
 
@@ -228,15 +264,15 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
 
     // Attempt 3: Core safe schema ensuring all NOT-NULL columns (email, username, display_name) are present
     const coreSafeData = {
-      id: profile.id,
-      email: profile.email || `${profile.username || profile.id}@aetherfeed.io`,
-      display_name: profile.display_name || profile.username || 'Creator',
-      username: profile.username || `user_${profile.id.slice(-6)}`,
-      avatar_url: profile.avatar_url || DEFAULT_DLICOM_AVATAR,
-      banner_url: profile.banner_url || '',
-      bio: profile.bio || '',
-      is_verified: profile.is_verified ?? true,
-      created_at: profile.created_at || new Date().toISOString(),
+      id: cleanData.id,
+      email: cleanData.email,
+      display_name: cleanData.display_name,
+      username: cleanData.username,
+      avatar_url: cleanData.avatar_url,
+      banner_url: cleanData.banner_url,
+      bio: cleanData.bio,
+      is_verified: cleanData.is_verified,
+      created_at: cleanData.created_at,
     };
 
     const { error: coreErr } = await supabase
@@ -244,7 +280,7 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
       .upsert(coreSafeData, { onConflict: 'id' });
 
     if (!coreErr) {
-      console.log('[Aether Supabase] Core safe profile saved to Cloud DB:', profile.username);
+      console.log('[Aether Supabase] Core safe profile saved to Cloud DB:', cleanData.username);
       return true;
     }
 
@@ -252,11 +288,11 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
 
     // Attempt 4: Minimal guaranteed fields
     const minimalData = {
-      id: profile.id,
-      email: profile.email || `${profile.id}@aetherfeed.io`,
-      display_name: profile.display_name || profile.username || 'Creator',
-      username: profile.username || `user_${profile.id.slice(-6)}`,
-      created_at: profile.created_at || new Date().toISOString(),
+      id: cleanData.id,
+      email: cleanData.email,
+      display_name: cleanData.display_name,
+      username: cleanData.username,
+      created_at: cleanData.created_at,
     };
 
     const { error: minErr } = await supabase
@@ -268,7 +304,7 @@ export const saveProfileToCloud = async (profile: Profile): Promise<boolean> => 
       return false;
     }
 
-    console.log('[Aether Supabase] Minimal profile saved to Cloud DB:', profile.username);
+    console.log('[Aether Supabase] Minimal profile saved to Cloud DB:', cleanData.username);
     return true;
   } catch (err) {
     console.error('[Aether Supabase] Critical saveProfileToCloud exception:', err);
@@ -702,6 +738,9 @@ export const syncWithServer = async (): Promise<boolean> => {
               } else {
                 resolvedTimeout = su.posting_timeout_until || null;
               }
+              const isDlicom = (su.id || '').startsWith('dlicom_0x') || (su.id || '').startsWith('0x');
+              const rawAddr = (su.id || '').startsWith('dlicom_0x') ? (su.id || '').replace('dlicom_', '') : ((su.id || '').startsWith('0x') ? su.id || '' : (su.dlicom_address || ''));
+              const shortAddr = rawAddr.length > 10 ? `${rawAddr.slice(0, 6)}...${rawAddr.slice(-4)}` : rawAddr;
 
               if (!localU) {
                 let suGolden = su.is_golden_verified !== undefined ? Boolean(su.is_golden_verified) : false;
@@ -710,8 +749,23 @@ export const syncWithServer = async (): Promise<boolean> => {
                 let suAdmin = isRootSuper || cloudAdminEmails.has(userEmail) || cloudAdminUserIds.has(su.id) || adminEmailList.includes(userEmail);
                 if (!suAdmin && su.is_admin !== undefined) suAdmin = Boolean(su.is_admin);
 
+                const resolvedDisplayName = (su.display_name && su.display_name.trim().length > 0)
+                  ? su.display_name.trim()
+                  : (su.first_name && su.last_name ? `${su.first_name} ${su.last_name}`.trim() : (isDlicom && shortAddr ? shortAddr : (su.username || `Member_${(su.id || '').slice(-5)}`)));
+
+                const resolvedUsername = (su.username && su.username.trim().length > 0)
+                  ? su.username.trim()
+                  : (isDlicom && rawAddr ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}` : `user_${(su.id || '').slice(-6)}`);
+
+                const resolvedAvatarUrl = (su.avatar_url && su.avatar_url.trim().length > 0 && !su.avatar_url.includes('placeholder'))
+                  ? su.avatar_url.trim()
+                  : `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(su.id || resolvedUsername)}&backgroundColor=0b132b,1c2541,1e293b`;
+
                 const suProfile: Profile = {
                   ...su,
+                  display_name: resolvedDisplayName || 'Aether Creator',
+                  username: resolvedUsername || `user_${(su.id || '').slice(-6)}`,
+                  avatar_url: resolvedAvatarUrl,
                   banner_url: su.banner_url || '',
                   banner_size: su.banner_size || 'standard',
                   followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : [],
@@ -759,30 +813,30 @@ export const syncWithServer = async (): Promise<boolean> => {
                   resolvedAdmin = su.is_admin !== undefined ? Boolean(su.is_admin) : Boolean(localU.is_admin);
                 }
 
+                const resolvedDisplayName = (preferLocal ? localU.display_name : su.display_name)
+                  || (preferLocal ? su.display_name : localU.display_name)
+                  || (localU.first_name && localU.last_name ? `${localU.first_name} ${localU.last_name}`.trim() : '')
+                  || (isDlicom && shortAddr ? shortAddr : (su.username || `Member_${(su.id || '').slice(-5)}`));
+
+                const resolvedUsername = (preferLocal ? localU.username : su.username)
+                  || (preferLocal ? su.username : localU.username)
+                  || (isDlicom && rawAddr ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}` : `user_${(su.id || '').slice(-6)}`);
+
+                const resolvedAvatarUrl = (preferLocal ? localU.avatar_url : su.avatar_url)
+                  || (preferLocal ? su.avatar_url : localU.avatar_url)
+                  || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(su.id || resolvedUsername)}&backgroundColor=0b132b,1c2541,1e293b`;
+
                 const suProfile: Profile = {
                   ...su,
                   ...localU,
-                  ...(preferLocal ? {
-                    display_name: localU.display_name || su.display_name,
-                    first_name: localU.first_name ?? su.first_name,
-                    last_name: localU.last_name ?? su.last_name,
-                    avatar_url: localU.avatar_url || su.avatar_url,
-                    banner_url: resolvedBannerUrl,
-                    banner_size: resolvedBannerSize,
-                    bio: localU.bio !== undefined ? localU.bio : (su.bio || ''),
-                    location: localU.location !== undefined ? localU.location : (su.location || ''),
-                    website: localU.website !== undefined ? localU.website : (su.website || ''),
-                  } : {
-                    display_name: su.display_name || localU.display_name,
-                    first_name: su.first_name ?? localU.first_name,
-                    last_name: su.last_name ?? localU.last_name,
-                    avatar_url: su.avatar_url || localU.avatar_url,
-                    banner_url: resolvedBannerUrl,
-                    banner_size: resolvedBannerSize,
-                    bio: su.bio !== undefined ? su.bio : (localU.bio || ''),
-                    location: su.location !== undefined ? su.location : (localU.location || ''),
-                    website: su.website !== undefined ? su.website : (localU.website || ''),
-                  }),
+                  display_name: resolvedDisplayName || 'Aether Creator',
+                  username: resolvedUsername || `user_${(su.id || '').slice(-6)}`,
+                  avatar_url: resolvedAvatarUrl,
+                  banner_url: resolvedBannerUrl,
+                  banner_size: resolvedBannerSize,
+                  bio: (preferLocal ? localU.bio : su.bio) || su.bio || localU.bio || '',
+                  location: (preferLocal ? localU.location : su.location) || su.location || localU.location || '',
+                  website: (preferLocal ? localU.website : su.website) || su.website || localU.website || '',
                   followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : localU.followers || [],
                   following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : localU.following || [],
                   is_golden_verified: resolvedGolden,
@@ -828,9 +882,8 @@ export const syncWithServer = async (): Promise<boolean> => {
           if (supaVotes && Array.isArray(supaVotes)) {
             const voteMap = new Map<string, VoteRecord>();
             supaVotes.forEach((v: any) => {
-              if (v && v.user_id && v.post_id && !deletedIds.has(v.post_id)) {
-                const key = `${v.user_id}_${v.post_id}`;
-                voteMap.set(key, { ...v, id: `vote_${key}` });
+              if (!deletedIds.has(v.post_id)) {
+                voteMap.set(`${v.user_id}_${v.post_id}`, v);
               }
             });
             validVotes = Array.from(voteMap.values());
@@ -858,7 +911,7 @@ export const syncWithServer = async (): Promise<boolean> => {
             // Auto-heal: If there are any local posts missing from Supabase, push them to Supabase
             if (pendingLocalPosts.length > 0) {
               pendingLocalPosts.forEach(async (lp) => {
-                const author = finalUsers.find(u => u.id === lp.user_id) || lp.user;
+                const author = finalUsers.find(u => u.id === lp.user_id) || lp.user || resolveProfileOrFallback(lp.user_id);
                 if (author) {
                   await saveProfileToCloud(author);
                 }
@@ -875,28 +928,9 @@ export const syncWithServer = async (): Promise<boolean> => {
                 const pVotes = validVotes.filter(v => v.post_id === p.id);
                 const up = pVotes.filter(v => v.type === 'up').length;
                 const down = pVotes.filter(v => v.type === 'down').length;
-                const freshAuthor = finalUsers.find(u => u.id === p.user_id);
+                const freshAuthor = finalUsers.find(u => u.id === p.user_id) || resolveProfileOrFallback(p.user_id, p.user);
                 const cCount = allComments.filter(c => c.post_id === p.id).length;
                 const localP = localPosts.find(lp => lp.id === p.id);
-                const authorFallback: Profile = {
-                  id: p.user_id,
-                  email: `${p.user_id}@aetherfeed.io`,
-                  first_name: '',
-                  last_name: '',
-                  display_name: p.user?.display_name || 'Creator',
-                  username: p.user?.username || `user_${p.user_id.slice(-5)}`,
-                  avatar_url: p.user?.avatar_url || DEFAULT_DLICOM_AVATAR,
-                  banner_url: '',
-                  bio: '',
-                  dlicom_address: '',
-                  location: '',
-                  website: '',
-                  is_verified: true,
-                  followers: [],
-                  following: [],
-                  total_votes_received: 0,
-                  created_at: p.created_at || new Date().toISOString(),
-                };
 
                 return {
                   ...p,
@@ -906,7 +940,7 @@ export const syncWithServer = async (): Promise<boolean> => {
                   votes_down: down,
                   net_votes: up - down,
                   comments_count: cCount,
-                  user: freshAuthor || p.user || authorFallback,
+                  user: freshAuthor,
                 };
               });
 
@@ -2356,33 +2390,14 @@ export const getRealPosts = (): Post[] => {
   return posts.map(p => {
     const vCounts = votesMap.get(p.id) || { up: 0, down: 0 };
     const net_votes = vCounts.up - vCounts.down;
-    const author = userMap.get(p.user_id);
-    const authorFallback: Profile = {
-      id: p.user_id,
-      email: `${p.user_id}@aetherfeed.io`,
-      first_name: '',
-      last_name: '',
-      display_name: p.user?.display_name || 'Creator',
-      username: p.user?.username || `user_${p.user_id.slice(-5)}`,
-      avatar_url: p.user?.avatar_url || DEFAULT_DLICOM_AVATAR,
-      banner_url: '',
-      bio: '',
-      dlicom_address: '',
-      location: '',
-      website: '',
-      is_verified: true,
-      followers: [],
-      following: [],
-      total_votes_received: 0,
-      created_at: p.created_at || new Date().toISOString(),
-    };
+    const author = userMap.get(p.user_id) || (p.user && p.user.display_name ? p.user : null) || resolveProfileOrFallback(p.user_id, p.user);
 
     return {
       ...p,
       votes_up: vCounts.up,
       votes_down: vCounts.down,
       net_votes,
-      user: author || p.user || authorFallback,
+      user: author,
     };
   });
 };

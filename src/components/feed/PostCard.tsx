@@ -22,7 +22,7 @@ import {
 import type { Post, Profile, PostComment } from '../../types';
 
 import { VerifiedBadge } from '../ui/VerifiedBadge';
-import { DEFAULT_DLICOM_AVATAR, isUserAdmin, getPostComments, addPostComment, deletePostComment } from '../../lib/storage';
+import { DEFAULT_DLICOM_AVATAR, isUserAdmin, getPostComments, addPostComment, deletePostComment, resolveProfileOrFallback } from '../../lib/storage';
 
 interface PostCardProps {
   post: Post;
@@ -46,7 +46,7 @@ const formatTimeAgo = (dateStr: string): string => {
   if (seconds < 60) return 'Just now';
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
+  const hours = Math.floor(seconds / 60);
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
@@ -97,25 +97,11 @@ export const PostCard: React.FC<PostCardProps> = ({
     setTimeout(() => setIsPopAnim(false), 300);
   };
 
-  const author = (currentUser && currentUser.id === post.user_id ? currentUser : null)
+  const rawAuthor = (currentUser && currentUser.id === post.user_id ? currentUser : null)
     || (allUsers ? allUsers.find(u => u.id === post.user_id) : null)
-    || post.user 
-    || {
-      id: post.user_id,
-      email: '',
-      first_name: 'Member',
-      last_name: '',
-      display_name: 'Aether Member',
-      username: 'member',
-      avatar_url: DEFAULT_DLICOM_AVATAR,
-      bio: '',
-      dlicom_address: '',
-      is_verified: true,
-      followers: [],
-      following: [],
-      total_votes_received: 0,
-      created_at: '',
-    };
+    || (post.user && post.user.display_name ? post.user : null);
+
+  const author = rawAuthor || resolveProfileOrFallback(post.user_id, post.user);
 
   const isAuthor = Boolean(currentUser && currentUser.id === post.user_id);
   const isAdmin = Boolean(currentUser && isUserAdmin(currentUser));
@@ -153,18 +139,21 @@ export const PostCard: React.FC<PostCardProps> = ({
         >
           <img
             src={author.avatar_url || DEFAULT_DLICOM_AVATAR}
-            alt={author.display_name}
-            className="w-10 h-10 rounded-xl object-cover border border-[#334155] group-hover/author:border-blue-500 transition-colors"
+            alt={author.display_name || 'Author'}
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).src = DEFAULT_DLICOM_AVATAR;
+            }}
+            className="w-10 h-10 rounded-xl object-cover border border-[#334155] group-hover/author:border-blue-500 transition-colors shrink-0"
           />
           <div>
             <div className="flex items-center gap-1.5">
               <h4 className="text-xs font-bold text-white group-hover/author:text-blue-300 transition-colors">
-                {author.display_name}
+                {author.display_name || author.username || 'Aether Creator'}
               </h4>
               <VerifiedBadge user={author} />
             </div>
             <p className="text-[11px] text-slate-400 font-mono">
-              @{author.username}
+              @{author.username || (author.id ? author.id.slice(-6) : 'user')}
             </p>
           </div>
         </button>
@@ -526,7 +515,8 @@ export const PostCard: React.FC<PostCardProps> = ({
                 .map((comment) => {
                   const isCommentAuthor = currentUser?.id === comment.user_id;
                   const canDeleteComment = isCommentAuthor || isAdmin;
-                  const commentUser = comment.user || allUsers?.find(u => u.id === comment.user_id);
+                  const rawCommentUser = (comment.user && comment.user.display_name ? comment.user : null) || allUsers?.find(u => u.id === comment.user_id);
+                  const commentUser = rawCommentUser || resolveProfileOrFallback(comment.user_id, comment.user);
                   const replies = comments.filter(r => r.parent_comment_id === comment.id);
 
                   return (
@@ -534,27 +524,28 @@ export const PostCard: React.FC<PostCardProps> = ({
                       {/* Parent Comment Card */}
                       <div className="flex items-start gap-2.5 p-3 bg-[#1E293B]/80 rounded-2xl border border-[#334155]/50 text-xs group hover:border-slate-500/40 transition-colors">
                         <img
-                          src={commentUser?.avatar_url || DEFAULT_DLICOM_AVATAR}
-                          alt={commentUser?.display_name || 'User'}
+                          src={commentUser.avatar_url || DEFAULT_DLICOM_AVATAR}
+                          alt={commentUser.display_name || 'User'}
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src = DEFAULT_DLICOM_AVATAR;
+                          }}
                           className="w-7 h-7 rounded-full border border-slate-700 object-cover flex-shrink-0 cursor-pointer hover:border-blue-400"
-                          onClick={() => commentUser && onOpenProfile(commentUser)}
+                          onClick={() => onOpenProfile(commentUser)}
                         />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span 
-                                onClick={() => commentUser && onOpenProfile(commentUser)}
+                                onClick={() => onOpenProfile(commentUser)}
                                 className="font-bold text-slate-200 hover:text-blue-400 cursor-pointer truncate"
                               >
-                                {commentUser?.display_name || 'Member'}
+                                {commentUser.display_name || commentUser.username || 'Member'}
                               </span>
-                              {commentUser && (
-                                <VerifiedBadge
-                                  isVerified={commentUser.is_verified}
-                                  isGoldenVerified={commentUser.is_golden_verified}
-                                  size="sm"
-                                />
-                              )}
+                              <VerifiedBadge
+                                isVerified={commentUser.is_verified}
+                                isGoldenVerified={commentUser.is_golden_verified}
+                                size="sm"
+                              />
                               <span className="text-[10px] text-slate-400 font-mono">
                                 {formatTimeAgo(comment.created_at)}
                               </span>
@@ -565,10 +556,8 @@ export const PostCard: React.FC<PostCardProps> = ({
                               {currentUser && (
                                 <button
                                   onClick={() => {
-                                    if (commentUser) {
-                                      setReplyingTo({ commentId: comment.id, user: commentUser });
-                                      commentInputRef.current?.focus();
-                                    }
+                                    setReplyingTo({ commentId: comment.id, user: commentUser });
+                                    commentInputRef.current?.focus();
                                   }}
                                   className="text-[11px] text-slate-400 hover:text-blue-400 flex items-center gap-1 px-1.5 py-0.5 rounded-md hover:bg-[#2A3756] transition-colors cursor-pointer"
                                   title="Reply to this comment"
@@ -606,7 +595,8 @@ export const PostCard: React.FC<PostCardProps> = ({
                           {replies.map((reply) => {
                             const isReplyAuthor = currentUser?.id === reply.user_id;
                             const canDeleteReply = isReplyAuthor || isAdmin;
-                            const replyAuthor = reply.user || allUsers?.find(u => u.id === reply.user_id);
+                            const rawReplyAuthor = (reply.user && reply.user.display_name ? reply.user : null) || allUsers?.find(u => u.id === reply.user_id);
+                            const replyAuthor = rawReplyAuthor || resolveProfileOrFallback(reply.user_id, reply.user);
 
                             return (
                               <div
@@ -614,27 +604,28 @@ export const PostCard: React.FC<PostCardProps> = ({
                                 className="flex items-start gap-2.5 p-2.5 bg-[#141E33]/90 rounded-2xl border border-blue-500/20 text-xs group hover:border-blue-500/40 transition-colors"
                               >
                                 <img
-                                  src={replyAuthor?.avatar_url || DEFAULT_DLICOM_AVATAR}
-                                  alt={replyAuthor?.display_name || 'User'}
+                                  src={replyAuthor.avatar_url || DEFAULT_DLICOM_AVATAR}
+                                  alt={replyAuthor.display_name || 'User'}
+                                  onError={(e) => {
+                                    (e.currentTarget as HTMLImageElement).src = DEFAULT_DLICOM_AVATAR;
+                                  }}
                                   className="w-6 h-6 rounded-full border border-slate-700 object-cover flex-shrink-0 cursor-pointer"
-                                  onClick={() => replyAuthor && onOpenProfile(replyAuthor)}
+                                  onClick={() => onOpenProfile(replyAuthor)}
                                 />
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center justify-between gap-2">
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                       <span
-                                        onClick={() => replyAuthor && onOpenProfile(replyAuthor)}
+                                        onClick={() => onOpenProfile(replyAuthor)}
                                         className="font-bold text-slate-200 hover:text-blue-400 cursor-pointer truncate"
                                       >
-                                        {replyAuthor?.display_name || 'Member'}
+                                        {replyAuthor.display_name || replyAuthor.username || 'Member'}
                                       </span>
-                                      {replyAuthor && (
-                                        <VerifiedBadge
-                                          isVerified={replyAuthor.is_verified}
-                                          isGoldenVerified={replyAuthor.is_golden_verified}
-                                          size="xs"
-                                        />
-                                      )}
+                                      <VerifiedBadge
+                                        isVerified={replyAuthor.is_verified}
+                                        isGoldenVerified={replyAuthor.is_golden_verified}
+                                        size="xs"
+                                      />
                                       {reply.reply_to_username && (
                                         <span className="text-[10px] text-blue-400 font-mono bg-blue-950/70 border border-blue-600/30 px-1.5 py-0.2 rounded-md">
                                           @{reply.reply_to_username}

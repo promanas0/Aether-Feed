@@ -20,6 +20,7 @@ import { PostCard } from '../feed/PostCard';
 import { FollowersListModal } from './FollowersListModal';
 import { EditProfileModal } from './EditProfileModal';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
+import { DEFAULT_DLICOM_AVATAR } from '../../lib/storage';
 
 interface UserProfileViewProps {
   profile: Profile;
@@ -154,19 +155,22 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 -mt-14 sm:-mt-16 mb-4">
             <div className="flex items-end gap-3.5">
               <img
-                src={displayProfile.avatar_url}
-                alt={displayProfile.display_name}
-                className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover border-4 border-[#1E293B] shadow-xl"
+                src={displayProfile.avatar_url || DEFAULT_DLICOM_AVATAR}
+                alt={displayProfile.display_name || 'User'}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = DEFAULT_DLICOM_AVATAR;
+                }}
+                className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover border-4 border-[#1E293B] shadow-xl shrink-0"
               />
               <div className="mb-1.5">
                 <div className="flex items-center gap-2">
                   <h1 className="text-lg sm:text-2xl font-bold text-white tracking-tight">
-                    {displayProfile.display_name}
+                    {displayProfile.display_name || displayProfile.username || 'Aether Member'}
                   </h1>
                   <VerifiedBadge user={displayProfile} size="md" />
                 </div>
                 <p className="text-xs text-blue-400 font-mono">
-                  @{displayProfile.username}
+                  @{displayProfile.username || (displayProfile.id ? displayProfile.id.slice(-6) : 'user')}
                 </p>
               </div>
             </div>

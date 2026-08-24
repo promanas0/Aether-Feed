@@ -1,6 +1,7 @@
 import { X, ArrowUpCircle, Calendar, Filter, Image as ImageIcon } from 'lucide-react';
 import type { Profile, Post } from '../../types';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
+import { DEFAULT_DLICOM_AVATAR } from '../../lib/storage';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -64,14 +65,17 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 -mt-12 mb-3">
             <div className="flex items-end gap-3.5">
               <img
-                src={profile.avatar_url}
-                alt={profile.display_name}
-                className="w-20 h-20 rounded-2xl object-cover border-4 border-[#1E293B] shadow-lg"
+                src={profile.avatar_url || DEFAULT_DLICOM_AVATAR}
+                alt={profile.display_name || 'User'}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = DEFAULT_DLICOM_AVATAR;
+                }}
+                className="w-20 h-20 rounded-2xl object-cover border-4 border-[#1E293B] shadow-lg shrink-0"
               />
               <div className="mb-1">
                 <div className="flex items-center gap-2">
                   <h2 className="text-base font-bold text-white tracking-tight">
-                    {profile.display_name}
+                    {profile.display_name || profile.username || 'Aether Member'}
                   </h2>
                   <VerifiedBadge user={profile} />
                   {isCurrentUser && (
@@ -81,7 +85,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-blue-400 font-mono">
-                  @{profile.username}
+                  @{profile.username || (profile.id ? profile.id.slice(-6) : 'user')}
                 </p>
               </div>
             </div>

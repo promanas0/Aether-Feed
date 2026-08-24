@@ -18,7 +18,7 @@ import {
   Crown
 } from 'lucide-react';
 import type { Profile, NotificationItem, ThemeMode, Post } from '../../types';
-import { isUserAdmin } from '../../lib/storage';
+import { isUserAdmin, DEFAULT_DLICOM_AVATAR } from '../../lib/storage';
 import { NotificationFlyout } from './NotificationFlyout';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
 
@@ -89,7 +89,8 @@ export const Header: React.FC<HeaderProps> = ({
           (u.last_name && u.last_name.toLowerCase().includes(query)) ||
           (u.email && u.email.toLowerCase().includes(query)) ||
           (u.bio && u.bio.toLowerCase().includes(query)) ||
-          (u.location && u.location.toLowerCase().includes(query))
+          (u.location && u.location.toLowerCase().includes(query)) ||
+          (u.dlicom_address && u.dlicom_address.toLowerCase().includes(query))
       ).slice(0, 6)
     : [];
 
@@ -196,16 +197,23 @@ export const Header: React.FC<HeaderProps> = ({
                         className="flex items-center gap-2.5 p-2 hover:bg-[#1E293B] rounded-xl cursor-pointer transition-colors"
                       >
                         <img
-                          src={user.avatar_url}
-                          alt={user.display_name}
-                          className="w-7 h-7 rounded-lg object-cover border border-[#334155]"
+                          src={user.avatar_url || DEFAULT_DLICOM_AVATAR}
+                          alt={user.display_name || 'User'}
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src = DEFAULT_DLICOM_AVATAR;
+                          }}
+                          className="w-7 h-7 rounded-lg object-cover border border-[#334155] shrink-0"
                         />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1">
-                            <p className="text-xs font-bold text-white truncate">{user.display_name}</p>
+                            <p className="text-xs font-bold text-white truncate">
+                              {user.display_name || user.username || 'Member'}
+                            </p>
                             <VerifiedBadge user={user} size="xs" />
                           </div>
-                          <p className="text-[10px] text-slate-400 font-mono truncate">@{user.username}</p>
+                          <p className="text-[10px] text-slate-400 font-mono truncate">
+                            @{user.username || (user.id ? user.id.slice(-6) : 'user')}
+                          </p>
                         </div>
                       </div>
                     ))}
@@ -340,12 +348,15 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-xl bg-[#1C2541] hover:bg-[#2A3756] border border-[#334155] transition-all cursor-pointer"
             >
               <img
-                src={currentUser.avatar_url}
-                alt={currentUser.display_name}
-                className="w-7 h-7 rounded-lg object-cover border border-blue-500/40"
+                src={currentUser.avatar_url || DEFAULT_DLICOM_AVATAR}
+                alt={currentUser.display_name || 'User'}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = DEFAULT_DLICOM_AVATAR;
+                }}
+                className="w-7 h-7 rounded-lg object-cover border border-blue-500/40 shrink-0"
               />
               <span className="text-xs font-semibold text-slate-200 hidden md:inline max-w-[90px] truncate">
-                {currentUser.first_name}
+                {currentUser.first_name || currentUser.display_name || currentUser.username || 'User'}
               </span>
               <ChevronDown className="w-3 h-3 text-slate-400" />
             </button>
@@ -363,10 +374,14 @@ export const Header: React.FC<HeaderProps> = ({
                     className="p-2.5 bg-[#1E293B] rounded-xl hover:bg-[#2A3756] cursor-pointer mb-2"
                   >
                     <div className="flex items-center gap-1.5">
-                      <p className="text-xs font-bold text-white truncate">{currentUser.display_name}</p>
+                      <p className="text-xs font-bold text-white truncate">
+                        {currentUser.display_name || currentUser.username || 'User'}
+                      </p>
                       <VerifiedBadge user={currentUser} size="xs" />
                     </div>
-                    <p className="text-[11px] text-blue-400 font-mono">@{currentUser.username}</p>
+                    <p className="text-[11px] text-blue-400 font-mono">
+                      @{currentUser.username || (currentUser.id ? currentUser.id.slice(-6) : 'user')}
+                    </p>
                   </div>
 
                   <button

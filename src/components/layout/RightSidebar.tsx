@@ -1,6 +1,7 @@
 import { Trophy, Hash, UserPlus, UserCheck, ShieldCheck, ArrowRight } from 'lucide-react';
 import type { Profile } from '../../types';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
+import { DEFAULT_DLICOM_AVATAR } from '../../lib/storage';
 
 interface RightSidebarProps {
   leaderboard: Array<Profile & { rank: number; posts_count: number }>;
@@ -21,28 +22,31 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   onSelectTag,
   onOpenFullLeaderboard,
 }) => {
-  const trendingTags = ['dlicom', 'web3', 'architecture', 'design', 'minimalism', 'cyberpunk'];
+  const trendingTags = ['SocialFi', 'AetherFeed', 'Dlicom', 'Web3', 'Season1', 'CreatorEconomy'];
 
-  // Other users to follow (excluding current user)
-  const whoToFollow = registeredUsers.filter(u => u.id !== currentUser.id).slice(0, 4);
+  // Filter registered users for who to follow (exclude current user and already followed)
+  const whoToFollow = registeredUsers
+    .filter(u => u.id !== currentUser.id && !currentUser.following.includes(u.id))
+    .slice(0, 3);
 
   return (
-    <aside className="w-72 shrink-0 hidden xl:flex flex-col gap-4 sticky top-20 h-[calc(100vh-5rem)] overflow-y-auto pb-6">
+    <aside className="w-80 shrink-0 hidden lg:block space-y-4 sticky top-20 h-[calc(100vh-6rem)] select-none">
       
-      {/* Top 3 Real-Users Leaderboard Widget */}
+      {/* Top 3 Leaderboard Widget */}
       <div className="p-4 bg-[#1C2541] border border-[#334155] rounded-2xl">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Trophy className="w-4 h-4 text-blue-400" />
+            <Trophy className="w-4 h-4 text-amber-400" />
             <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-              Top Ranked Curators
+              Top Standings
             </h3>
           </div>
           <button
             onClick={onOpenFullLeaderboard}
-            className="text-[11px] font-semibold text-blue-400 hover:text-blue-300 transition-colors"
+            className="text-[11px] font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1 cursor-pointer transition-colors"
           >
-            View All &rarr;
+            <span>View All</span>
+            <ArrowRight className="w-3 h-3" />
           </button>
         </div>
 
@@ -58,19 +62,22 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                   #{item.rank}
                 </div>
                 <img
-                  src={item.avatar_url}
-                  alt={item.display_name}
-                  className="w-8 h-8 rounded-lg object-cover border border-[#334155]"
+                  src={item.avatar_url || DEFAULT_DLICOM_AVATAR}
+                  alt={item.display_name || 'Member'}
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = DEFAULT_DLICOM_AVATAR;
+                  }}
+                  className="w-8 h-8 rounded-lg object-cover border border-[#334155] shrink-0"
                 />
                 <div className="min-w-0">
                   <div className="flex items-center gap-1">
                     <p className="text-xs font-bold text-white truncate group-hover:text-blue-300 transition-colors">
-                      {item.display_name}
+                      {item.display_name || item.username || 'Member'}
                     </p>
                     <VerifiedBadge user={item} size="xs" />
                   </div>
                   <p className="text-[10px] text-slate-400 font-mono truncate">
-                    @{item.username}
+                    @{item.username || (item.id ? item.id.slice(-6) : 'user')}
                   </p>
                 </div>
               </div>
@@ -121,19 +128,22 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                   className="flex items-center gap-2.5 min-w-0 cursor-pointer group flex-1"
                 >
                   <img
-                    src={user.avatar_url}
-                    alt={user.display_name}
-                    className="w-8 h-8 rounded-lg object-cover border border-[#334155]"
+                    src={user.avatar_url || DEFAULT_DLICOM_AVATAR}
+                    alt={user.display_name || 'Member'}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = DEFAULT_DLICOM_AVATAR;
+                    }}
+                    className="w-8 h-8 rounded-lg object-cover border border-[#334155] shrink-0"
                   />
                   <div className="min-w-0">
                     <div className="flex items-center gap-1">
                       <p className="text-xs font-bold text-white truncate group-hover:text-blue-300">
-                        {user.display_name}
+                        {user.display_name || user.username || 'Member'}
                       </p>
                       <VerifiedBadge user={user} size="xs" />
                     </div>
                     <p className="text-[10px] text-slate-400 font-mono truncate">
-                      @{user.username}
+                      @{user.username || (user.id ? user.id.slice(-6) : 'user')}
                     </p>
                   </div>
                 </div>

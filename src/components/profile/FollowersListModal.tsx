@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import type { Profile } from '../../types';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
-import { DEFAULT_DLICOM_AVATAR } from '../../lib/storage';
+import { DEFAULT_DLICOM_AVATAR, resolveProfileOrFallback } from '../../lib/storage';
 
 interface FollowersListModalProps {
   isOpen: boolean;
@@ -42,7 +42,7 @@ export const FollowersListModal: React.FC<FollowersListModalProps> = ({
 
   // Resolve user objects
   const userList = safeUserIds
-    .map(id => safeAllUsers.find(u => u && u.id === id))
+    .map(id => safeAllUsers.find(u => u && u.id === id) || resolveProfileOrFallback(id))
     .filter((u): u is Profile => Boolean(u));
 
   const filtered = userList.filter(
@@ -121,14 +121,17 @@ export const FollowersListModal: React.FC<FollowersListModalProps> = ({
                   >
                     <img
                       src={user.avatar_url || DEFAULT_DLICOM_AVATAR}
-                      alt={user.display_name}
+                      alt={user.display_name || 'User'}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = DEFAULT_DLICOM_AVATAR;
+                      }}
                       className="w-10 h-10 rounded-xl object-cover border border-[#334155] shrink-0"
                     />
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <h4 className="text-xs font-bold text-white truncate group-hover:text-blue-300 transition-colors">
-                          {user.display_name}
+                          {user.display_name || user.username || 'Member'}
                         </h4>
                         <VerifiedBadge user={user} />
                         {isSelf && (
@@ -138,7 +141,7 @@ export const FollowersListModal: React.FC<FollowersListModalProps> = ({
                         )}
                       </div>
                       <p className="text-[11px] text-slate-400 font-mono truncate">
-                        @{user.username}
+                        @{user.username || (user.id ? user.id.slice(-6) : 'user')}
                       </p>
                     </div>
                   </div>

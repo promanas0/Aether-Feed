@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { Post, Profile } from '../../types';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
+import { DEFAULT_DLICOM_AVATAR } from '../../lib/storage';
 
 interface PostDetailsModalProps {
   isOpen: boolean;
@@ -90,19 +91,22 @@ export const PostDetailsModal: React.FC<PostDetailsModalProps> = ({
           {/* Post Author Card */}
           <div className="p-3.5 bg-[#0B132B] border border-[#334155] rounded-2xl flex items-center gap-3">
             <img
-              src={post.user?.avatar_url}
-              alt={post.user?.display_name}
-              className="w-11 h-11 rounded-xl object-cover border border-[#334155]"
+              src={post.user?.avatar_url || DEFAULT_DLICOM_AVATAR}
+              alt={post.user?.display_name || 'User'}
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = DEFAULT_DLICOM_AVATAR;
+              }}
+              className="w-11 h-11 rounded-xl object-cover border border-[#334155] shrink-0"
             />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
                 <h4 className="text-xs font-bold text-white truncate">
-                  {post.user?.display_name}
+                  {post.user?.display_name || post.user?.username || 'Member'}
                 </h4>
                 <VerifiedBadge user={post.user} />
               </div>
               <p className="text-[11px] text-blue-400 font-mono truncate">
-                @{post.user?.username}
+                @{post.user?.username || (post.user_id ? post.user_id.slice(-6) : 'user')}
               </p>
             </div>
           </div>
