@@ -70,9 +70,36 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   // Set initial selected user if provided via prop OR only once on desktop on mount
   useEffect(() => {
     if (initialRecipientId) {
-      const target = allUsers.find(u => u.id === initialRecipientId);
+      const currentConvs = getDmConversations(currentUser.id);
+      const fromConvs = currentConvs.find(c => c.contact.id === initialRecipientId)?.contact;
+      const target = allUsers.find(u => u.id === initialRecipientId) || fromConvs;
       if (target && target.id !== currentUser.id) {
         setSelectedUser(target);
+      } else if (initialRecipientId !== currentUser.id) {
+        const isDlicom = initialRecipientId.startsWith('dlicom_0x') || initialRecipientId.startsWith('0x');
+        const rawAddr = initialRecipientId.startsWith('dlicom_0x') ? initialRecipientId.replace('dlicom_', '') : (initialRecipientId.startsWith('0x') ? initialRecipientId : '');
+        const shortAddr = rawAddr.length > 10 ? `${rawAddr.slice(0, 6)}...${rawAddr.slice(-4)}` : rawAddr;
+        const fallbackUser: Profile = {
+          id: initialRecipientId,
+          email: isDlicom ? `${rawAddr}@wallet.dlicom.social` : `${initialRecipientId}@aetherfeed.io`,
+          first_name: isDlicom ? 'Dlicom' : 'Aether',
+          last_name: 'Member',
+          display_name: isDlicom ? shortAddr : `Member_${initialRecipientId.slice(-5)}`,
+          username: isDlicom ? `dlicom_${rawAddr.slice(2, 8)}` : `user_${initialRecipientId.slice(-6)}`,
+          avatar_url: `https://api.dicebear.com/7.x/identicon/svg?seed=${initialRecipientId}&backgroundColor=0b132b,1c2541,1e293b`,
+          banner_url: '',
+          banner_size: 'standard',
+          bio: 'Verified Dlicom Member',
+          dlicom_address: rawAddr,
+          location: 'Dlicom Network',
+          website: '',
+          is_verified: true,
+          followers: [],
+          following: [],
+          total_votes_received: 0,
+          created_at: new Date().toISOString(),
+        };
+        setSelectedUser(fallbackUser);
       }
     } else if (!desktopAutoSelectedRef.current && typeof window !== 'undefined' && window.innerWidth >= 768) {
       const initialConvs = getDmConversations(currentUser.id);
@@ -119,7 +146,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
       clearInterval(pollInterval);
       window.removeEventListener('aether_storage_sync', handleSync);
     };
-  }, [currentUser.id, selectedUser]);
+  }, [selectedUser, currentUser.id]);
 
   // Online presence heartbeat updater
   useEffect(() => {
@@ -176,11 +203,20 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     }
   };
 
+  // Unified available users combining allUsers and recent contacts
+  const allAvailableUsers = React.useMemo(() => {
+    const map = new Map<string, Profile>();
+    allUsers.forEach(u => map.set(u.id, u));
+    conversations.forEach(c => map.set(c.contact.id, c.contact));
+    return Array.from(map.values()).filter(u => u.id !== currentUser.id);
+  }, [allUsers, conversations, currentUser.id]);
+
   // Filtered search list for finding new contacts
-  const filteredUsers = allUsers.filter(u => 
+  const filteredUsers = allAvailableUsers.filter(u => 
     u.id !== currentUser.id &&
-    (u.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-     u.username.toLowerCase().includes(searchQuery.toLowerCase()))
+    ((u.display_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+     (u.username || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+     (u.dlicom_address || '').toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   return (

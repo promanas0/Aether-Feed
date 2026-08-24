@@ -1036,6 +1036,75 @@ export const syncWithServer = async (): Promise<boolean> => {
               setItem(STORAGE_KEYS.VIP_CHAT, Array.from(vMap.values()));
             }
           } catch { }
+
+          // I. Auto-harvest any missing user profiles from all Supabase data streams
+          try {
+            const allUsersMap = new Map<string, Profile>();
+            const currentUsers = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+            currentUsers.forEach(u => {
+              if (u && u.id && !FAKE_MOCK_IDS.includes(u.id)) {
+                allUsersMap.set(u.id, u);
+              }
+            });
+
+            // 1. Scan DMs
+            const dms = getItem<DirectMessage[]>(STORAGE_KEYS.DIRECT_MESSAGES, []);
+            dms.forEach(d => {
+              [d.sender_id, d.receiver_id].forEach(uid => {
+                if (uid && !allUsersMap.has(uid) && !FAKE_MOCK_IDS.includes(uid)) {
+                  const synth = resolveProfileOrFallback(uid, d.sender_id === uid ? d.sender : d.receiver);
+                  allUsersMap.set(uid, synth);
+                }
+              });
+            });
+
+            // 2. Scan Posts
+            const posts = getItem<Post[]>(STORAGE_KEYS.POSTS, []);
+            posts.forEach(p => {
+              if (p.user_id && !allUsersMap.has(p.user_id) && !FAKE_MOCK_IDS.includes(p.user_id)) {
+                const synth = resolveProfileOrFallback(p.user_id, p.user);
+                allUsersMap.set(p.user_id, synth);
+              }
+            });
+
+            // 3. Scan Comments
+            const comments = getItem<PostComment[]>(STORAGE_KEYS.POST_COMMENTS, []);
+            comments.forEach(c => {
+              if (c.user_id && !allUsersMap.has(c.user_id) && !FAKE_MOCK_IDS.includes(c.user_id)) {
+                const synth = resolveProfileOrFallback(c.user_id, c.user);
+                allUsersMap.set(c.user_id, synth);
+              }
+              if (c.reply_to_user_id && !allUsersMap.has(c.reply_to_user_id) && !FAKE_MOCK_IDS.includes(c.reply_to_user_id)) {
+                const synth = resolveProfileOrFallback(c.reply_to_user_id, c.reply_to_user);
+                allUsersMap.set(c.reply_to_user_id, synth);
+              }
+            });
+
+            // 4. Scan VIP Chat
+            const vipMsgs = getItem<ChatMessage[]>(STORAGE_KEYS.VIP_CHAT, []);
+            vipMsgs.forEach(m => {
+              if (m.user_id && !allUsersMap.has(m.user_id) && !FAKE_MOCK_IDS.includes(m.user_id)) {
+                const synth = resolveProfileOrFallback(m.user_id, m.user);
+                allUsersMap.set(m.user_id, synth);
+              }
+            });
+
+            // 5. Scan Notifications
+            const notifs = getItem<NotificationItem[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+            notifs.forEach(n => {
+              if (n.actor_id && !allUsersMap.has(n.actor_id) && !FAKE_MOCK_IDS.includes(n.actor_id)) {
+                const synth = resolveProfileOrFallback(n.actor_id, n.actor);
+                allUsersMap.set(n.actor_id, synth);
+              }
+            });
+
+            const reconciledList = reconcileFollowGraph(Array.from(allUsersMap.values()));
+            if (reconciledList.length !== currentUsers.length) {
+              setItem(STORAGE_KEYS.REAL_USERS, reconciledList);
+            }
+          } catch (harvestErr) {
+            console.warn('[User Harvest Notice]:', harvestErr);
+          }
         } catch (supaErr) {
           console.warn('[Aether Supabase] Sync notice:', supaErr);
         }
@@ -4072,6 +4141,52 @@ export const isUserOnline = (userId: string, currentUserId?: string): boolean =>
   return Date.now() - lastActive < 180000;
 };
 
+export const resolveProfileOrFallback = (userId: string, embedded?: Partial<Profile> | null): Profile => {
+  if (embedded && embedded.id === userId && embedded.username) {
+    return embedded as Profile;
+  }
+  const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
+  const found = users.find(u => u.id === userId);
+  if (found) return found;
+
+  const isDlicomWallet = userId.startsWith('dlicom_0x') || userId.startsWith('0x');
+  const rawAddr = userId.startsWith('dlicom_0x') ? userId.replace('dlicom_', '') : (userId.startsWith('0x') ? userId : '');
+  const shortAddr = rawAddr.length > 10 ? `${rawAddr.slice(0, 6)}...${rawAddr.slice(-4)}` : rawAddr;
+
+  const fallback: Profile = {
+    id: userId,
+    email: isDlicomWallet ? `${rawAddr}@wallet.dlicom.social` : `${userId}@aetherfeed.io`,
+    first_name: isDlicomWallet ? 'Dlicom' : 'Aether',
+    last_name: 'Member',
+    display_name: isDlicomWallet ? shortAddr : `Member_${userId.slice(-5)}`,
+    username: isDlicomWallet ? `dlicom_${rawAddr.slice(2, 8)}` : `user_${userId.slice(-6)}`,
+    avatar_url: `https://api.dicebear.com/7.x/identicon/svg?seed=${userId}&backgroundColor=0b132b,1c2541,1e293b`,
+    banner_url: '',
+    banner_size: 'standard',
+    bio: isDlicomWallet ? `Verified Dlicom Member • ${shortAddr}` : 'Aether Feed Community Member',
+    dlicom_address: rawAddr,
+    location: isDlicomWallet ? 'Dlicom Network' : 'Metaverse',
+    website: isDlicomWallet ? `https://dlicom.social/user/${rawAddr}` : '',
+    is_verified: true,
+    is_golden_verified: false,
+    is_admin: false,
+    followers: [],
+    following: [],
+    total_votes_received: 0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  // Auto-heal local users table so the entire app immediately recognizes this user
+  if (!users.some(u => u.id === userId) && !FAKE_MOCK_IDS.includes(userId)) {
+    users.unshift(fallback);
+    setItem(STORAGE_KEYS.REAL_USERS, users);
+    saveProfileToCloud(fallback);
+  }
+
+  return fallback;
+};
+
 export const getDmConversations = (currentUserId: string): Array<{
   contact: Profile;
   lastMessage: DirectMessage;
@@ -4093,6 +4208,7 @@ export const getDmConversations = (currentUserId: string): Array<{
 
   relevant.forEach(m => {
     const otherId = m.sender_id === currentUserId ? m.receiver_id : m.sender_id;
+    if (!otherId) return;
     const existing = contactMap.get(otherId);
     const isUnread = m.receiver_id === currentUserId && !m.is_read;
 
@@ -4108,7 +4224,7 @@ export const getDmConversations = (currentUserId: string): Array<{
 
   const list: Array<{ contact: Profile; lastMessage: DirectMessage; unreadCount: number }> = [];
   contactMap.forEach((val, contactId) => {
-    const contact = userMap.get(contactId);
+    const contact = userMap.get(contactId) || resolveProfileOrFallback(contactId, val.lastMsg.sender?.id === contactId ? val.lastMsg.sender : val.lastMsg.receiver);
     if (contact && contact.id !== currentUserId) {
       list.push({
         contact,
@@ -4140,10 +4256,8 @@ export const sendDirectMessage = async (
   const clean = text.trim();
   if (!clean || senderId === receiverId) return null;
 
-  const users = getRealUsers();
-  const sender = users.find(u => u.id === senderId);
-  const receiver = users.find(u => u.id === receiverId);
-  if (!sender || !receiver) return null;
+  const sender = resolveProfileOrFallback(senderId);
+  const receiver = resolveProfileOrFallback(receiverId);
 
   const restriction = isUserPostingRestricted(sender);
   if (restriction.restricted) {
@@ -4180,6 +4294,10 @@ export const sendDirectMessage = async (
   // 3. Sync to Supabase Cloud DB
   const supabase = getSupabaseClient();
   if (supabase) {
+    // Ensure both profiles exist in Supabase Cloud
+    saveProfileToCloud(sender);
+    saveProfileToCloud(receiver);
+
     supabase.from('direct_messages').upsert({
       id: newDm.id,
       sender_id: newDm.sender_id,
