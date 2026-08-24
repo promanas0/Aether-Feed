@@ -1800,7 +1800,20 @@ export const authenticateWithDlicomWallet = async (): Promise<{ success: boolean
     return { success: false, message: 'Window is not defined.' };
   }
 
-  const dlicomProvider = (window as any).dlicom || (window as any).dlicomWallet || (window as any).ethereum;
+  const win = typeof window !== 'undefined' ? (window as any) : {};
+  let dlicomProvider = win.dlicom || win.dlicomWallet;
+
+  // Search EIP-6963 multi-injected provider list
+  if (!dlicomProvider && Array.isArray(win.ethereum?.providers)) {
+    dlicomProvider = win.ethereum.providers.find(
+      (p: any) => p.isDlicom || p.isDlicomWallet || p.name?.toLowerCase()?.includes('dlicom')
+    );
+  }
+
+  if (!dlicomProvider) {
+    dlicomProvider = win.ethereum;
+  }
+
   if (!dlicomProvider) {
     return {
       success: false,
