@@ -36,14 +36,29 @@ interface NotificationFlyoutProps {
   onOpenChat?: () => void;
 }
 
-const formatTimeAgo = (dateStr: string): string => {
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (seconds < 60) return `${Math.max(1, seconds)}s ago`;
+const formatTimeAgo = (dateStr?: string | null): string => {
+  if (!dateStr) return 'Just now';
+  const parsed = new Date(dateStr).getTime();
+  if (isNaN(parsed) || parsed <= 0) return 'Just now';
+
+  const diffMs = Date.now() - parsed;
+  if (diffMs < 45000) return 'Just now';
+
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
+
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
+
   const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+
+  const weeks = Math.floor(days / 7);
+  if (weeks < 4) return `${weeks}w ago`;
+
   return `${days}d ago`;
 };
 

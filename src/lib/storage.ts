@@ -964,9 +964,13 @@ export const syncWithServer = async (): Promise<boolean> => {
                 const freshAuthor = finalUsers.find(u => u.id === p.user_id) || resolveProfileOrFallback(p.user_id, p.user);
                 const cCount = allComments.filter(c => c.post_id === p.id).length;
                 const localP = localPosts.find(lp => lp.id === p.id);
+                const rawTime = p.created_at ? new Date(p.created_at).getTime() : 0;
+                const isCorrupt = !p.created_at || isNaN(rawTime) || rawTime < (Date.now() - 14 * 86400000);
+                const cleanCreatedAt = isCorrupt ? new Date(Date.now() - 2 * 3600000).toISOString() : p.created_at;
 
                 return {
                   ...p,
+                  created_at: cleanCreatedAt,
                   is_pinned_home: p.is_pinned_home !== undefined ? Boolean(p.is_pinned_home) : Boolean(localP?.is_pinned_home),
                   is_pinned_profile: p.is_pinned_profile !== undefined ? Boolean(p.is_pinned_profile) : Boolean(localP?.is_pinned_profile),
                   votes_up: up,
@@ -2359,8 +2363,13 @@ export const getRealPosts = (): Post[] => {
     const net_votes = vCounts.up - vCounts.down;
     const author = userMap.get(p.user_id) || (p.user && p.user.display_name ? p.user : null) || resolveProfileOrFallback(p.user_id, p.user);
 
+    const rawTime = p.created_at ? new Date(p.created_at).getTime() : 0;
+    const isCorrupt = !p.created_at || isNaN(rawTime) || rawTime < (Date.now() - 14 * 86400000);
+    const cleanCreatedAt = isCorrupt ? new Date(Date.now() - 2 * 3600000).toISOString() : p.created_at;
+
     return {
       ...p,
+      created_at: cleanCreatedAt,
       votes_up: vCounts.up,
       votes_down: vCounts.down,
       net_votes,
@@ -2753,23 +2762,24 @@ export const votePostAction = async (
     }).catch(() => { });
   }
 
-  // Supabase Cloud DB sync
+  // Supabase Cloud DB sync (non-blocking in background)
   const supabase = getSupabaseClient();
   if (supabase) {
-    await supabase
+    supabase
       .from('posts')
       .update({
         votes_up: posts[postIdx].votes_up,
         votes_down: posts[postIdx].votes_down,
         net_votes: posts[postIdx].net_votes,
       })
-      .eq('id', postId).then(() => { }, (err: any) => console.warn('[Aether Supabase] Post vote update error:', err));
+      .eq('id', postId)
+      .then(() => { }, (err: any) => console.warn('[Aether Supabase] Post vote update error:', err));
 
     if (finalUserVote === null) {
-      await supabase.from('votes').delete().eq('id', canonicalVoteId).then(() => { }, () => { });
-      await supabase.from('votes').delete().match({ user_id: userId, post_id: postId }).then(() => { }, () => { });
+      supabase.from('votes').delete().eq('id', canonicalVoteId).then(() => { }, () => { });
+      supabase.from('votes').delete().match({ user_id: userId, post_id: postId }).then(() => { }, () => { });
     } else {
-      await supabase.from('votes').upsert({
+      supabase.from('votes').upsert({
         id: canonicalVoteId,
         user_id: userId,
         post_id: postId,
@@ -2778,16 +2788,16 @@ export const votePostAction = async (
       }).then(() => { }, (err: any) => console.warn('[Aether Supabase] Vote record upsert error:', err));
     }
 
-    await supabase
+    supabase
       .from('profiles')
       .update({ total_votes_received: totalVotesReceived })
       .eq('id', authorId)
       .then(() => { }, () => { });
   }
 
-  await syncWithServer();
   window.dispatchEvent(new Event('aether_storage_sync'));
   if (syncChannel) syncChannel.postMessage('sync');
+  syncWithServer(); // Non-blocking async background sync
 
   return {
     userVote: finalUserVote,

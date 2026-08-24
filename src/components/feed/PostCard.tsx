@@ -41,15 +41,33 @@ interface PostCardProps {
   onTogglePinProfile?: (postId: string) => void;
 }
 
-const formatTimeAgo = (dateStr: string): string => {
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (seconds < 60) return 'Just now';
+const formatTimeAgo = (dateStr?: string | null): string => {
+  if (!dateStr) return 'Just now';
+  const parsed = new Date(dateStr).getTime();
+  if (isNaN(parsed) || parsed <= 0) return 'Just now';
+
+  const diffMs = Date.now() - parsed;
+  if (diffMs < 45000) return 'Just now';
+
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(seconds / 60);
+
+  const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
+
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  if (days < 7) return `${days}d ago`;
+
+  const weeks = Math.floor(days / 7);
+  if (weeks < 4) return `${weeks}w ago`;
+
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+
+  return `${Math.floor(months / 12)}y ago`;
 };
 
 export const PostCard: React.FC<PostCardProps> = ({
@@ -83,6 +101,17 @@ export const PostCard: React.FC<PostCardProps> = ({
   } | null>(null);
   const commentInputRef = React.useRef<HTMLInputElement>(null);
 
+  // Instant 0ms Optimistic Voting State
+  const [optimisticVote, setOptimisticVote] = useState<'up' | 'down' | null>(userVote);
+  const [optimisticUp, setOptimisticUp] = useState<number>(post.votes_up);
+  const [optimisticDown, setOptimisticDown] = useState<number>(post.votes_down);
+
+  useEffect(() => {
+    setOptimisticVote(userVote);
+    setOptimisticUp(post.votes_up);
+    setOptimisticDown(post.votes_down);
+  }, [userVote, post.votes_up, post.votes_down]);
+
   useEffect(() => {
     const handleSync = () => {
       setComments(getPostComments(post.id));
@@ -93,6 +122,27 @@ export const PostCard: React.FC<PostCardProps> = ({
 
   const handleVoteClick = (type: 'up' | 'down') => {
     setIsPopAnim(true);
+
+    // Instant 0ms local calculation
+    if (optimisticVote === type) {
+      setOptimisticVote(null);
+      if (type === 'up') setOptimisticUp(prev => Math.max(0, prev - 1));
+      else setOptimisticDown(prev => Math.max(0, prev - 1));
+    } else if (optimisticVote === null) {
+      setOptimisticVote(type);
+      if (type === 'up') setOptimisticUp(prev => prev + 1);
+      else setOptimisticDown(prev => prev + 1);
+    } else {
+      setOptimisticVote(type);
+      if (type === 'up') {
+        setOptimisticUp(prev => prev + 1);
+        setOptimisticDown(prev => Math.max(0, prev - 1));
+      } else {
+        setOptimisticDown(prev => prev + 1);
+        setOptimisticUp(prev => Math.max(0, prev - 1));
+      }
+    }
+
     onVote(post.id, type);
     setTimeout(() => setIsPopAnim(false), 300);
   };
@@ -430,33 +480,33 @@ export const PostCard: React.FC<PostCardProps> = ({
           <button
             onClick={() => handleVoteClick('up')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              userVote === 'up'
+              optimisticVote === 'up'
                 ? 'bg-blue-600 text-white shadow-glow-sm'
                 : 'text-slate-300 hover:text-white hover:bg-[#2A3756]'
             }`}
             title="Upvote"
           >
-            <ChevronUp className={`w-4 h-4 stroke-[2.5] ${userVote === 'up' ? 'text-white' : 'text-blue-400'}`} />
-            <span className="font-mono text-xs">{post.votes_up}</span>
+            <ChevronUp className={`w-4 h-4 stroke-[2.5] ${optimisticVote === 'up' ? 'text-white' : 'text-blue-400'}`} />
+            <span className="font-mono text-xs">{optimisticUp}</span>
           </button>
 
           {/* Net Votes Indicator */}
           <div className="px-2 font-mono text-xs font-bold text-slate-200 border-x border-[#334155]/80">
-            {post.net_votes >= 0 ? `+${post.net_votes}` : post.net_votes}
+            {(optimisticUp - optimisticDown) >= 0 ? `+${optimisticUp - optimisticDown}` : (optimisticUp - optimisticDown)}
           </div>
 
           {/* Downvote Button (▼) */}
           <button
             onClick={() => handleVoteClick('down')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              userVote === 'down'
+              optimisticVote === 'down'
                 ? 'bg-rose-600 text-white shadow-glow-sm'
                 : 'text-slate-300 hover:text-white hover:bg-[#2A3756]'
             }`}
             title="Downvote"
           >
-            <ChevronDown className={`w-4 h-4 stroke-[2.5] ${userVote === 'down' ? 'text-white' : 'text-slate-400'}`} />
-            <span className="font-mono text-xs">{post.votes_down}</span>
+            <ChevronDown className={`w-4 h-4 stroke-[2.5] ${optimisticVote === 'down' ? 'text-white' : 'text-slate-400'}`} />
+            <span className="font-mono text-xs">{optimisticDown}</span>
           </button>
 
         </div>
