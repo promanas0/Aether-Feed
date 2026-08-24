@@ -733,7 +733,7 @@ export const syncWithServer = async (): Promise<boolean> => {
             // Purge any ghost profiles from Supabase Cloud
             const ghostIds = supaProfiles.filter(isGhostUser).map((u: any) => u.id);
             if (ghostIds.length > 0) {
-              supabase.from('profiles').delete().in('id', ghostIds).then(() => {}, () => {});
+              supabase.from('profiles').delete().in('id', ghostIds).then(() => { }, () => { });
             }
 
             const cleanSupaUsers = supaProfiles.filter((u: any) => !isGhostUser(u));
@@ -749,10 +749,11 @@ export const syncWithServer = async (): Promise<boolean> => {
               const localU = localUserMap.get(su.id);
               const userEmail = (su.email || localU?.email || '').toLowerCase().trim();
               const isRootSuper = userEmail === ROOT_ADMIN_EMAIL.toLowerCase();
+              const isCurrentSessionUser = Boolean(currentUser && currentUser.id === su.id);
 
               const localUpdated = localU?.updated_at ? new Date(localU.updated_at).getTime() : 0;
               const supaUpdated = su.updated_at ? new Date(su.updated_at).getTime() : 0;
-              const preferLocal = localUpdated > supaUpdated;
+              const preferLocal = isCurrentSessionUser && (localUpdated > supaUpdated);
 
               let resolvedBanned = false;
               if (cloudBannedUserIds.has(su.id)) {
@@ -801,6 +802,9 @@ export const syncWithServer = async (): Promise<boolean> => {
                   avatar_url: resolvedAvatarUrl,
                   banner_url: su.banner_url || '',
                   banner_size: su.banner_size || 'standard',
+                  bio: su.bio || '',
+                  location: su.location || '',
+                  website: su.website || '',
                   followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : [],
                   following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : [],
                   is_golden_verified: suGolden,
@@ -811,18 +815,15 @@ export const syncWithServer = async (): Promise<boolean> => {
                 };
                 mergedUserMap.set(suProfile.id, suProfile);
               } else {
-                // Smart banner reconciliation: If su has banner and local doesn't, pick su banner
-                const resolvedBannerUrl = (!localU.banner_url && su.banner_url)
-                  ? su.banner_url
-                  : (preferLocal
-                    ? (localU.banner_url !== undefined ? localU.banner_url : (su.banner_url || ''))
-                    : (su.banner_url !== undefined ? su.banner_url : (localU.banner_url || '')));
+                const resolvedBannerUrl = (preferLocal ? localU.banner_url : su.banner_url)
+                  || su.banner_url
+                  || localU.banner_url
+                  || '';
 
-                const resolvedBannerSize = (!localU.banner_size && su.banner_size)
-                  ? su.banner_size
-                  : (preferLocal
-                    ? (localU.banner_size || su.banner_size || 'standard')
-                    : (su.banner_size || localU.banner_size || 'standard'));
+                const resolvedBannerSize = (preferLocal ? localU.banner_size : su.banner_size)
+                  || su.banner_size
+                  || localU.banner_size
+                  || 'standard';
 
                 let resolvedGolden: boolean;
                 if (cloudGoldenIds.has(su.id) || goldenUserIds.has(su.id)) {
@@ -847,31 +848,47 @@ export const syncWithServer = async (): Promise<boolean> => {
                 }
 
                 const resolvedDisplayName = (preferLocal ? localU.display_name : su.display_name)
-                  || (preferLocal ? su.display_name : localU.display_name)
+                  || su.display_name
+                  || localU.display_name
+                  || (su.first_name && su.last_name ? `${su.first_name} ${su.last_name}`.trim() : '')
                   || (localU.first_name && localU.last_name ? `${localU.first_name} ${localU.last_name}`.trim() : '')
                   || (isDlicom && shortAddr ? shortAddr : (su.username || 'Aether Creator'));
 
                 const resolvedUsername = (preferLocal ? localU.username : su.username)
-                  || (preferLocal ? su.username : localU.username)
+                  || su.username
+                  || localU.username
                   || (isDlicom && rawAddr ? `dlicom_${rawAddr.slice(2, 8).toLowerCase()}` : `creator_${(su.id || '').replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase()}`);
 
                 const resolvedAvatarUrl = (preferLocal ? localU.avatar_url : su.avatar_url)
-                  || (preferLocal ? su.avatar_url : localU.avatar_url)
+                  || su.avatar_url
+                  || localU.avatar_url
                   || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(su.id || resolvedUsername)}&backgroundColor=0b132b,1c2541,1e293b`;
 
+                const resolvedBio = (preferLocal ? localU.bio : su.bio) !== undefined
+                  ? (preferLocal ? localU.bio : su.bio)
+                  : (su.bio !== undefined ? su.bio : (localU.bio || ''));
+
+                const resolvedLocation = (preferLocal ? localU.location : su.location) !== undefined
+                  ? (preferLocal ? localU.location : su.location)
+                  : (su.location !== undefined ? su.location : (localU.location || ''));
+
+                const resolvedWebsite = (preferLocal ? localU.website : su.website) !== undefined
+                  ? (preferLocal ? localU.website : su.website)
+                  : (su.website !== undefined ? su.website : (localU.website || ''));
+
                 const suProfile: Profile = {
-                  ...su,
                   ...localU,
+                  ...su,
                   display_name: resolvedDisplayName || 'Aether Creator',
                   username: resolvedUsername || `creator_${(su.id || '').slice(-4)}`,
                   avatar_url: resolvedAvatarUrl,
                   banner_url: resolvedBannerUrl,
                   banner_size: resolvedBannerSize,
-                  bio: (preferLocal ? localU.bio : su.bio) || su.bio || localU.bio || '',
-                  location: (preferLocal ? localU.location : su.location) || su.location || localU.location || '',
-                  website: (preferLocal ? localU.website : su.website) || su.website || localU.website || '',
-                  followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : localU.followers || [],
-                  following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : localU.following || [],
+                  bio: resolvedBio || '',
+                  location: resolvedLocation || '',
+                  website: resolvedWebsite || '',
+                  followers: Array.isArray(su.followers) ? su.followers : typeof su.followers === 'string' ? JSON.parse(su.followers || '[]') : (localU.followers || []),
+                  following: Array.isArray(su.following) ? su.following : typeof su.following === 'string' ? JSON.parse(su.following || '[]') : (localU.following || []),
                   is_golden_verified: resolvedGolden,
                   is_verified: resolvedVerified,
                   is_admin: resolvedAdmin,
@@ -3156,9 +3173,9 @@ export const addAdminEmail = async (newEmailOrWallet: string, actorEmail?: strin
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const idx = users.findIndex(
     u => (u.email || '').toLowerCase().trim() === clean ||
-         (u.dlicom_address || '').toLowerCase().trim() === clean ||
-         u.id.toLowerCase() === `wallet_${clean}` ||
-         u.id.toLowerCase() === clean
+      (u.dlicom_address || '').toLowerCase().trim() === clean ||
+      u.id.toLowerCase() === `wallet_${clean}` ||
+      u.id.toLowerCase() === clean
   );
   let targetUserId = '';
   if (idx !== -1) {
@@ -3224,9 +3241,9 @@ export const removeAdminEmail = async (targetEmailOrWallet: string, actorEmail?:
   const users = getItem<Profile[]>(STORAGE_KEYS.REAL_USERS, []);
   const idx = users.findIndex(
     u => (u.email || '').toLowerCase().trim() === clean ||
-         (u.dlicom_address || '').toLowerCase().trim() === clean ||
-         u.id.toLowerCase() === `wallet_${clean}` ||
-         u.id.toLowerCase() === clean
+      (u.dlicom_address || '').toLowerCase().trim() === clean ||
+      u.id.toLowerCase() === `wallet_${clean}` ||
+      u.id.toLowerCase() === clean
   );
   let targetUserId = '';
   if (idx !== -1) {

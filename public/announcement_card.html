@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aether Feed Announcement Card</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      width: 1200px;
+      height: 675px;
+      background-color: #070D1E;
+      background-image: 
+        radial-gradient(circle at 80% 30%, rgba(147, 51, 234, 0.15) 0%, transparent 50%),
+        radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.12) 0%, transparent 50%),
+        radial-gradient(circle at 50% 50%, #0B132B 0%, #060A17 100%);
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #F8FAFC;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Subtle geometric grid background */
+    .bg-grid {
+      position: absolute;
+      inset: 0;
+      background-size: 40px 40px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      pointer-events: none;
+    }
+
+    .card-container {
+      width: 1100px;
+      height: 575px;
+      background: rgba(17, 25, 48, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 32px;
+      backdrop-filter: blur(24px);
+      box-shadow: 
+        0 30px 80px rgba(0, 0, 0, 0.6),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      display: flex;
+      padding: 48px 56px;
+      gap: 56px;
+      align-items: center;
+      position: relative;
+      z-index: 10;
+    }
+
+    .left-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 100%;
+    }
+
+    .header-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .brand-pill {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      padding: 6px 14px;
+      border-radius: 12px;
+    }
+
+    .brand-dot {
+      width: 8px;
+      height: 8px;
+      background: #38BDF8;
+      border-radius: 50%;
+      box-shadow: 0 0 10px #38BDF8;
+    }
+
+    .brand-name {
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #93C5FD;
+    }
+
+    .tag-pill {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 6px 14px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #94A3B8;
+    }
+
+    .title-group {
+      margin-top: 12px;
+    }
+
+    .welcome-label {
+      font-size: 16px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #38BDF8;
+      margin-bottom: 8px;
+    }
+
+    .member-name {
+      font-size: 46px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: #FFFFFF;
+      margin-bottom: 12px;
+    }
+
+    .role-badge {
+      display: inline-block;
+      font-size: 18px;
+      font-weight: 700;
+      color: #C084FC;
+      background: rgba(168, 85, 247, 0.12);
+      border: 1px solid rgba(168, 85, 247, 0.25);
+      padding: 6px 18px;
+      border-radius: 12px;
+      margin-bottom: 24px;
+    }
+
+    .features-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #CBD5E1;
+    }
+
+    .feature-check {
+      width: 20px;
+      height: 20px;
+      border-radius: 6px;
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #38BDF8;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .footer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 20px;
+      margin-top: 12px;
+    }
+
+    .ecosystem-tag {
+      font-size: 13px;
+      font-weight: 600;
+      color: #64748B;
+    }
+    .ecosystem-tag span {
+      color: #94A3B8;
+      font-weight: 700;
+    }
+
+    .url-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #38BDF8;
+      background: rgba(56, 189, 248, 0.08);
+      padding: 4px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+
+    /* Right Avatar Card */
+    .right-avatar-box {
+      width: 360px;
+      height: 440px;
+      background: #0D152B;
+      border: 1px solid rgba(168, 85, 247, 0.35);
+      border-radius: 28px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 
+        0 20px 50px rgba(0, 0, 0, 0.5),
+        0 0 30px rgba(147, 51, 234, 0.15);
+      position: relative;
+    }
+
+    .avatar-img {
+      width: 100%;
+      height: 320px;
+      object-fit: cover;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .avatar-meta {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 14px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .avatar-meta-name {
+      font-size: 14px;
+      font-weight: 800;
+      color: #FFFFFF;
+    }
+
+    .avatar-meta-handle {
+      font-size: 12px;
+      font-weight: 600;
+      color: #A855F7;
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+
+  <div class="card-container">
+    <div class="left-content">
+      <div>
+        <div class="header-row">
+          <div class="brand-pill">
+            <div class="brand-dot"></div>
+            <div class="brand-name">Aether Feed</div>
+          </div>
+          <div class="tag-pill">Core Team Onboarding</div>
+        </div>
+
+        <div class="title-group">
+          <div class="welcome-label">Welcome To The Team</div>
+          <h1 class="member-name">Tarun Dhal</h1>
+          <div class="role-badge">Lead Security &amp; Community Moderator</div>
+        </div>
+
+        <div class="features-list">
+          <div class="feature-item">
+            <div class="feature-check">✓</div>
+            <span>24/7 Live Feed Moderation &amp; Spam Elimination</span>
+          </div>
+          <div class="feature-item">
+            <div class="feature-check">✓</div>
+            <span>Strict Anti-Bot &amp; Sybil Protection Engine</span>
+          </div>
+          <div class="feature-item">
+            <div class="feature-check">✓</div>
+            <span>Community Trust &amp; Creator Safety Guardian</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-row">
+        <div class="ecosystem-tag">Powered by <span>Dlicom SocialFi</span></div>
+        <div class="url-tag">aether-feed.vercel.app</div>
+      </div>
+    </div>
+
+    <div class="right-avatar-box">
+      <img class="avatar-img" src="tarun_avatar.png" alt="Tarun Dhal Avatar">
+      <div class="avatar-meta">
+        <div>
+          <div class="avatar-meta-name">Tarun Dhal</div>
+        </div>
+        <div class="avatar-meta-handle">@SecurityLead</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
