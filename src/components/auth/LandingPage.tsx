@@ -78,24 +78,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     syncWithServer();
   }, []);
 
-  // Handle 1-Click Native Dlicom Core Wallet Login
-  const handleDlicomWalletConnect = async () => {
-    const dlicomProvider = (window as any).dlicom || (window as any).dlicomWallet || (window as any).ethereum;
-    if (dlicomProvider) {
-      setIsConnectingDlicomWallet(true);
-      try {
-        const res = await authenticateWithDlicomWallet();
-        setIsConnectingDlicomWallet(false);
-        if (res.success && res.user) {
-          addToast('Dlicom Wallet Connected', res.message, 'success');
-          onAuthSuccess(res.user);
-          return;
-        }
-      } catch (err: any) {
-        setIsConnectingDlicomWallet(false);
-      }
-    }
-    // Open resilient Dlicom 0x address connect modal
+  // Handle Web3 Multi-Wallet Connect Modal Open
+  const handleDlicomWalletConnect = () => {
     setIsDlicomWalletModalOpen(true);
   };
 
@@ -361,15 +345,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             {/* 1-Click Dlicom Wallet Connect + Email Action Buttons */}
             <div className="space-y-3 pt-2">
               
-              {/* Primary 1-Click Native Dlicom Wallet Button */}
+              {/* Primary 1-Click Multi-Wallet Button */}
               <button
                 type="button"
                 onClick={handleDlicomWalletConnect}
-                disabled={isConnectingDlicomWallet}
-                className="w-full flex items-center justify-center gap-2 py-3.5 px-6 bg-[#1C2541] hover:bg-[#2A3756] text-white border border-blue-500/50 hover:border-blue-400 rounded-2xl text-sm font-bold shadow-glow-sm transition-all active:scale-95 cursor-pointer group"
+                className="w-full flex items-center justify-center gap-2.5 py-3.5 px-6 bg-gradient-to-r from-blue-900/60 via-purple-900/50 to-[#1C2541] hover:from-blue-800/70 hover:to-[#2A3756] text-white border-2 border-purple-500/50 hover:border-purple-400 rounded-2xl text-sm font-bold shadow-glow-sm transition-all active:scale-95 cursor-pointer group"
               >
-                <ShieldCheck className="w-4 h-4 text-blue-400 group-hover:text-blue-300 transition-colors" />
-                <span>{isConnectingDlicomWallet ? 'Connecting Dlicom Wallet...' : 'Connect Dlicom Wallet'}</span>
+                <ShieldCheck className="w-4 h-4 text-purple-400 group-hover:text-purple-300 transition-colors" />
+                <span>Connect Web3 / Dlicom Wallet</span>
               </button>
 
               {/* Clean Divider */}

@@ -1,7 +1,21 @@
 import React, { useState } from 'react';
-import { X, ShieldCheck, Wallet, ArrowRight, Sparkles, AlertCircle, FileText, CheckCircle2, Lock } from 'lucide-react';
+import { 
+  X, 
+  ShieldCheck, 
+  Wallet, 
+  ArrowRight, 
+  Sparkles, 
+  AlertCircle, 
+  FileText, 
+  CheckCircle2, 
+  Lock,
+  Star,
+  Layers,
+  ChevronDown,
+  ChevronUp
+} from 'lucide-react';
 import type { Profile, ToastMessage } from '../../types';
-import { authenticateWithDlicomWallet, authenticateWithDlicomAddress } from '../../lib/storage';
+import { authenticateWithSpecificWallet, authenticateWithDlicomAddress } from '../../lib/storage';
 
 interface DlicomWalletModalProps {
   isOpen: boolean;
@@ -16,41 +30,42 @@ export const DlicomWalletModal: React.FC<DlicomWalletModalProps> = ({
   onSuccess,
   addToast,
 }) => {
-  const [step, setStep] = useState<'input' | 'sign'>('input');
+  const [step, setStep] = useState<'select' | 'sign'>('select');
+  const [activeConnectingWallet, setActiveConnectingWallet] = useState<string | null>(null);
+  const [showDirectAddressInput, setShowDirectAddressInput] = useState(false);
   const [dlicomAddressInput, setDlicomAddressInput] = useState('');
   const [signNonce] = useState(() => Math.floor(100000 + Math.random() * 900000));
   const [signTimestamp] = useState(() => new Date().toISOString());
-  const [isConnectingAuto, setIsConnectingAuto] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  // 1. Auto-Trigger Browser Extension Provider
-  const handleAutoConnect = async () => {
-    setIsConnectingAuto(true);
+  // 1. Handle Specific Web3 Wallet Connection (Dlicom / MetaMask / OKX / Universal)
+  const handleConnectSpecificWallet = async (walletType: 'dlicom' | 'metamask' | 'okx' | 'injected') => {
+    setActiveConnectingWallet(walletType);
     setErrorMsg(null);
     try {
-      const res = await authenticateWithDlicomWallet();
-      setIsConnectingAuto(false);
+      const res = await authenticateWithSpecificWallet(walletType);
+      setActiveConnectingWallet(null);
       if (res.success && res.user) {
-        addToast?.('Dlicom Wallet Authenticated', res.message, 'success');
+        addToast?.('Wallet Connected', res.message, 'success');
         onSuccess(res.user);
         onClose();
       } else {
         setErrorMsg(res.message);
       }
     } catch (err: any) {
-      setIsConnectingAuto(false);
-      setErrorMsg(err?.message || 'Failed to connect Dlicom Wallet extension.');
+      setActiveConnectingWallet(null);
+      setErrorMsg(err?.message || `Failed to connect ${walletType} wallet.`);
     }
   };
 
-  // 2. Step 1: Validate address and move to Sign Screen
+  // 2. Validate Direct 0x Address & Proceed to Sign Screen
   const handleProceedToSign = (addressToSign?: string) => {
     const address = (addressToSign || dlicomAddressInput).trim();
     if (!address) {
-      setErrorMsg('Please enter your Dlicom 0x Wallet address.');
+      setErrorMsg('Please enter your 0x Dlicom wallet address.');
       return;
     }
     if (!address.toLowerCase().startsWith('0x') || address.length < 10) {
@@ -62,7 +77,7 @@ export const DlicomWalletModal: React.FC<DlicomWalletModalProps> = ({
     setStep('sign');
   };
 
-  // 3. Step 2: Sign Cryptographic Message & Finalize Login
+  // 3. Cryptographic Signature Finalization for Direct 0x Login
   const handleExecuteSign = async () => {
     setIsSigning(true);
     setErrorMsg(null);
@@ -82,7 +97,7 @@ export const DlicomWalletModal: React.FC<DlicomWalletModalProps> = ({
     }
   };
 
-  // 4. Instant 1-Click Dlicom Keypair Generator
+  // 4. Instant 1-Click Dlicom Web3 ID Generator
   const handleGenerateInstant = () => {
     const chars = '0123456789abcdef';
     let randomHex = '0x';
@@ -94,43 +109,45 @@ export const DlicomWalletModal: React.FC<DlicomWalletModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div 
-        className="relative w-full max-w-md bg-[#0B132B] border border-blue-500/40 rounded-3xl p-6 sm:p-7 shadow-[0_0_50px_rgba(59,130,246,0.2)] text-white animate-in zoom-in-95 duration-200"
+        className="relative w-full max-w-md bg-[#0B132B] border border-blue-500/40 rounded-3xl p-6 sm:p-7 shadow-[0_0_50px_rgba(59,130,246,0.25)] text-white animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
         <button
           onClick={() => {
-            setStep('input');
+            setStep('select');
             onClose();
           }}
-          className="absolute top-5 right-5 p-2 text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
+          className="absolute top-5 right-5 p-2 text-slate-400 hover:text-white bg-[#1C2541] hover:bg-[#2A3756] rounded-xl transition-colors cursor-pointer"
+          aria-label="Close"
         >
           <X className="w-4 h-4" />
         </button>
 
-        {/* STEP 1: Input & Selection Screen */}
-        {step === 'input' && (
+        {/* STEP 1: Multi-Wallet Selection Screen */}
+        {step === 'select' && (
           <div>
-            {/* Header */}
+            {/* Modal Header */}
             <div className="flex items-center gap-3 mb-5">
-              <div className="w-11 h-11 rounded-2xl bg-blue-600/20 border border-blue-500/50 flex items-center justify-center text-blue-400 shadow-glow-sm">
-                <ShieldCheck className="w-6 h-6" />
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600/30 to-purple-600/30 border border-blue-500/50 flex items-center justify-center text-blue-400 shadow-glow-sm">
+                <Wallet className="w-6 h-6 text-blue-400" />
               </div>
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  Dlicom Core Wallet
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">
-                    0x Web3
-                  </span>
+                  Connect a Web3 Wallet
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Connect your official Dlicom address across phone and PC.
+                  Select your wallet to connect to Aether Feed
                 </p>
               </div>
             </div>
 
+            {/* Error Notification Banner */}
             {errorMsg && (
               <div className="mb-4 p-3 bg-rose-950/40 border border-rose-500/40 rounded-xl text-xs text-rose-300 flex items-start gap-2 animate-in fade-in">
                 <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
@@ -138,79 +155,151 @@ export const DlicomWalletModal: React.FC<DlicomWalletModalProps> = ({
               </div>
             )}
 
-            {/* Method 1: Auto Browser Connect */}
-            <div className="space-y-4">
+            {/* Wallet Options List */}
+            <div className="space-y-3">
+              
+              {/* Option 1: ⭐ Dlicom Native Wallet (Official / Recommended) */}
               <button
                 type="button"
-                onClick={handleAutoConnect}
-                disabled={isConnectingAuto}
-                className="w-full flex items-center justify-between p-3.5 bg-[#1C2541] hover:bg-[#2A3756] border border-blue-500/50 hover:border-blue-400 rounded-2xl text-xs font-bold transition-all active:scale-[0.98] cursor-pointer group"
+                onClick={() => handleConnectSpecificWallet('dlicom')}
+                disabled={Boolean(activeConnectingWallet)}
+                className="w-full relative flex items-center justify-between p-4 bg-gradient-to-r from-blue-950/70 via-purple-950/50 to-[#1C2541] hover:from-blue-900/80 hover:to-[#2A3756] border-2 border-purple-500/60 hover:border-purple-400 rounded-2xl text-xs font-bold transition-all active:scale-[0.98] cursor-pointer group shadow-glow-sm"
               >
-                <div className="flex items-center gap-2.5">
-                  <Wallet className="w-4 h-4 text-blue-400 group-hover:text-blue-300" />
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-400/50 flex items-center justify-center text-purple-300 shrink-0">
+                    <ShieldCheck className="w-5 h-5 text-purple-400" />
+                  </div>
                   <div className="text-left">
-                    <div className="text-white">Auto Connect Wallet</div>
-                    <div className="text-[10px] text-slate-400 font-normal">Browser extension or in-app wallet</div>
+                    <div className="text-white font-bold text-sm flex items-center gap-2">
+                      <span>Dlicom Native Wallet</span>
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-purple-500/30 text-purple-300 border border-purple-400/40 flex items-center gap-1">
+                        <Star className="w-2.5 h-2.5 fill-purple-300" /> Recommended
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 font-normal">
+                      Official Dlicom Network & In-App Web3
+                    </div>
                   </div>
                 </div>
-                <ArrowRight className="w-4 h-4 text-blue-400 group-hover:translate-x-0.5 transition-transform" />
+                {activeConnectingWallet === 'dlicom' ? (
+                  <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <ArrowRight className="w-4 h-4 text-purple-400 group-hover:translate-x-0.5 transition-transform" />
+                )}
               </button>
 
-              {/* Divider */}
-              <div className="flex items-center gap-3 py-1">
-                <div className="flex-1 h-px bg-slate-700/60" />
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">
-                  Or Enter 0x Address
-                </span>
-                <div className="flex-1 h-px bg-slate-700/60" />
-              </div>
-
-              {/* Method 2: Direct 0x Address Input */}
-              <form 
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleProceedToSign();
-                }} 
-                className="space-y-2.5"
+              {/* Option 2: 🦊 MetaMask */}
+              <button
+                type="button"
+                onClick={() => handleConnectSpecificWallet('metamask')}
+                disabled={Boolean(activeConnectingWallet)}
+                className="w-full flex items-center justify-between p-3.5 bg-[#1C2541] hover:bg-[#2A3756] border border-[#334155] hover:border-amber-500/70 rounded-2xl text-xs font-bold transition-all active:scale-[0.98] cursor-pointer group"
               >
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-300 mb-1.5 font-mono">
-                    Your Dlicom 0x Wallet Address
-                  </label>
-                  <input
-                    type="text"
-                    value={dlicomAddressInput}
-                    onChange={(e) => setDlicomAddressInput(e.target.value)}
-                    placeholder="0x71C4...98A2"
-                    className="w-full px-3.5 py-2.5 bg-[#1C2541] border border-[#334155] focus:border-blue-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none font-mono"
-                  />
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 text-base shrink-0">
+                    🦊
+                  </div>
+                  <div className="text-left">
+                    <div className="text-white font-bold text-sm">MetaMask</div>
+                    <div className="text-[11px] text-slate-400 font-normal">Browser extension or mobile app</div>
+                  </div>
                 </div>
+                {activeConnectingWallet === 'metamask' ? (
+                  <div className="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all" />
+                )}
+              </button>
 
-                <button
-                  type="submit"
-                  className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-glow transition-all active:scale-[0.98] cursor-pointer"
-                >
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>Continue to Sign Message</span>
-                </button>
-              </form>
+              {/* Option 3: ⬛ OKX / Universal Web3 Wallet */}
+              <button
+                type="button"
+                onClick={() => handleConnectSpecificWallet('okx')}
+                disabled={Boolean(activeConnectingWallet)}
+                className="w-full flex items-center justify-between p-3.5 bg-[#1C2541] hover:bg-[#2A3756] border border-[#334155] hover:border-blue-500/70 rounded-2xl text-xs font-bold transition-all active:scale-[0.98] cursor-pointer group"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+                    <Layers className="w-5 h-5 text-blue-400" />
+                  </div>
+                  <div className="text-left">
+                    <div className="text-white font-bold text-sm">OKX & Injected Web3</div>
+                    <div className="text-[11px] text-slate-400 font-normal">OKX, Rabby, Coinbase & others</div>
+                  </div>
+                </div>
+                {activeConnectingWallet === 'okx' ? (
+                  <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all" />
+                )}
+              </button>
 
-              {/* Method 3: Generate Instant Key */}
-              <div className="pt-2 text-center">
+              {/* Option 4: 🔑 Direct Dlicom 0x Address / Instant ID (No Extension Needed) */}
+              <div className="pt-2 border-t border-[#334155]/60">
                 <button
                   type="button"
-                  onClick={handleGenerateInstant}
-                  className="inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
+                  onClick={() => setShowDirectAddressInput(!showDirectAddressInput)}
+                  className="w-full flex items-center justify-between p-3 bg-[#0B132B] hover:bg-[#1C2541] border border-[#334155] rounded-xl text-xs text-slate-300 hover:text-white transition-colors cursor-pointer"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Generate New Dlicom Web3 ID (1-Click Instant)</span>
+                  <span className="font-semibold flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Connect with Dlicom 0x Address (No Extension)</span>
+                  </span>
+                  {showDirectAddressInput ? (
+                    <ChevronUp className="w-4 h-4 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-slate-400" />
+                  )}
                 </button>
+
+                {showDirectAddressInput && (
+                  <form 
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleProceedToSign();
+                    }}
+                    className="p-3.5 bg-[#1C2541] border border-[#334155] rounded-2xl mt-2 space-y-3 animate-in fade-in"
+                  >
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1 font-mono">
+                        Dlicom 0x Wallet Address:
+                      </label>
+                      <input
+                        type="text"
+                        value={dlicomAddressInput}
+                        onChange={(e) => setDlicomAddressInput(e.target.value)}
+                        placeholder="0x71C4...98A2"
+                        className="w-full px-3 py-2 bg-[#0B132B] border border-[#334155] focus:border-blue-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none font-mono"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-glow transition-all active:scale-[0.98] cursor-pointer"
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Continue with Address</span>
+                    </button>
+
+                    <div className="text-center pt-1">
+                      <button
+                        type="button"
+                        onClick={handleGenerateInstant}
+                        className="inline-flex items-center gap-1.5 text-[11px] text-blue-400 hover:text-blue-300 transition-colors cursor-pointer font-semibold"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Generate Instant Dlicom Web3 Key (1-Click)</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
+
             </div>
           </div>
         )}
 
-        {/* STEP 2: Cryptographic Signature Verification Screen */}
+        {/* STEP 2: Cryptographic Signature Screen */}
         {step === 'sign' && (
           <div className="space-y-4 animate-in fade-in duration-200">
             <div className="flex items-center gap-3 mb-2">
@@ -273,11 +362,11 @@ export const DlicomWalletModal: React.FC<DlicomWalletModalProps> = ({
                 type="button"
                 onClick={() => {
                   setErrorMsg(null);
-                  setStep('input');
+                  setStep('select');
                 }}
                 className="w-full py-2 text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
               >
-                Back to Address Input
+                Back to Wallet Selection
               </button>
             </div>
           </div>

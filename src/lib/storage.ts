@@ -1792,34 +1792,58 @@ export const authenticateUser = async (
 };
 
 /**
- * 1-Click Native Dlicom Wallet Authentication (Dlicom Keyring / Web3 Extension)
- * Connects directly to window.dlicom, window.dlicomWallet or browser Web3 provider.
+ * 1-Click Multi-Wallet Web3 Authentication (Dlicom, MetaMask, OKX, Injected)
+ * Connects specifically to requested wallet extension or browser provider.
  */
-export const authenticateWithDlicomWallet = async (): Promise<{ success: boolean; user?: Profile; message: string }> => {
+export const authenticateWithSpecificWallet = async (
+  walletType: 'dlicom' | 'metamask' | 'okx' | 'injected' = 'dlicom'
+): Promise<{ success: boolean; user?: Profile; message: string }> => {
   if (typeof window === 'undefined') {
     return { success: false, message: 'Window is not defined.' };
   }
 
   const win = typeof window !== 'undefined' ? (window as any) : {};
-  let dlicomProvider = win.dlicom || win.dlicomWallet;
+  let targetProvider: any = null;
 
-  // Search EIP-6963 multi-injected provider list
-  if (!dlicomProvider && Array.isArray(win.ethereum?.providers)) {
-    dlicomProvider = win.ethereum.providers.find(
-      (p: any) => p.isDlicom || p.isDlicomWallet || p.name?.toLowerCase()?.includes('dlicom')
-    );
+  if (walletType === 'dlicom') {
+    targetProvider = win.dlicom || win.dlicomWallet;
+    if (!targetProvider && Array.isArray(win.ethereum?.providers)) {
+      targetProvider = win.ethereum.providers.find(
+        (p: any) => p.isDlicom || p.isDlicomWallet || p.name?.toLowerCase()?.includes('dlicom')
+      );
+    }
+    if (!targetProvider) targetProvider = win.ethereum;
+  } else if (walletType === 'metamask') {
+    if (Array.isArray(win.ethereum?.providers)) {
+      targetProvider = win.ethereum.providers.find(
+        (p: any) => p.isMetaMask && !p.isDlicom && !p.isDlicomWallet
+      );
+    }
+    if (!targetProvider && win.ethereum?.isMetaMask) {
+      targetProvider = win.ethereum;
+    }
+    if (!targetProvider) targetProvider = win.ethereum;
+  } else if (walletType === 'okx') {
+    targetProvider = win.okxwallet;
+    if (!targetProvider && Array.isArray(win.ethereum?.providers)) {
+      targetProvider = win.ethereum.providers.find(
+        (p: any) => p.isOkxWallet || p.name?.toLowerCase()?.includes('okx')
+      );
+    }
+    if (!targetProvider) targetProvider = win.ethereum;
+  } else {
+    targetProvider = win.ethereum;
   }
 
-  if (!dlicomProvider) {
-    dlicomProvider = win.ethereum;
-  }
-
-  if (!dlicomProvider) {
+  if (!targetProvider) {
+    const walletLabel = walletType === 'dlicom' ? 'Dlicom Wallet' : walletType === 'metamask' ? 'MetaMask' : 'Web3 Wallet';
     return {
       success: false,
-      message: 'Dlicom Wallet not detected. Please install the Dlicom Wallet extension or use Email Sign In to continue.',
+      message: `${walletLabel} extension not detected. Please install ${walletLabel} or connect with your 0x address.`,
     };
   }
+
+  const dlicomProvider = targetProvider;
 
   try {
     let accounts: string[] = [];
@@ -2085,7 +2109,10 @@ export const authenticateWithDlicomAddress = async (
   };
 };
 
-export const authenticateWithWeb3Wallet = authenticateWithDlicomWallet;
+export const authenticateWithDlicomWallet = (walletType: 'dlicom' | 'metamask' | 'okx' | 'injected' = 'dlicom') =>
+  authenticateWithSpecificWallet(walletType);
+
+export const authenticateWithWeb3Wallet = authenticateWithSpecificWallet;
 
 export const getCurrentUser = (): Profile | null => {
   const currentId = getItem<string | null>(STORAGE_KEYS.CURRENT_USER_ID, null);

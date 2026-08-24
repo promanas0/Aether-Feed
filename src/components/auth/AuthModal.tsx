@@ -32,22 +32,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleWalletAuth = async () => {
-    const dlicomProvider = (window as any).dlicom || (window as any).dlicomWallet || (window as any).ethereum;
-    if (dlicomProvider) {
-      setIsConnectingDlicomWallet(true);
-      setValidationError(null);
-      try {
-        const res = await authenticateWithDlicomWallet();
-        setIsConnectingDlicomWallet(false);
-        if (res.success && res.user) {
-          onClose();
-          return;
-        }
-      } catch (err: any) {
-        setIsConnectingDlicomWallet(false);
-      }
-    }
+  const handleWalletAuth = () => {
     setIsDlicomModalOpen(true);
   };
 
