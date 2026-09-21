@@ -1,4 +1,4 @@
-# Aether Feed
+# Aether Feed by Dlicom SocialFI
 
 A modern, minimal social media application engineered for real-time community engagement, authentic content sharing, and rich media communication.
 
